@@ -15,14 +15,19 @@
 # MA 02110-1301, USA.
 #
 
-CC=/root/buildroot-2018.08.4/output/host/usr/bin/arm-linux-gcc
+#CC=/root/buildroot-2018.08.4/output/host/usr/bin/arm-linux-gcc
 #CC=gcc -g
+
+BUILDROOT_PREFIX=/home/niklas/buildroot/buildroot-2018.08.4
+
+CC=$(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
+
 # Libraries and dependencies
 
 INSTALL ?= install
 
 SDL_CFLAGS ?= `sdl-config --cflags`
-SDL_LIBS ?= -L/root/buildroot-2018.08/output/host/lib -L/root/buildroot-2018.08/output/host/arm-buildroot-linux-uclibcgnueabihf/sysroot/usr/lib -Wl,-rpath,/root/buildroot-2018.08/output/host/arm-buildroot-linux-uclibcgnueabihf/sysroot/usr/lib 
+SDL_LIBS ?= -L$(BUILDROOT_PREFIX)/output/host/lib -L$(BUILDROOT_PREFIX)output/host/arm-buildroot-linux-uclibcgnueabihf/sysroot/usr/lib -Wl,-rpath,$(BUILDROOT_PREFIX)/output/host/arm-buildroot-linux-uclibcgnueabihf/sysroot/usr/lib 
 SDL_LIBS ?= -lpthread -liconv
 
 ALSA_LIBS ?= -lasound
@@ -45,24 +50,24 @@ LDFLAGS ?= -O3
 
 # Core objects and libraries
 
-OBJS = controller.o \
-	cues.o \
-	deck.o \
-	device.o \
-	dummy.o \
-	external.o \
-	player.o \
-	realtime.o \
-	rig.o \
-	status.o \
-	thread.o \
-	track.o \
-	alsa.o \
-	sc_input.o \
-	sc_playlist.o \
-	sc_midimap.o \
-	dicer.o \
-	midi.o \
+OBJS = player/controller.o \
+	player/cues.o \
+	player/deck.o \
+	player/device.o \
+	audio/dummy.o \
+	buffers/external.o \
+	player/player.o \
+	thread/realtime.o \
+	thread/rig.o \
+	util/status.o \
+	thread/thread.o \
+	player/track.o \
+	audio/alsa.o \
+	input/sc_input.o \
+	player/sc_playlist.o \
+	midi/sc_midimap.o \
+	player/dicer.o \
+	midi/midi.o \
 	xwax.o
 DEVICE_CPPFLAGS = -DWITH_ALSA
 DEVICE_LIBS = $(ALSA_LIBS)

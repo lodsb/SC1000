@@ -10,40 +10,40 @@
 #
 # Fader thresholds for hysteresis
 # You might need to adjust these for different faders
-# faderopenpoint should always be 
-# more than faderclosepoint
+# fader_open_point should always be
+# more than fader_close_point
 
 # Value required to open the fader when it's closed
-faderopenpoint=5
+fader_open_point=5
 
 # Value required to close the fader when it's opened
-faderclosepoint=3
+fader_close_point=3
 
 
 # 0 to disable platter, default 1 (enabled)
-platterenabled=1
+platter_enabled=1
 
 # Ratio of platter movement to sample movement
 # 4096 = 1 second for every platter rotation
 # 3072 = equivalent to 45rpm record (default)
 # 2275 = equivalent to 33rpm
-platterspeed=2275
+platter_speed=2275
 
 # How long the stop button takes to stop the track
 # Higher is longer, default = 3000
-brakespeed=3000
+brake_speed=3000
 
 # Pitch range % of pitch bend MIDI command, default 50%
-pitchrange=50
+pitch_range=50
 
 # How long to delay before looking for MIDI devices
 # Useful if your MIDI device takes a long time to initialize
 # Or to give you time to switch your phone to MIDI mode
-mididelay=5
+midi_delay=5
 
 # Set this to 1 or 2 to make the fader cut the beats
 # 1 will cut on the left, 2 will cut on the right
-cutbeats=0
+cut_beats=0
 
 ####################
 #   GPIO Mapping   #

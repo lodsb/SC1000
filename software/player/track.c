@@ -126,7 +126,6 @@ static int more_space( struct track* tr )
 
 static void* access_pcm( struct track* tr, size_t* len )
 {
-   printf("access_pcm\n");
    unsigned int block;
    size_t fill;
 
@@ -242,8 +241,6 @@ static int track_init( struct track* t, const char* importer, const char* path )
    pid = fork_pipe_nb(&t->fd, importer, "import", path, STR(RATE), NULL);
    if ( pid == -1 )
    {
-      fprintf(stderr, "Failed importer pipe\n");
-
       return -1;
    }
 
@@ -435,7 +432,6 @@ void track_pollfd( struct track* t, struct pollfd* pe )
 
 static int read_from_pipe( struct track* tr )
 {
-   printf("read_from_pipe\n");
    for ( ;; )
    {
       void* pcm;
@@ -538,7 +534,6 @@ void track_handle( struct track* tr )
 
    if ( read_from_pipe(tr) != -1 )
    {
-      printf("Failed read from pipe");
       return;
    }
 

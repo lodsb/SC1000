@@ -390,8 +390,6 @@ int main(int argc, char *argv[])
 	
 	fprintf(stderr, "WIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIP\n\n");
 
-   return 0;
-
    if (rig_main() == -1)
 		goto out_interface;
 

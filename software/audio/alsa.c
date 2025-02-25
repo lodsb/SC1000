@@ -92,6 +92,8 @@ struct audio_interface
    bool is_internal;
    bool supports_48k_samplerate;
    bool supports_16bit_pcm;
+
+   int period;
 };
 
 void print_audio_interface_info(struct audio_interface* iface)
@@ -104,12 +106,12 @@ void print_audio_interface_info(struct audio_interface* iface)
    printf("output_channels %i\n", iface->output_channels);
    printf("supports_48k_samplerate %i\n", iface->supports_48k_samplerate);
    printf("supports_16bit_pcm %i\n", iface->supports_16bit_pcm);
-   printf("supports_16bit_pcm %i\n", iface->supports_16bit_pcm);
+   printf("period %i\n", iface->period);
 }
 
 static struct audio_interface audio_interfaces[] = {
-        {false, -1, -1, -1, -1, false, false, false},
-        {false, -1, -1, -1, -1, false, false, false}
+        {false, -1, -1, -1, -1, false, false, false, 2},
+        {false, -1, -1, -1, -1, false, false, false, 2}
 };
 struct fmtdef
 {
@@ -245,10 +247,12 @@ static void list_cards()
             if( strcmp(card_name, "sun4i-codec") == 0 )
             {
                audio_interfaces[card_id].is_internal = true;
+               audio_interfaces[card_id].period = 2;
             }
             else
             {
                audio_interfaces[card_id].is_internal = false;
+               audio_interfaces[card_id].period = 3;
             }
 
             int playback_count = 0;
@@ -371,7 +375,7 @@ static void list_cards()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
-                     snd_pcm_stream_t stream, int buffer_size )
+                     snd_pcm_stream_t stream, int buffer_size, int period )
 {
    int r, dir;
    unsigned int p;
@@ -440,7 +444,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
       return (-1);
    }
 
-   p = 2; /* double buffering */
+   p = period;
    dir = 1;
    r = snd_pcm_hw_params_set_periods_min(alsa->pcm, hw_params, &p, &dir);
    if ( !chk("hw_params_set_periods_min", r) )
@@ -832,9 +836,9 @@ int setup_alsa_device( struct deck* decks, struct audio_interface* audio_interfa
 
    char device_name[64];
    create_alsa_device_id_string(device_name, sizeof(device_name), audio_interface->device_id, audio_interface->subdevice_id, needs_plughw);
-   printf("Opening device %s...", device_name);
+   printf("Opening device %s with buffersize %i...", device_name, buffer_size);
 
-   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, buffer_size) < 0 )
+   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, buffer_size, audio_interface->period) < 0 )
    {
       fputs("Failed to open device for playback.\n", stderr);
       printf(" failed!\n");

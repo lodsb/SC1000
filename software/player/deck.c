@@ -238,11 +238,11 @@ void load_track( struct deck *d, struct track *track )
 	if (!d->player.justPlay)
 	{
 		// If touch sensor is enabled, set the "zero point" to the current encoder angle
-		if (scsettings.platter_enabled)
+		if (sc1000_settings.platter_enabled)
 			d->angleOffset = 0 - d->encoderAngle;
 
 		else // If touch sensor is disabled, set the "zero point" to encoder zero point so sticker is exactly on each time sample is loaded
-			d->angleOffset = (pl->position * scsettings.platter_speed) - d->encoderAngle;
+			d->angleOffset = (pl->position * sc1000_settings.platter_speed) - d->encoderAngle;
 	}
 }
 
@@ -275,20 +275,20 @@ void deck_next_folder(struct deck *d )
 	{
 		d->CurrentFolder = d->CurrentFolder->next;
 		d->CurrentFile = d->CurrentFolder->FirstFile;
-		load_track(d, track_acquire_by_import(decks[1].importer, d->CurrentFile->FullPath));
+		load_track(d, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
 	}
 }
-void deck_prev_folder(struct deck *d )
+void deck_prev_folder(struct deck *d)
 {
 	if (d->filesPresent && d->CurrentFolder->prev != NULL)
 	{
 		d->CurrentFolder = d->CurrentFolder->prev;
 		d->CurrentFile = d->CurrentFolder->FirstFile;
-		load_track(d, track_acquire_by_import(decks[1].importer, d->CurrentFile->FullPath));
+		load_track(d, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
 	}
 }
 
-void deck_random_file(struct deck *d )
+void deck_random_file(struct deck *d)
 {
 	if (d->filesPresent){
 		int r = rand() % d->NumFiles;
@@ -299,6 +299,5 @@ void deck_random_file(struct deck *d )
 
 void deck_record(struct deck *d )
 {
-	if (decks[1].filesPresent)
-		d->player.recordingStarted = !d->player.recordingStarted;
+	d->player.recordingStarted = !d->player.recordingStarted;
 }

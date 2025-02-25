@@ -819,7 +819,7 @@ static struct device_ops alsa_ops = {
         .clear = clear
 };
 
-int setup_alsa_device( struct deck* decks, struct audio_interface* audio_interface, int buffer_size )
+int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* audio_interface, int buffer_size )
 {
    struct alsa* alsa;
 
@@ -845,11 +845,11 @@ int setup_alsa_device( struct deck* decks, struct audio_interface* audio_interfa
       goto fail_capture;
    }
 
-   device_init(&decks[0].device, &alsa_ops);
-   device_init(&decks[1].device, &alsa_ops);
+   device_init(&sc1000_engine->scratch_deck.device, &alsa_ops);
+   device_init(&sc1000_engine->beat_deck.device, &alsa_ops);
 
-   decks[0].device.local = alsa;
-   decks[1].device.local = alsa;
+   sc1000_engine->scratch_deck.device.local = alsa;
+   sc1000_engine->beat_deck.device.local = alsa;
 
    printf(" success!\n");
 
@@ -860,22 +860,22 @@ int setup_alsa_device( struct deck* decks, struct audio_interface* audio_interfa
    return -1;
 }
 
-int alsa_init( struct deck* decks, int buffer_size )
+int alsa_init( struct sc1000* sc1000_engine, int buffer_size )
 {
 
    list_cards();
 
    if(!audio_interfaces[0].is_internal && audio_interfaces[0].is_present)
    {
-      return setup_alsa_device(decks, &audio_interfaces[0], buffer_size);
+      return setup_alsa_device(sc1000_engine, &audio_interfaces[0], buffer_size);
    }
    else if(!audio_interfaces[1].is_internal && audio_interfaces[1].is_present)
    {
-      return setup_alsa_device(decks, &audio_interfaces[1], buffer_size);
+      return setup_alsa_device(sc1000_engine, &audio_interfaces[1], buffer_size);
    }
    else
    {
-      return setup_alsa_device(decks, &audio_interfaces[0], buffer_size);
+      return setup_alsa_device(sc1000_engine, &audio_interfaces[0], buffer_size);
    }
 }
 

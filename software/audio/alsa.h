@@ -20,9 +20,9 @@
 #ifndef ALSA_H
 #define ALSA_H
 
-#include "../player/deck.h"
+#include "../player/sc1000.h"
 
-int alsa_init( struct deck* decks, int buffer_size );
+int alsa_init( struct sc1000* sc1000_engine, int buffer_size );
 
 void alsa_clear_config_cache(void);
 

@@ -40,25 +40,26 @@
 #include "midi/sc_midimap.h"
 #include "player/controller.h"
 #include "player/device.h"
+#include "player/settings.h"
+
 #include "audio//dummy.h"
 #include "player/dicer.h"
 #include "player/track.h"
 #include "thread/realtime.h"
 #include "thread/thread.h"
 #include "thread/rig.h"
+
+
 #include "xwax.h"
 
 //#define DEFAULT_IMPORTER EXECDIR "/xwax-import"
 
 #define DEFAULT_IMPORTER "/root/xwax-import"
 
-struct deck decks[2];
-
+struct sc1000      sc1000_engine;
+struct sc_settings sc1000_settings;
 struct rt rt;
 
-static const char *importer;
-
-SC_SETTINGS scsettings;
 
 struct mapping *maps = NULL;
 
@@ -93,30 +94,30 @@ void load_settings_file()
 	unsigned char midicommand[3];
 	char *linetok, *valuetok;
 	// set defaults
-	scsettings.buffer_size = 256;
-	scsettings.fader_close_point = 2;
-	scsettings.fader_open_point = 10;
-	scsettings.platter_enabled = 1;
-	scsettings.platter_speed = 2275;
-	scsettings.sample_rate = 48000;
-	scsettings.update_rate = 2000;
-	scsettings.debounce_time = 5;
-	scsettings.hold_time = 100;
-	scsettings.slippiness = 200;
-	scsettings.brake_speed = 3000;
-	scsettings.pitch_range = 50;
-	scsettings.midi_delay = 5;
-	scsettings.volume_amount = 0.03;
-	scsettings.volume_amount_held = 0.001;
-	scsettings.initial_volume = 0.125;
-	scsettings.midi_remapped = 0;
-	scsettings.io_remapped = 0;
-	scsettings.jog_reverse = 0;
-	scsettings.cut_beats = 0;
+	sc1000_settings.buffer_size = 256;
+   sc1000_settings.fader_close_point = 2;
+   sc1000_settings.fader_open_point = 10;
+   sc1000_settings.platter_enabled = 1;
+   sc1000_settings.platter_speed = 2275;
+   sc1000_settings.sample_rate = 48000;
+   sc1000_settings.update_rate = 2000;
+   sc1000_settings.debounce_time = 5;
+   sc1000_settings.hold_time = 100;
+   sc1000_settings.slippiness = 200;
+   sc1000_settings.brake_speed = 3000;
+   sc1000_settings.pitch_range = 50;
+   sc1000_settings.midi_delay = 5;
+   sc1000_settings.volume_amount = 0.03;
+   sc1000_settings.volume_amount_held = 0.001;
+   sc1000_settings.initial_volume = 0.125;
+   sc1000_settings.midi_remapped = 0;
+   sc1000_settings.io_remapped = 0;
+   sc1000_settings.jog_reverse = 0;
+   sc1000_settings.cut_beats = 0;
 
 	// later we'll check for sc500 pin and use it to set following settings
-	scsettings.disable_volume_adc = 0;
-	scsettings.disable_pic_buttons = 0;
+	sc1000_settings.disable_volume_adc = 0;
+   sc1000_settings.disable_pic_buttons = 0;
 
 	// Load any settings from config file
 	fp = fopen("/media/sda/scsettings.txt", "r");
@@ -140,38 +141,38 @@ void load_settings_file()
 				value = strtok_r(NULL, delim, &linetok);
 
 				if (strcmp(param, "buffer_size") == 0)
-					scsettings.buffer_size = atoi(value);
+               sc1000_settings.buffer_size = atoi(value);
 				else if (strcmp(param, "fader_close_point") == 0)
-					scsettings.fader_close_point = atoi(value);
+               sc1000_settings.fader_close_point = atoi(value);
 				else if (strcmp(param, "fader_open_point") == 0)
-					scsettings.fader_open_point = atoi(value);
+               sc1000_settings.fader_open_point = atoi(value);
 				else if (strcmp(param, "platter_enabled") == 0)
-					scsettings.platter_enabled = atoi(value);
+               sc1000_settings.platter_enabled = atoi(value);
 				else if (strcmp(param, "disable_volume_adc") == 0)
-					scsettings.disable_volume_adc = atoi(value);
+               sc1000_settings.disable_volume_adc = atoi(value);
 				else if (strcmp(param, "platter_speed") == 0)
-					scsettings.platter_speed = atoi(value);
+               sc1000_settings.platter_speed = atoi(value);
 				else if (strcmp(param, "sample_rate") == 0)
-					scsettings.sample_rate = atoi(value);
+               sc1000_settings.sample_rate = atoi(value);
 				else if (strcmp(param, "update_rate") == 0)
-					scsettings.update_rate = atoi(value);
+               sc1000_settings.update_rate = atoi(value);
 				else if (strcmp(param, "debounce_time") == 0)
-					scsettings.debounce_time = atoi(value);
+               sc1000_settings.debounce_time = atoi(value);
 				else if (strcmp(param, "hold_time") == 0)
-					scsettings.hold_time = atoi(value);
+               sc1000_settings.hold_time = atoi(value);
 				else if (strcmp(param, "slippiness") == 0)
-					scsettings.slippiness = atoi(value);
+               sc1000_settings.slippiness = atoi(value);
 				else if (strcmp(param, "brake_speed") == 0)
-					scsettings.brake_speed = atoi(value);
+               sc1000_settings.brake_speed = atoi(value);
 				else if (strcmp(param, "pitch_range") == 0)
-					scsettings.pitch_range = atoi(value);
+               sc1000_settings.pitch_range = atoi(value);
 				else if (strcmp(param, "jog_reverse") == 0)
-					scsettings.jog_reverse = atoi(value);
+               sc1000_settings.jog_reverse = atoi(value);
 				else if (strcmp(param, "cut_beats") == 0)
-					scsettings.cut_beats = atoi(value);
+               sc1000_settings.cut_beats = atoi(value);
 				else if (strstr(param, "midii") != NULL)
 				{
-					scsettings.midi_remapped = 1;
+               sc1000_settings.midi_remapped = 1;
 					controlType = atoi(strtok_r(value, delimc, &valuetok));
 					channel = atoi(strtok_r(NULL, delimc, &valuetok));
 					notenum = atoi(strtok_r(NULL, delimc, &valuetok));
@@ -219,7 +220,7 @@ void load_settings_file()
 				}
 				else if (strstr(param, "io") != NULL)
 				{
-					scsettings.io_remapped = 1;
+               sc1000_settings.io_remapped = 1;
 					unsigned int commaCount = countChars(value, ',');
 					//printf("Found io %s - comacount %d\n", value, commaCount);
 					port = 0;
@@ -244,7 +245,7 @@ void load_settings_file()
 						actions);
 				}
 				else if (strcmp(param, "midi_delay") == 0) // Literally just a sleep to allow USB devices longer to initialize
-					scsettings.midi_delay = atoi(value);
+					sc1000_settings.midi_delay = atoi(value);
 				else
 				{
 					printf("Unrecognised configuration line - Param : %s , value : %s\n", param, value);
@@ -256,13 +257,13 @@ void load_settings_file()
 	
 
 	printf("bs %d, fcp %d, fop %d, pe %d, ps %d, sr %d, ur %d\n",
-		   scsettings.buffer_size,
-		   scsettings.fader_close_point,
-		   scsettings.fader_open_point,
-		   scsettings.platter_enabled,
-		   scsettings.platter_speed,
-		   scsettings.sample_rate,
-		   scsettings.update_rate);
+          sc1000_settings.buffer_size,
+          sc1000_settings.fader_close_point,
+          sc1000_settings.fader_open_point,
+          sc1000_settings.platter_enabled,
+          sc1000_settings.platter_speed,
+          sc1000_settings.sample_rate,
+          sc1000_settings.update_rate);
 
 	if (fp)
 		fclose(fp);
@@ -302,79 +303,19 @@ int main(int argc, char *argv[])
 		return -1;
 	rt_init(&rt);
 
-	importer = DEFAULT_IMPORTER;
 	use_mlock = false;
 
    load_settings_file();
 
-	// Create two decks, both pointed at the same audio device
-
-	alsa_init(decks, scsettings.buffer_size);
-
-   deck_init(&decks[0], &rt, importer, 0);
-   deck_init(&decks[1], &rt, importer, 1);
-
-   // point deck1's output at deck0, it will be summed in
-
-	decks[0].device.beat_player = decks[1].device.scratch_player;
-
-	// Tell deck0 to just play without considering inputs
-
-	decks[0].player.justPlay = 1;
-
-	alsa_clear_config_cache();
+   sc1000_init(&sc1000_engine, &sc1000_settings, &rt, DEFAULT_IMPORTER);
+   sc1000_load_sample_folders(&sc1000_engine);
 
 	rc = EXIT_FAILURE; /* until clean exit */
 
-	// Check for samples folder
-	if (access("/media/sda/samples", F_OK) == -1)
-	{
-		// Not there, so presumably the boot script didn't manage to mount the drive
-		// Maybe it hasn't initialized yet, or at least wasn't at boot time
-		// We have to do it ourselves
-
-		// Timeout after 12 sec, in which case emergency samples will be loaded
-		for (int uscnt = 0; uscnt < 12; uscnt++)
-		{
-			printf("Waiting for USB stick...\n");
-			// Wait for /dev/sda1 to show up and then mount it
-			if (access("/dev/sda1", F_OK) != -1)
-			{
-				printf("Found USB stick, mounting!\n");
-				system("/bin/mount /dev/sda1 /media/sda");
-				break;
-			}
-			else
-			{
-				// If not here yet, wait a second then check again
-				sleep(1);
-			}
-		}
-	}
-
-	deck_load_folder(&decks[0], "/media/sda/beats/");
-   printf("load folder 1 ok\n");
-	deck_load_folder(&decks[1], "/media/sda/samples/");
-   printf("load folder 2 ok\n");
-
-	if (!decks[1].filesPresent)
-	{
-		// Load the default sentence if no sample files found on usb stick
-		player_set_track(&decks[1].player, track_acquire_by_import(decks[1].importer, "/var/scratchsentence.mp3"));
-      printf("set track ok");
-		cues_load_from_file(&decks[1].cues, decks[1].player.track->path);
-      printf("set cues ok");
-		// Set the time back a bit so the sample doesn't start too soon
-		decks[1].player.target_position = -4.0;
-      decks[1].player.position = -4.0;
-	}
-
 	// Start input processing thread
-
 	SC_Input_Start();
 
 	// Start realtime stuff
-
 	priority = 0;
 
 	if (rt_start(&rt, priority) == -1)
@@ -402,8 +343,7 @@ out_interface:
 out_rt:
 	rt_stop(&rt);
 
-	deck_clear(&decks[0]);
-	deck_clear(&decks[1]);
+   sc1000_clear(&sc1000_engine);
 
 	rig_clear();
 	thread_global_clear();

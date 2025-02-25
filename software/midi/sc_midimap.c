@@ -81,153 +81,171 @@ extern int pitchMode;
 struct mapping *QueuedMidiCommand = NULL;
 unsigned char QueuedMidiBuffer[3];
 
+void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned char MidiBuffer[3])
+{
+   //printf("Map notnull type:%d deck:%d po:%d edge:%d pin:%d action:%d param:%d\n", map->Type, map->DeckNo, map->port, map->Edge, map->Pin, map->Action, map->Param);
+   //dump_maps();
+   if (map->Action == ACTION_CUE)
+   {
+      unsigned int cuenum = 0;
+      if (map->Type == MAP_MIDI)
+         cuenum = map->MidiBytes[1];
+      else
+         cuenum = (map->port * 32) + map->Pin + 128;
+
+      /*if (shifted)
+         deck_unset_cue(&deck[map->DeckNo], cuenum);
+      else*/
+      deck_cue(deck, cuenum);
+   }
+   else if (map->Action == ACTION_DELETECUE)
+   {
+      unsigned int cuenum = 0;
+      if (map->Type == MAP_MIDI)
+         cuenum = map->MidiBytes[1];
+      else
+         cuenum = (map->port * 32) + map->Pin + 128;
+
+      //if (shifted)
+      deck_unset_cue(deck, cuenum);
+      /*else
+         deck_cue(&deck[map->DeckNo], cuenum);*/
+   }
+   else if (map->Action == ACTION_NOTE)
+   {
+      deck->player.note_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C); // equal temperament
+   }
+   else if (map->Action == ACTION_STARTSTOP)
+   {
+      deck->player.stopped = !deck->player.stopped;
+   }
+   else if (map->Action == ACTION_SHIFTON)
+   {
+      printf("Shifton\n");
+      shifted = 1;
+   }
+   else if (map->Action == ACTION_SHIFTOFF)
+   {
+      printf("Shiftoff\n");
+      shifted = 0;
+   }
+   else if (map->Action == ACTION_NEXTFILE)
+   {
+      deck_next_file(deck);
+   }
+   else if (map->Action == ACTION_PREVFILE)
+   {
+      deck_prev_file(deck);
+   }
+   else if (map->Action == ACTION_RANDOMFILE)
+   {
+      deck_random_file(deck);
+   }
+   else if (map->Action == ACTION_NEXTFOLDER)
+   {
+      deck_next_folder(deck);
+   }
+   else if (map->Action == ACTION_PREVFOLDER)
+   {
+      deck_prev_folder(deck);
+   }
+   else if (map->Action == ACTION_VOLUME)
+   {
+      deck->player.setVolume = (double)MidiBuffer[2] / 128.0;
+   }
+   else if (map->Action == ACTION_PITCH)
+   {
+      if (map->Type == MAP_MIDI)
+      {
+         double pitch = 0.0;
+         // If this came from a pitch bend message, use 14 bit accuracy
+         if ((MidiBuffer[0] & 0xF0) == 0xE0)
+         {
+            unsigned int pval = (((unsigned int)MidiBuffer[2]) << 7) | ((unsigned int)MidiBuffer[1]);
+            pitch = (((double)pval - 8192.0) * ((double)sc1000_settings.pitch_range / 819200.0)) + 1;
+         }
+            // Otherwise 7bit (boo)
+         else
+         {
+            pitch = (((double)MidiBuffer[2] - 64.0) * ((double)sc1000_settings.pitch_range / 6400.0) + 1);
+         }
+
+         deck->player.fader_pitch = pitch;
+      }
+   }
+   else if (map->Action == ACTION_JOGPIT)
+   {
+      pitchMode = map->DeckNo + 1;
+      printf("Set Pitch Mode %d\n", pitchMode);
+   }
+   else if (map->Action == ACTION_JOGPSTOP)
+   {
+      pitchMode = 0;
+   }
+   else if (map->Action == ACTION_SC500)
+   {
+      printf("SC500 detected\n");
+   }
+   else if (map->Action == ACTION_VOLUP)
+   {
+      deck->player.setVolume += sc1000_settings.volume_amount;
+      if ( deck->player.setVolume > 1.0)
+         deck->player.setVolume = 1.0;
+   }
+   else if (map->Action == ACTION_VOLDOWN)
+   {
+      deck->player.setVolume -= sc1000_settings.volume_amount;
+      if ( deck->player.setVolume < 0.0)
+         deck->player.setVolume = 0.0;
+   }
+   else if (map->Action == ACTION_VOLUHOLD)
+   {
+      deck->player.setVolume += sc1000_settings.volume_amount_held;
+      if ( deck->player.setVolume > 1.0)
+         deck->player.setVolume = 1.0;
+   }
+   else if (map->Action == ACTION_VOLDHOLD)
+   {
+      deck->player.setVolume -= sc1000_settings.volume_amount_held;
+      if ( deck->player.setVolume < 0.0)
+         deck->player.setVolume = 0.0;
+   }
+   else if (map->Action == ACTION_JOGREVERSE)
+   {
+      printf("Reversed Jog Wheel - %d", sc1000_settings.jog_reverse);
+      sc1000_settings.jog_reverse = !sc1000_settings.jog_reverse;
+      printf(",%d", sc1000_settings.jog_reverse);
+   }
+   else if (map->Action == ACTION_BEND) // temporary bend of pitch that goes on top of the other pitch values
+   {
+      deck->player.bend_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C);
+   }
+}
+
 void IOevent(struct mapping *map, unsigned char MidiBuffer[3])
 {
 
 	if (map != NULL)
 	{
-		//printf("Map notnull type:%d deck:%d po:%d edge:%d pin:%d action:%d param:%d\n", map->Type, map->DeckNo, map->port, map->Edge, map->Pin, map->Action, map->Param);
-		//dump_maps();
-		if (map->Action == ACTION_CUE)
-		{
-			unsigned int cuenum = 0;
-			if (map->Type == MAP_MIDI)
-				cuenum = map->MidiBytes[1];
-			else
-				cuenum = (map->port * 32) + map->Pin + 128;
-
-			/*if (shifted)
-				deck_unset_cue(&deck[map->DeckNo], cuenum);
-			else*/
-			deck_cue(&decks[map->DeckNo], cuenum);
-		}
-		else if (map->Action == ACTION_DELETECUE)
-		{
-			unsigned int cuenum = 0;
-			if (map->Type == MAP_MIDI)
-				cuenum = map->MidiBytes[1];
-			else
-				cuenum = (map->port * 32) + map->Pin + 128;
-
-			//if (shifted)
-			deck_unset_cue(&decks[map->DeckNo], cuenum);
-			/*else
-				deck_cue(&deck[map->DeckNo], cuenum);*/
-		}
-		else if (map->Action == ACTION_NOTE)
-		{
-         decks[map->DeckNo].player.note_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C); // equal temperament
-		}
-		else if (map->Action == ACTION_STARTSTOP)
-		{
-         decks[map->DeckNo].player.stopped = !decks[map->DeckNo].player.stopped;
-		}
-		else if (map->Action == ACTION_SHIFTON)
-		{
-			printf("Shifton\n");
-			shifted = 1;
-		}
-		else if (map->Action == ACTION_SHIFTOFF)
-		{
-			printf("Shiftoff\n");
-			shifted = 0;
-		}
-		else if (map->Action == ACTION_NEXTFILE)
-		{
-			deck_next_file(&decks[map->DeckNo]);
-		}
-		else if (map->Action == ACTION_PREVFILE)
-		{
-			deck_prev_file(&decks[map->DeckNo]);
-		}
-		else if (map->Action == ACTION_RANDOMFILE)
-		{
-			deck_random_file(&decks[map->DeckNo]);
-		}
-		else if (map->Action == ACTION_NEXTFOLDER)
-		{
-			deck_next_folder(&decks[map->DeckNo]);
-		}
-		else if (map->Action == ACTION_PREVFOLDER)
-		{
-			deck_prev_folder(&decks[map->DeckNo]);
-		}
-		else if (map->Action == ACTION_RECORD)
-		{
-			if (decks[1].filesPresent)
-				deck_record(&decks[0]); // Always record on deck 0
-		}
-		else if (map->Action == ACTION_VOLUME)
-		{
-         decks[map->DeckNo].player.setVolume = (double)MidiBuffer[2] / 128.0;
-		}
-		else if (map->Action == ACTION_PITCH)
-		{
-			if (map->Type == MAP_MIDI)
-			{
-				double pitch = 0.0;
-				// If this came from a pitch bend message, use 14 bit accuracy
-				if ((MidiBuffer[0] & 0xF0) == 0xE0)
-				{
-					unsigned int pval = (((unsigned int)MidiBuffer[2]) << 7) | ((unsigned int)MidiBuffer[1]);
-					pitch = (((double)pval - 8192.0) * ((double)scsettings.pitch_range / 819200.0)) + 1;
-				}
-				// Otherwise 7bit (boo)
-				else
-				{
-					pitch = (((double)MidiBuffer[2] - 64.0) * ((double)scsettings.pitch_range / 6400.0) + 1);
-				}
-
-            decks[map->DeckNo].player.fader_pitch = pitch;
-			}
-		}
-		else if (map->Action == ACTION_JOGPIT)
-		{
-			pitchMode = map->DeckNo + 1;
-			printf("Set Pitch Mode %d\n", pitchMode);
-		}
-		else if (map->Action == ACTION_JOGPSTOP)
-		{
-			pitchMode = 0;
-		}
-		else if (map->Action == ACTION_SC500)
-		{
-			printf("SC500 detected\n");
-		}
-		else if (map->Action == ACTION_VOLUP)
-		{
-         decks[map->DeckNo].player.setVolume += scsettings.volume_amount;
-			if ( decks[map->DeckNo].player.setVolume > 1.0)
-            decks[map->DeckNo].player.setVolume = 1.0;
-		}
-		else if (map->Action == ACTION_VOLDOWN)
-		{
-         decks[map->DeckNo].player.setVolume -= scsettings.volume_amount;
-			if ( decks[map->DeckNo].player.setVolume < 0.0)
-            decks[map->DeckNo].player.setVolume = 0.0;
-		}
-		else if (map->Action == ACTION_VOLUHOLD)
-		{
-         decks[map->DeckNo].player.setVolume += scsettings.volume_amount_held;
-			if ( decks[map->DeckNo].player.setVolume > 1.0)
-            decks[map->DeckNo].player.setVolume = 1.0;
-		}
-		else if (map->Action == ACTION_VOLDHOLD)
-		{
-         decks[map->DeckNo].player.setVolume -= scsettings.volume_amount_held;
-			if ( decks[map->DeckNo].player.setVolume < 0.0)
-            decks[map->DeckNo].player.setVolume = 0.0;
-		}
-		else if (map->Action == ACTION_JOGREVERSE)
-		{
-			printf("Reversed Jog Wheel - %d", scsettings.jog_reverse);
-			scsettings.jog_reverse = !scsettings.jog_reverse;
-			printf(",%d", scsettings.jog_reverse);
-		}
-		else if (map->Action == ACTION_BEND) // temporary bend of pitch that goes on top of the other pitch values
-		{
-         decks[map->DeckNo].player.bend_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C);
-		}
+      if (map->Action == ACTION_RECORD)
+      {
+         if (sc1000_engine.scratch_deck.filesPresent)
+         {
+            // TODO fix me
+            deck_record(&sc1000_engine.beat_deck); // Always record on deck 0
+         }
+      }
+      else
+      {
+         if ( map->DeckNo == 0 )
+         {
+            perform_action_for_deck(&sc1000_engine.beat_deck, map, MidiBuffer);
+         }
+         else
+         {
+            perform_action_for_deck(&sc1000_engine.scratch_deck, map, MidiBuffer);
+         }
+      }
 	}
 }
 

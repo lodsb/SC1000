@@ -50,7 +50,8 @@ LDFLAGS ?= -O3
 
 # Core objects and libraries
 
-OBJS = player/controller.o \
+OBJS = player/sc1000.o \
+    player/controller.o \
 	player/cues.o \
 	player/deck.o \
 	player/device.o \

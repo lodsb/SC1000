@@ -134,8 +134,8 @@ void add_new_midi_devices( char mididevices[64][64], int mididevicenum )
 			if (dicer_init(&midiControllers[numControllers], &rt, mididevices[devc]) != -1)
 			{
 				printf("Adding MIDI device %d - %s\n", numControllers, mididevices[devc]);
-				controller_add_deck(&midiControllers[numControllers], &decks[0]);
-				controller_add_deck(&midiControllers[numControllers], &decks[1]);
+				controller_add_deck(&midiControllers[numControllers], &sc1000_engine.beat_deck);
+				controller_add_deck(&midiControllers[numControllers], &sc1000_engine.scratch_deck);
 				numControllers++;
 			}
 		}
@@ -359,9 +359,9 @@ void process_io()
 					printf("Button %d pressed\n", last_map->Pin);
 					if (firstTimeRound && last_map->DeckNo == 1 && (last_map->Action == ACTION_VOLUP || last_map->Action == ACTION_VOLDOWN))
 					{
-						player_set_track(&decks[0].player, track_acquire_by_import(decks[0].importer, "/var/os-version.mp3"));
-						cues_load_from_file(&decks[0].cues, decks[0].player.track->path);
-                  decks[1].player.setVolume = 0.0;
+						player_set_track(&sc1000_engine.beat_deck.player, track_acquire_by_import(sc1000_engine.beat_deck.importer, "/var/os-version.mp3"));
+						cues_load_from_file(&sc1000_engine.beat_deck.cues, sc1000_engine.beat_deck.player.track->path);
+                  sc1000_engine.scratch_deck.player.setVolume = 0.0;
 					}
 					else
 					{
@@ -375,13 +375,13 @@ void process_io()
 			}
 
 			// Debouncing positive edge, increment value
-			else if (last_map->debounce > 0 && last_map->debounce < scsettings.debounce_time)
+			else if (last_map->debounce > 0 && last_map->debounce < sc1000_settings.debounce_time)
 			{
 				last_map->debounce++;
 			}
 
 			// debounce finished, keep incrementing until hold reached
-			else if (last_map->debounce >= scsettings.debounce_time && last_map->debounce < scsettings.hold_time)
+			else if ( last_map->debounce >= sc1000_settings.debounce_time && last_map->debounce < sc1000_settings.hold_time)
 			{
 				// check to see if unpressed
 				if (!pinVal)
@@ -390,14 +390,14 @@ void process_io()
 					if (last_map->Edge == 0)
 						IOevent(last_map, NULL);
 					// start the counter
-					last_map->debounce = -scsettings.debounce_time;
+					last_map->debounce = -sc1000_settings.debounce_time;
 				}
 
 				else
 					last_map->debounce++;
 			}
 			// Button has been held for a while
-			else if (last_map->debounce == scsettings.hold_time)
+			else if ( last_map->debounce == sc1000_settings.hold_time)
 			{
 				printf("Button %d-%d held\n", last_map->port, last_map->Pin);
 				if ((!shifted && last_map->Edge == 2) || (shifted && last_map->Edge == 4))
@@ -406,7 +406,7 @@ void process_io()
 			}
 
 			// Button still holding, check for release
-			else if (last_map->debounce > scsettings.hold_time)
+			else if ( last_map->debounce > sc1000_settings.hold_time)
 			{
 				if (pinVal)
 				{
@@ -424,7 +424,7 @@ void process_io()
 					if (last_map->Edge == 0)
 						IOevent(last_map, NULL);
 					// start the counter
-					last_map->debounce = -scsettings.debounce_time;
+					last_map->debounce = -sc1000_settings.debounce_time;
 				}
 			}
 
@@ -492,39 +492,39 @@ void process_pic()
 
 	// Apply volume and fader
 
-	if (!scsettings.disable_volume_adc)
+	if (!sc1000_settings.disable_volume_adc)
 	{
-      decks[0].player.setVolume = ((double)ADCs[2]) / 1024;
-      decks[1].player.setVolume = ((double)ADCs[3]) / 1024;
+      sc1000_engine.beat_deck.player.setVolume = ((double)ADCs[2]) / 1024;
+      sc1000_engine.scratch_deck.player.setVolume = ((double)ADCs[3]) / 1024;
 	}
 	
 	// Fader Hysteresis
-	faderCutPoint1 = faderOpen1 ? scsettings.fader_close_point : scsettings.fader_open_point;
-	faderCutPoint2 = faderOpen2 ? scsettings.fader_close_point : scsettings.fader_open_point;
+	faderCutPoint1 = faderOpen1 ? sc1000_settings.fader_close_point : sc1000_settings.fader_open_point;
+	faderCutPoint2 = faderOpen2 ? sc1000_settings.fader_close_point : sc1000_settings.fader_open_point;
 	
 	faderOpen1 = 1; faderOpen2 = 1;
 	
-	fadertarget0 = decks[0].player.setVolume;
-	fadertarget1 = decks[1].player.setVolume;
+	fadertarget0 = sc1000_engine.beat_deck.player.setVolume;
+	fadertarget1 = sc1000_engine.scratch_deck.player.setVolume;
 	
 
 	if (ADCs[0] < faderCutPoint1)
 	{ 
-		if (scsettings.cut_beats == 1) fadertarget0 = 0.0;
+		if ( sc1000_settings.cut_beats == 1) fadertarget0 = 0.0;
 		else fadertarget1 = 0.0;
 		faderOpen1 = 0;
 	}
 	if (ADCs[1] < faderCutPoint2)
 	{
-		if (scsettings.cut_beats == 2) fadertarget0 = 0.0;
+		if ( sc1000_settings.cut_beats == 2) fadertarget0 = 0.0;
 		else fadertarget1 = 0.0;
 		faderOpen2 = 0;
 	}
 
-   decks[0].player.faderTarget = fadertarget0;
-   decks[1].player.faderTarget = fadertarget1;
+   sc1000_engine.beat_deck.player.faderTarget = fadertarget0;
+   sc1000_engine.scratch_deck.player.faderTarget = fadertarget1;
 
-	if (!scsettings.disable_pic_buttons)
+	if (!sc1000_settings.disable_pic_buttons)
 	{
 		/*
 		 Button scanning logic goes like -
@@ -553,8 +553,8 @@ void process_pic()
 
 				if (firstTimeRound)
 				{
-					player_set_track(&decks[0].player, track_acquire_by_import(decks[0].importer, "/var/os-version.mp3"));
-					cues_load_from_file(&decks[0].cues, decks[0].player.track->path);
+					player_set_track(&sc1000_engine.beat_deck.player, track_acquire_by_import(sc1000_engine.beat_deck.importer, "/var/os-version.mp3"));
+					cues_load_from_file(&sc1000_engine.beat_deck.cues, sc1000_engine.beat_deck.player.track->path);
 					buttonState = BUTTONSTATE_WAITING;
 				}
 			}
@@ -570,7 +570,7 @@ void process_pic()
 				buttonState = BUTTONSTATE_ACTING_INSTANT;
 
 			butCounter++;
-			if (butCounter > scsettings.hold_time)
+			if ( butCounter > sc1000_settings.hold_time)
 			{
 				butCounter = 0;
 				buttonState = BUTTONSTATE_ACTING_HELD;
@@ -588,17 +588,17 @@ void process_pic()
 				oldPitchMode = 0;
 				printf("Pitch mode Disabled\n");
 			}
-			else if ( totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && decks[1].filesPresent)
-				deck_prev_file(&decks[1]);
-			else if ( !totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && decks[1].filesPresent)
-				deck_next_file(&decks[1]);
-			else if ( totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && decks[1].filesPresent)
+			else if ( totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine.scratch_deck.filesPresent)
+				deck_prev_file(&sc1000_engine.scratch_deck);
+			else if ( !totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine.scratch_deck.filesPresent)
+				deck_next_file(&sc1000_engine.scratch_deck);
+			else if ( totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine.scratch_deck.filesPresent)
 				pitchMode = 2;
-			else if ( !totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && decks[0].filesPresent)
-				deck_prev_file(&decks[0]);
-			else if ( !totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && totalbuttons[3] && decks[0].filesPresent)
-				deck_next_file(&decks[0]);
-			else if ( !totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && decks[0].filesPresent)
+			else if ( !totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && sc1000_engine.beat_deck.filesPresent)
+				deck_prev_file(&sc1000_engine.beat_deck);
+			else if ( !totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && totalbuttons[3] && sc1000_engine.beat_deck.filesPresent)
+				deck_next_file(&sc1000_engine.beat_deck);
+			else if ( !totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && sc1000_engine.beat_deck.filesPresent)
 				pitchMode = 1;
 			else if (totalbuttons[0] && totalbuttons[1] && totalbuttons[2] && totalbuttons[3])
 				shiftLatched = 1;
@@ -611,23 +611,23 @@ void process_pic()
 
 		// Act on whatever buttons are being held down when the timeout happens
 		case BUTTONSTATE_ACTING_HELD:
-			if ( buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] && decks[1].filesPresent)
-				deck_prev_folder(&decks[1]);
-			else if ( !buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && decks[1].filesPresent)
-				deck_next_folder(&decks[1]);
-			else if ( buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && decks[1].filesPresent)
-				deck_random_file(&decks[1]);
-			else if ( !buttons[0] && !buttons[1] && buttons[2] && !buttons[3] && decks[0].filesPresent)
-				deck_prev_folder(&decks[0]);
-			else if ( !buttons[0] && !buttons[1] && !buttons[2] && buttons[3] && decks[0].filesPresent)
-				deck_next_folder(&decks[0]);
-			else if ( !buttons[0] && !buttons[1] && buttons[2] && buttons[3] && decks[0].filesPresent)
-				deck_random_file(&decks[0]);
+			if ( buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine.scratch_deck.filesPresent)
+				deck_prev_folder(&sc1000_engine.scratch_deck);
+			else if ( !buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine.scratch_deck.filesPresent)
+				deck_next_folder(&sc1000_engine.scratch_deck);
+			else if ( buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine.scratch_deck.filesPresent)
+				deck_random_file(&sc1000_engine.scratch_deck);
+			else if ( !buttons[0] && !buttons[1] && buttons[2] && !buttons[3] && sc1000_engine.beat_deck.filesPresent)
+				deck_prev_folder(&sc1000_engine.beat_deck);
+			else if ( !buttons[0] && !buttons[1] && !buttons[2] && buttons[3] && sc1000_engine.beat_deck.filesPresent)
+				deck_next_folder(&sc1000_engine.beat_deck);
+			else if ( !buttons[0] && !buttons[1] && buttons[2] && buttons[3] && sc1000_engine.beat_deck.filesPresent)
+				deck_random_file(&sc1000_engine.beat_deck);
 			else if (buttons[0] && buttons[1] && buttons[2] && buttons[3])
 			{
 				printf("All buttons held!\n");
-				if (decks[1].filesPresent)
-					deck_record(&decks[0]);
+				if (sc1000_engine.scratch_deck.filesPresent)
+					deck_record(&sc1000_engine.beat_deck);
 			}
 			else
 				printf("Sod knows what you were trying to do there\n");
@@ -668,42 +668,42 @@ void process_rot()
 	// Handle rotary sensor
 
 	i2c_read_address(file_i2c_rot, 0x0c, &result);
-   decks[1].newEncoderAngle = ((int)result) << 8;
+   sc1000_engine.scratch_deck.newEncoderAngle = ((int)result) << 8;
 	i2c_read_address(file_i2c_rot, 0x0d, &result);
-   decks[1].newEncoderAngle = (decks[1].newEncoderAngle & 0x0f00) | (int)result;
+   sc1000_engine.scratch_deck.newEncoderAngle = (sc1000_engine.scratch_deck.newEncoderAngle & 0x0f00) | (int)result;
 
-	if (scsettings.jog_reverse) {
+	if (sc1000_settings.jog_reverse) {
 		//printf("%d,",deck[1].newEncoderAngle);
-		decks[1].newEncoderAngle = 4095 - decks[1].newEncoderAngle;
+		sc1000_engine.scratch_deck.newEncoderAngle = 4095 - sc1000_engine.scratch_deck.newEncoderAngle;
 		//printf("%d\n",deck[1].newEncoderAngle);
 	}
 
 	// First time, make sure there's no difference
-	if ( decks[1].encoderAngle == 0xffff)
-      decks[1].encoderAngle = decks[1].newEncoderAngle;
+	if ( sc1000_engine.scratch_deck.encoderAngle == 0xffff)
+      sc1000_engine.scratch_deck.encoderAngle = sc1000_engine.scratch_deck.newEncoderAngle;
 
 	// Handle wrapping at zero
 
-	if ( decks[1].newEncoderAngle < 1024 && decks[1].encoderAngle >= 3072)
+	if ( sc1000_engine.scratch_deck.newEncoderAngle < 1024 && sc1000_engine.scratch_deck.encoderAngle >= 3072)
 	{ // We crossed zero in the positive direction
 
 		crossedZero = 1;
-		wrappedAngle = decks[1].encoderAngle - 4096;
+		wrappedAngle = sc1000_engine.scratch_deck.encoderAngle - 4096;
 	}
-	else if ( decks[1].newEncoderAngle >= 3072 && decks[1].encoderAngle < 1024)
+	else if ( sc1000_engine.scratch_deck.newEncoderAngle >= 3072 && sc1000_engine.scratch_deck.encoderAngle < 1024)
 	{ // We crossed zero in the negative direction
 		crossedZero = -1;
-		wrappedAngle = decks[1].encoderAngle + 4096;
+		wrappedAngle = sc1000_engine.scratch_deck.encoderAngle + 4096;
 	}
 	else
 	{
 		crossedZero = 0;
-		wrappedAngle = decks[1].encoderAngle;
+		wrappedAngle = sc1000_engine.scratch_deck.encoderAngle;
 	}
 
 	// rotary sensor sometimes returns incorrect values, if we skip more than 100 ignore that value
 	// If we see 3 blips in a row, then I guess we better accept the new value
-	if ( abs(decks[1].newEncoderAngle - wrappedAngle) > 100 && numBlips < 2)
+	if ( abs(sc1000_engine.scratch_deck.newEncoderAngle - wrappedAngle) > 100 && numBlips < 2)
 	{
 		//printf("blip! %d %d %d\n", deck[1].newEncoderAngle, deck[1].encoderAngle, wrappedAngle);
 		numBlips++;
@@ -711,7 +711,7 @@ void process_rot()
 	else
 	{
 		numBlips = 0;
-      decks[1].encoderAngle = decks[1].newEncoderAngle;
+      sc1000_engine.scratch_deck.encoderAngle = sc1000_engine.scratch_deck.newEncoderAngle;
 
 		if (pitchMode)
 		{
@@ -719,52 +719,68 @@ void process_rot()
 			if (!oldPitchMode)
 			{ // We just entered pitchmode, set offset etc
 
-				decks[(pitchMode - 1)].player.note_pitch = 1.0;
-            decks[1].angleOffset = -decks[1].encoderAngle;
+            if(pitchMode == 0)
+            {
+               sc1000_engine.beat_deck.player.note_pitch = 1.0;
+            }
+            else
+            {
+               sc1000_engine.scratch_deck.player.note_pitch = 1.0;
+            }
+
+            sc1000_engine.scratch_deck.angleOffset = -sc1000_engine.scratch_deck.encoderAngle;
 				oldPitchMode = 1;
-            decks[1].player.capTouch = 0;
+            sc1000_engine.scratch_deck.player.capTouch = 0;
 			}
 
 			// Handle wrapping at zero
 
 			if (crossedZero > 0)
 			{
-            decks[1].angleOffset += 4096;
+            sc1000_engine.scratch_deck.angleOffset += 4096;
 			}
 			else if (crossedZero < 0)
 			{
-            decks[1].angleOffset -= 4096;
+            sc1000_engine.scratch_deck.angleOffset -= 4096;
 			}
 
 			// Use the angle of the platter to control sample pitch
-			decks[(pitchMode - 1)].player.note_pitch = (((double)(decks[1].encoderAngle + decks[1].angleOffset)) / 16384) + 1.0;
+
+         if(pitchMode == 0)
+         {
+            sc1000_engine.scratch_deck.player.note_pitch = (((double)(sc1000_engine.scratch_deck.encoderAngle + sc1000_engine.scratch_deck.angleOffset)) / 16384) + 1.0;
+         }
+         else
+         {
+            sc1000_engine.scratch_deck.player.note_pitch = (((double)(sc1000_engine.scratch_deck.encoderAngle + sc1000_engine.scratch_deck.angleOffset)) / 16384) + 1.0;
+         }
 		}
 		else
 		{
 
-			if (scsettings.platter_enabled)
+			if (sc1000_settings.platter_enabled)
 			{
 				// Handle touch sensor
-				if ( capIsTouched || decks[1].player.motor_speed == 0.0)
+				if ( capIsTouched || sc1000_engine.scratch_deck.player.motor_speed == 0.0)
 				{
 
 					// Positive touching edge
-					if ( !decks[1].player.capTouch || (oldPitchMode && !decks[1].player.stopped) )
+					if ( !sc1000_engine.scratch_deck.player.capTouch || (oldPitchMode && !sc1000_engine.scratch_deck.player.stopped) )
 					{
-                  decks[1].angleOffset = (decks[1].player.position * scsettings.platter_speed) - decks[1].encoderAngle;
+                  sc1000_engine.scratch_deck.angleOffset = (sc1000_engine.scratch_deck.player.position * sc1000_settings.platter_speed) - sc1000_engine.scratch_deck.encoderAngle;
 						printf("touch!\n");
-                  decks[1].player.target_position = decks[1].player.position;
-                  decks[1].player.capTouch = 1;
+                  sc1000_engine.scratch_deck.player.target_position = sc1000_engine.scratch_deck.player.position;
+                  sc1000_engine.scratch_deck.player.capTouch = 1;
 					}
 				}
 				else
 				{
-               decks[1].player.capTouch = 0;
+               sc1000_engine.scratch_deck.player.capTouch = 0;
 				}
 			}
 
 			else
-            decks[1].player.capTouch = 1;
+            sc1000_engine.scratch_deck.player.capTouch = 1;
 
 			/*if (deck[1].player.capTouch) we always want to dump the target position so we can do lasers etc
 			{*/
@@ -773,16 +789,16 @@ void process_rot()
 
 			if (crossedZero > 0)
 			{
-            decks[1].angleOffset += 4096;
+            sc1000_engine.scratch_deck.angleOffset += 4096;
 			}
 			else if (crossedZero < 0)
 			{
-            decks[1].angleOffset -= 4096;
+            sc1000_engine.scratch_deck.angleOffset -= 4096;
 			}
 
 			// Convert the raw value to track position and set player to that pos
 
-			decks[1].player.target_position = (double)(decks[1].encoderAngle + decks[1].angleOffset) / scsettings.platter_speed;
+			sc1000_engine.scratch_deck.player.target_position = (double)(sc1000_engine.scratch_deck.encoderAngle + sc1000_engine.scratch_deck.angleOffset) / sc1000_settings.platter_speed;
 
 			// Loop when track gets to end
 
@@ -834,8 +850,8 @@ void *sc_input_thread( void *ptr )
 		if ((PortData >> 11) & 0x01)
 		{
 			printf("SC500 detected\n");
-			scsettings.disable_volume_adc = 1;
-			scsettings.disable_pic_buttons = 1;
+         sc1000_settings.disable_volume_adc = 1;
+         sc1000_settings.disable_pic_buttons = 1;
 		}
 	}
 
@@ -863,10 +879,10 @@ void *sc_input_thread( void *ptr )
 			lastTime = tv.tv_sec;
 			printf("\033[H\033[J"); // Clear Screen
 			printf("\nFPS: %06u - ADCS: %04u, %04u, %04u, %04u, %04u\nButtons: %01u,%01u,%01u,%01u,%01u\nTP: %f, P : %f\n%f -- %f\n",
-                frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3], decks[1].encoderAngle,
+                frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3], sc1000_engine.scratch_deck.encoderAngle,
                 buttons[0], buttons[1], buttons[2], buttons[3], capIsTouched,
-                decks[1].player.target_position, decks[1].player.position,
-                decks[0].player.volume, decks[1].player.volume);
+                sc1000_engine.scratch_deck.player.target_position, sc1000_engine.scratch_deck.player.position,
+                sc1000_engine.beat_deck.player.volume, sc1000_engine.scratch_deck.player.volume);
 			//dump_maps();
 
 			//printf("\nFPS: %06u\n", frameCount);
@@ -880,9 +896,9 @@ void *sc_input_thread( void *ptr )
 
 			// Wait 10 seconds to enumerate MIDI devices
 			// Give them a little time to come up properly
-			if (secondCount < scsettings.midi_delay)
+			if ( secondCount < sc1000_settings.midi_delay)
 				secondCount++;
-			else if (secondCount == scsettings.midi_delay)
+			else if ( secondCount == sc1000_settings.midi_delay)
 			{
 				// Check for new midi devices
 				mididevicenum = listdev("rawmidi", mididevices);
@@ -917,18 +933,18 @@ void *sc_input_thread( void *ptr )
 		}
 		else // couldn't find input processor, just play the tracks
 		{
-         decks[1].player.capTouch = 1;
-         decks[0].player.faderTarget = 0.0;
-         decks[1].player.faderTarget = 0.5;
-         decks[0].player.justPlay = 1;
-         decks[0].player.pitch = 1;
+         sc1000_engine.scratch_deck.player.capTouch = 1;
+         sc1000_engine.beat_deck.player.faderTarget = 0.0;
+         sc1000_engine.scratch_deck.player.faderTarget = 0.5;
+         sc1000_engine.beat_deck.player.justPlay = 1;
+         sc1000_engine.beat_deck.player.pitch = 1;
 
 			clock_gettime(CLOCK_MONOTONIC, &ts);
 			inputtime = (double)ts.tv_sec + ((double)ts.tv_nsec / 1000000000.0);
 
 			if (lastinputtime != 0)
 			{
-            decks[1].player.target_position += (inputtime - lastinputtime);
+            sc1000_engine.scratch_deck.player.target_position += (inputtime - lastinputtime);
 			}
 
 			lastinputtime = inputtime;

@@ -31,8 +31,8 @@ struct device {
     void *local;
     struct device_ops *ops;
 
-    struct player *scratch_player;
-    struct player *beat_player;
+    struct player*   scratch_player;
+    struct player*   beat_player;
 };
 
 struct device_ops {

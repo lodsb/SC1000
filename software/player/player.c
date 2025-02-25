@@ -219,18 +219,6 @@ static double build_silence(signed short *pcm, unsigned samples,
 }
 
 /*
- * Change the timecoder used by this playback
- */
-
-void player_set_timecoder(struct player *pl, struct timecoder *tc)
-{
-	assert(tc != NULL);
-	pl->timecoder = tc;
-	pl->recalibrate = true;
-	pl->timecode_control = true;
-}
-
-/*
  * Post: player is initialised
  */
 

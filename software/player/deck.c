@@ -47,8 +47,6 @@ int deck_init( struct deck *d, struct rt *rt,
                const char *importer,
                bool slave)
 {
-	unsigned int rate;
-
 	if (!slave)
 	{
 		if (rt_add_device(rt, &d->device) == -1)

@@ -43,11 +43,6 @@ void device_clear(struct device *dv)
         dv->ops->clear(dv);
 }
 
-void device_connect_timecoder(struct device *dv, struct timecoder *tc)
-{
-    dv->timecoder = tc;
-}
-
 void device_connect_player(struct device *dv, struct player *pl)
 {
     dv->scratch_player = pl;

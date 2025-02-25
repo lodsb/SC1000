@@ -31,7 +31,6 @@ struct device {
     void *local;
     struct device_ops *ops;
 
-    struct timecoder *timecoder;
     struct player *scratch_player;
     struct player *beat_player;
 };
@@ -50,7 +49,6 @@ struct device_ops {
 void device_init(struct device *dv, struct device_ops *ops);
 void device_clear(struct device *dv);
 
-void device_connect_timecoder(struct device *dv, struct timecoder *tc);
 void device_connect_player(struct device *dv, struct player *pl);
 
 unsigned int device_sample_rate(struct device *dv);

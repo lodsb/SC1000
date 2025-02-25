@@ -66,7 +66,6 @@ struct player
 
    /* Timecode control */
 
-   struct timecoder* timecoder;
    bool timecode_control,
            recalibrate; /* re-sync offset at next opportunity */
    bool justPlay;
@@ -92,12 +91,6 @@ void player_init( struct player* pl, unsigned int sample_rate,
                   struct track* track );
 
 void player_clear( struct player* pl );
-
-void player_set_timecoder( struct player* pl, struct timecoder* tc );
-
-void player_set_timecode_control( struct player* pl, bool on );
-
-bool player_toggle_timecode_control( struct player* pl );
 
 void player_set_internal_playback( struct player* pl );
 

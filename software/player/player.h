@@ -27,6 +27,7 @@
 #include "../thread/spin.h"
 
 #include "track.h"
+#include "settings.h"
 
 
 #define PLAYER_CHANNELS 2
@@ -88,7 +89,7 @@ struct player
 };
 
 void player_init( struct player* pl, unsigned int sample_rate,
-                  struct track* track );
+                  struct track* track, struct sc_settings* settings);
 
 void player_clear( struct player* pl );
 
@@ -110,6 +111,6 @@ void player_seek_to( struct player* pl, double seconds );
 
 void player_recue( struct player* pl );
 
-void player_collect( struct player* pl, signed short* pcm, unsigned samples );
+void player_collect( struct player* pl, signed short* pcm, unsigned samples, struct sc_settings* settings);
 
 #endif

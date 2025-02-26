@@ -95,10 +95,10 @@ static void event(struct dicer *d)
 	printf("%x %x %x\n",d->MidiBuffer[0], d->MidiBuffer[1], d->MidiBuffer[2]);
 		
 	// This is so dumb, there should be a proper event buffer, but oh well
-	QueuedMidiCommand = find_MIDI_mapping(maps, d->MidiBuffer, shifted ? 3 : 1);
-	QueuedMidiBuffer[0] = d->MidiBuffer[0];
-	QueuedMidiBuffer[1] = d->MidiBuffer[1];
-	QueuedMidiBuffer[2] = d->MidiBuffer[2];
+	queued_midi_command = find_midi_mapping(maps, d->MidiBuffer, shifted ? 3 : 1);
+   queued_midi_buffer[0] = d->MidiBuffer[0];
+   queued_midi_buffer[1] = d->MidiBuffer[1];
+   queued_midi_buffer[2] = d->MidiBuffer[2];
 
 
 /*

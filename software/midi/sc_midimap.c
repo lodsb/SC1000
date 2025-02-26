@@ -78,10 +78,10 @@ extern int pitchMode;
 // Queued command from the realtime thread
 // this is so dumb
 
-struct mapping *QueuedMidiCommand = NULL;
-unsigned char QueuedMidiBuffer[3];
+struct mapping *queued_midi_command = NULL;
+unsigned char queued_midi_buffer[3];
 
-void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned char MidiBuffer[3])
+void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned char MidiBuffer[3], struct sc_settings* settings)
 {
    //printf("Map notnull type:%d deck:%d po:%d edge:%d pin:%d action:%d param:%d\n", map->Type, map->DeckNo, map->port, map->Edge, map->Pin, map->Action, map->Param);
    //dump_maps();
@@ -162,12 +162,12 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
          if ((MidiBuffer[0] & 0xF0) == 0xE0)
          {
             unsigned int pval = (((unsigned int)MidiBuffer[2]) << 7) | ((unsigned int)MidiBuffer[1]);
-            pitch = (((double)pval - 8192.0) * ((double)sc1000_settings.pitch_range / 819200.0)) + 1;
+            pitch = (((double)pval - 8192.0) * ((double)settings->pitch_range / 819200.0)) + 1;
          }
             // Otherwise 7bit (boo)
          else
          {
-            pitch = (((double)MidiBuffer[2] - 64.0) * ((double)sc1000_settings.pitch_range / 6400.0) + 1);
+            pitch = (((double)MidiBuffer[2] - 64.0) * ((double)settings->pitch_range / 6400.0) + 1);
          }
 
          deck->player.fader_pitch = pitch;
@@ -188,33 +188,33 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
    else if (map->Action == ACTION_VOLUP)
    {
-      deck->player.setVolume += sc1000_settings.volume_amount;
+      deck->player.setVolume += settings->volume_amount;
       if ( deck->player.setVolume > 1.0)
          deck->player.setVolume = 1.0;
    }
    else if (map->Action == ACTION_VOLDOWN)
    {
-      deck->player.setVolume -= sc1000_settings.volume_amount;
+      deck->player.setVolume -= settings->volume_amount;
       if ( deck->player.setVolume < 0.0)
          deck->player.setVolume = 0.0;
    }
    else if (map->Action == ACTION_VOLUHOLD)
    {
-      deck->player.setVolume += sc1000_settings.volume_amount_held;
+      deck->player.setVolume += settings->volume_amount_held;
       if ( deck->player.setVolume > 1.0)
          deck->player.setVolume = 1.0;
    }
    else if (map->Action == ACTION_VOLDHOLD)
    {
-      deck->player.setVolume -= sc1000_settings.volume_amount_held;
+      deck->player.setVolume -= settings->volume_amount_held;
       if ( deck->player.setVolume < 0.0)
          deck->player.setVolume = 0.0;
    }
    else if (map->Action == ACTION_JOGREVERSE)
    {
-      printf("Reversed Jog Wheel - %d", sc1000_settings.jog_reverse);
-      sc1000_settings.jog_reverse = !sc1000_settings.jog_reverse;
-      printf(",%d", sc1000_settings.jog_reverse);
+      printf("Reversed Jog Wheel - %d", settings->jog_reverse);
+      settings->jog_reverse = !settings->jog_reverse;
+      printf(",%d", settings->jog_reverse);
    }
    else if (map->Action == ACTION_BEND) // temporary bend of pitch that goes on top of the other pitch values
    {
@@ -222,7 +222,7 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
 }
 
-void IOevent(struct mapping *map, unsigned char MidiBuffer[3])
+void io_event( struct mapping *map, unsigned char MidiBuffer[3], struct sc_settings* settings )
 {
 
 	if (map != NULL)
@@ -239,11 +239,11 @@ void IOevent(struct mapping *map, unsigned char MidiBuffer[3])
       {
          if ( map->DeckNo == 0 )
          {
-            perform_action_for_deck(&sc1000_engine.beat_deck, map, MidiBuffer);
+            perform_action_for_deck(&sc1000_engine.beat_deck, map, MidiBuffer, settings);
          }
          else
          {
-            perform_action_for_deck(&sc1000_engine.scratch_deck, map, MidiBuffer);
+            perform_action_for_deck(&sc1000_engine.scratch_deck, map, MidiBuffer, settings);
          }
       }
 	}
@@ -361,7 +361,7 @@ void add_mapping(struct mapping **maps, unsigned char Type, unsigned char deckno
 }
 
 // Find a mapping from a MIDI event
-struct mapping *find_MIDI_mapping(struct mapping *maps, unsigned char buf[3], char edge)
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], char edge )
 {
 
 	struct mapping *last_map = maps;
@@ -389,7 +389,7 @@ struct mapping *find_MIDI_mapping(struct mapping *maps, unsigned char buf[3], ch
 }
 
 // Find a mapping from a GPIO event
-struct mapping *find_IO_mapping(struct mapping *maps, unsigned char port, unsigned char pin, char edge)
+struct mapping *find_io_mapping( struct mapping *maps, unsigned char port, unsigned char pin, char edge )
 {
 
 	struct mapping *last_map = maps;

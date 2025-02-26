@@ -17,10 +17,10 @@
  *
  */
 
+#pragma once
 #include <stdbool.h>
 
-#ifndef SC_MIDIMAP_H
-#define SC_MIDIMAP_H
+#include "../player/settings.h"
 
 #define CONTROL_NOTE 1
 #define CONTROL_CC 2
@@ -83,13 +83,13 @@ struct mapping {
 	struct mapping *next;
 };
 
-extern struct mapping *QueuedMidiCommand;
-extern unsigned char QueuedMidiBuffer[3];
+extern struct mapping *queued_midi_command;
+extern unsigned char queued_midi_buffer[3];
 
 
 void add_mapping(struct mapping **maps, unsigned char Type, unsigned char deckno, unsigned char buf[3], unsigned char port, unsigned char Pin, bool Pullup, char Edge, unsigned char action, unsigned char parameter);
-struct mapping *find_MIDI_mapping(struct mapping *maps, unsigned char buf[3], char edge);
-struct mapping *find_IO_mapping(struct mapping *maps, unsigned char port, unsigned char pin, char edge);
-void IOevent(struct mapping *map, unsigned char MidiBuffer[3]);
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], char edge );
+struct mapping *find_io_mapping( struct mapping *maps, unsigned char port, unsigned char pin, char edge );
+void io_event( struct mapping *map, unsigned char MidiBuffer[3], struct sc_settings* settings );
 void add_config_mapping(struct mapping **maps, unsigned char Type, unsigned char buf[3], unsigned char port, unsigned char Pin, bool Pullup, char Edge, char *actions);
-#endif
+

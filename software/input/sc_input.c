@@ -30,6 +30,8 @@
 #include "../midi/midi.h"
 #include "../player/dicer.h"
 
+#include "../global/global.h"
+
 #include "sc_input.h"
 
 bool shifted = 0;
@@ -179,7 +181,7 @@ void init_io()
 		// For each pin
 		for (i = 0; i < 16; i++)
 		{
-			map = find_IO_mapping(maps, 0, i, 1);
+			map = find_io_mapping(maps, 0, i, 1);
 			// If pin is marked as ground
 			if (map != NULL && map->Action == ACTION_GND)
 			{
@@ -254,7 +256,7 @@ void init_io()
 			for (i = 0; i < 28; i++)
 			{
 
-				map = find_IO_mapping(maps, j, i, 1);
+				map = find_io_mapping(maps, j, i, 1);
 
 				if (map != NULL)
 				{
@@ -300,7 +302,7 @@ void init_io()
 
 }
 
-void process_io()
+void process_io(struct sc_settings* settings)
 { // Iterate through all digital input mappings and check the appropriate pin
 	unsigned int gpios = 0x00000000;
 	unsigned char result;
@@ -366,7 +368,7 @@ void process_io()
 					else
 					{
 						if ((!shifted && last_map->Edge == 1) || (shifted && last_map->Edge == 3))
-							IOevent(last_map, NULL);
+                     io_event(last_map, NULL, settings);
 
 						// start the counter
 						last_map->debounce++;
@@ -388,7 +390,7 @@ void process_io()
 				{
 					printf("Button %d released\n", last_map->Pin);
 					if (last_map->Edge == 0)
-						IOevent(last_map, NULL);
+                  io_event(last_map, NULL, settings);
 					// start the counter
 					last_map->debounce = -sc1000_settings.debounce_time;
 				}
@@ -401,7 +403,7 @@ void process_io()
 			{
 				printf("Button %d-%d held\n", last_map->port, last_map->Pin);
 				if ((!shifted && last_map->Edge == 2) || (shifted && last_map->Edge == 4))
-					IOevent(last_map, NULL);
+               io_event(last_map, NULL, settings);
 				last_map->debounce++;
 			}
 
@@ -414,7 +416,7 @@ void process_io()
 					{
 						// keep running the vol up/down actions if they're held
 						if ((!shifted && last_map->Edge == 2) || (shifted && last_map->Edge == 4))
-							IOevent(last_map, NULL);
+                     io_event(last_map, NULL, settings);
 					}
 				}
 				// check to see if unpressed
@@ -422,7 +424,7 @@ void process_io()
 				{
 					printf("Button %d released\n", last_map->Pin);
 					if (last_map->Edge == 0)
-						IOevent(last_map, NULL);
+                  io_event(last_map, NULL, settings);
 					// start the counter
 					last_map->debounce = -sc1000_settings.debounce_time;
 				}
@@ -439,10 +441,10 @@ void process_io()
 	}
 
 	// Dumb hack to process MIDI commands in this thread rather than the realtime one
-	if (QueuedMidiCommand != NULL)
+	if ( queued_midi_command != NULL)
 	{
-		IOevent(QueuedMidiCommand, QueuedMidiBuffer);
-		QueuedMidiCommand = NULL;
+      io_event(queued_midi_command, queued_midi_buffer, settings);
+      queued_midi_command = NULL;
 	}
 }
 
@@ -488,7 +490,7 @@ void process_pic()
 	buttons[3] = !(result >> 3 & 0x01);
 	capIsTouched = (result >> 4 & 0x01);
 
-	process_io();
+	process_io(&sc1000_settings);
 
 	// Apply volume and fader
 

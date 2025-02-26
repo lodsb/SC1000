@@ -63,7 +63,7 @@ struct deck
 };
 
 int deck_init( struct deck* deck, struct rt* rt,
-               const char* importer,
+               struct sc_settings* settings,
                bool slave );
 
 void deck_clear( struct deck* deck );

@@ -7,16 +7,15 @@
 #include "sc1000.h"
 
 void sc1000_init(struct sc1000* engine, struct sc_settings* settings,
-                 struct rt *rt,
-                 const char *importer)
+                 struct rt *rt)
 {
    printf("sc1000_init\n");
 
    alsa_init(engine, settings->buffer_size);
 
    // Create two decks, both pointed at the same audio device
-   deck_init(&engine->scratch_deck, rt, importer, 0);
-   deck_init(&engine->beat_deck, rt, importer, 1);
+   deck_init(&engine->scratch_deck, rt, settings, 0);
+   deck_init(&engine->beat_deck, rt, settings, 1);
 
    // point deck1's output at deck0, it will be summed in
    engine->scratch_deck.device.beat_player = engine->beat_deck.device.scratch_player;

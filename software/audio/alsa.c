@@ -113,84 +113,6 @@ static struct audio_interface audio_interfaces[] = {
         {false, -1, -1, -1, -1, false, false, false, 2},
         {false, -1, -1, -1, -1, false, false, false, 2}
 };
-struct fmtdef
-{
-   char* fmtname;
-   int format;
-};
-
-static struct fmtdef fmtlist[] = {
-        "S8", SND_PCM_FORMAT_S8,
-        "U8", SND_PCM_FORMAT_U8,
-        "S16_LE", SND_PCM_FORMAT_S16_LE,
-        "S16_BE", SND_PCM_FORMAT_S16_BE,
-        "U16_LE", SND_PCM_FORMAT_U16_LE,
-        "U16_BE", SND_PCM_FORMAT_U16_BE,
-        "S24_LE", SND_PCM_FORMAT_S24_LE,
-        "S24_BE", SND_PCM_FORMAT_S24_BE,
-        "U24_LE", SND_PCM_FORMAT_U24_LE,
-        "U24_BE", SND_PCM_FORMAT_U24_BE,
-        "S32_LE", SND_PCM_FORMAT_S32_LE,
-        "S32_BE", SND_PCM_FORMAT_S32_BE,
-        "U32_LE", SND_PCM_FORMAT_U32_LE,
-        "U32_BE", SND_PCM_FORMAT_U32_BE,
-        "FLOAT_LE", SND_PCM_FORMAT_FLOAT_LE,
-        "FLOAT_BE", SND_PCM_FORMAT_FLOAT_BE,
-        "FLOAT64_LE", SND_PCM_FORMAT_FLOAT64_LE,
-        "FLOAT64_BE", SND_PCM_FORMAT_FLOAT64_BE,
-        "IEC958_SUBFRAME_LE", SND_PCM_FORMAT_IEC958_SUBFRAME_LE,
-        "IEC958_SUBFRAME_BE", SND_PCM_FORMAT_IEC958_SUBFRAME_BE,
-        "MU_LAW", SND_PCM_FORMAT_MU_LAW,
-        "A_LAW", SND_PCM_FORMAT_A_LAW,
-        "IMA_ADPCM", SND_PCM_FORMAT_IMA_ADPCM,
-        "MPEG", SND_PCM_FORMAT_MPEG,
-        "GSM", SND_PCM_FORMAT_GSM,
-        "SPECIAL", SND_PCM_FORMAT_SPECIAL,
-        "S24_3LE", SND_PCM_FORMAT_S24_3LE,
-        "S24_3BE", SND_PCM_FORMAT_S24_3BE,
-        "U24_3LE", SND_PCM_FORMAT_U24_3LE,
-        "U24_3BE", SND_PCM_FORMAT_U24_3BE,
-        "S20_3LE", SND_PCM_FORMAT_S20_3LE,
-        "S20_3BE", SND_PCM_FORMAT_S20_3BE,
-        "U20_3LE", SND_PCM_FORMAT_U20_3LE,
-        "U20_3BE", SND_PCM_FORMAT_U20_3BE,
-        "S18_3LE", SND_PCM_FORMAT_S18_3LE,
-        "S18_3BE", SND_PCM_FORMAT_S18_3BE,
-        "U18_3LE", SND_PCM_FORMAT_U18_3LE,
-        "U18_3BE", SND_PCM_FORMAT_U18_3BE,
-        "S16", SND_PCM_FORMAT_S16,
-        "U16", SND_PCM_FORMAT_U16,
-        "S24", SND_PCM_FORMAT_S24,
-        "U24", SND_PCM_FORMAT_U24,
-        "S32", SND_PCM_FORMAT_S32,
-        "U32", SND_PCM_FORMAT_U32,
-        "FLOAT", SND_PCM_FORMAT_FLOAT,
-        "FLOAT64", SND_PCM_FORMAT_FLOAT64,
-        "IEC958_SUBFRAME", SND_PCM_FORMAT_IEC958_SUBFRAME,
-        NULL, 0
-};
-
-void printfmtmask( const snd_pcm_format_mask_t* fmask )
-{
-   int fmt, prevformat = 0;
-
-   for ( fmt = 0; fmt <= SND_PCM_FORMAT_LAST; ++fmt )
-   {
-      if ( snd_pcm_format_mask_test(fmask, ( snd_pcm_format_t ) fmt) )
-      {
-         if ( prevformat )
-         {
-            printf(", ");
-         }
-         printf("%s", snd_pcm_format_name(( snd_pcm_format_t ) fmt));
-         prevformat = 1;
-      }
-   }
-   if ( !prevformat )
-   {
-      printf("(none)");
-   }
-}
 
 void create_alsa_device_id_string(char* str, int size, int dev, int subdev, bool is_plughw)
 {
@@ -204,7 +126,7 @@ void create_alsa_device_id_string(char* str, int size, int dev, int subdev, bool
    }
 }
 
-static void list_cards()
+static void fill_audio_interface_info()
 {
    register int err;
    int card_id, last_card_id = -1;
@@ -215,7 +137,7 @@ static void list_cards()
    snd_pcm_format_mask_t* fmask;
    snd_pcm_format_mask_alloca(&fmask);
 
-   printf("list_cards\n");
+   printf("fill_audio_interface_info\n");
 
    // force alsa to init some state
    while ((err = snd_card_next(&card_id)) >= 0 && card_id < 0) {
@@ -329,8 +251,6 @@ static void list_cards()
                      }
 
                      snd_pcm_hw_params_get_format_mask(params, fmask);
-                     printf("    Sample formats: ");
-                     printfmtmask(fmask);
                      printf("\n");
 
                      snd_pcm_close(pcm);
@@ -596,7 +516,7 @@ static ssize_t pollfds( struct device* dv, struct pollfd* pe, size_t z )
 /* Collect audio from the player and push it into the device's buffer,
  * for playback */
 
-static int playback( struct device* dv )
+static int playback( struct device* dv, struct sc_settings* settings )
 {
    int r, i;
    struct alsa* alsa = ( struct alsa* ) dv->local;
@@ -656,8 +576,8 @@ static int playback( struct device* dv )
 
   dv->player->GoodToGo = 1;dv->player2->GoodToGo = 1;*/
 
-   player_collect(dv->scratch_player, alsa->playback.buf, alsa->playback.period);
-   player_collect(dv->beat_player, alsa->playback.buf2, alsa->playback.period);
+   player_collect(dv->scratch_player, alsa->playback.buf , alsa->playback.period, settings);
+   player_collect(dv->beat_player   , alsa->playback.buf2, alsa->playback.period, settings);
 
    // mix 2 players together
    for ( i = 0; i < alsa->playback.period * 2; i++ )
@@ -778,7 +698,7 @@ static int handle( struct device* dv )
 
    if ( revents & POLLOUT )
    {
-      r = playback(dv);
+      r = playback(dv, &sc1000_settings);
 
       if ( r < 0 )
       {
@@ -877,7 +797,7 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
 int alsa_init( struct sc1000* sc1000_engine, int buffer_size )
 {
    printf("alsa_init\n");
-   list_cards();
+   fill_audio_interface_info();
 
    if(!audio_interfaces[0].is_internal && audio_interfaces[0].is_present)
    {

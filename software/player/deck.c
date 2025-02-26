@@ -44,7 +44,7 @@
  */
 
 int deck_init( struct deck *d, struct rt *rt,
-               const char *importer,
+               struct sc_settings* settings,
                bool slave)
 {
 	if (!slave)
@@ -56,12 +56,12 @@ int deck_init( struct deck *d, struct rt *rt,
 	d->ncontrol = 0;
 	d->punch = NO_PUNCH;
 	d->protect = false;
-	assert(importer != NULL);
-	d->importer = importer;
+	assert(settings->importer != NULL);
+	d->importer = settings->importer;
 	d->shifted = 0;
 
 	//timecoder_init(&d->timecoder, timecode, speed, rate, phono);
-	player_init(&d->player, TARGET_SAMPLE_RATE, track_acquire_empty());
+	player_init(&d->player, TARGET_SAMPLE_RATE, track_acquire_empty(), settings);
 	cues_reset(&d->cues);
 
 	/* The timecoder and player are driven by requests from

@@ -12,7 +12,7 @@ struct sc1000
 };
 
 void sc1000_init(struct sc1000* engine, struct sc_settings* settings,
-                 struct rt *rt, const char *importer);
+                 struct rt *rt);
 
 void sc1000_load_sample_folders(struct sc1000* engine);
 

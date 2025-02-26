@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 struct sc_settings
 {
 
@@ -69,7 +71,6 @@ struct sc_settings
    bool midi_remapped;
    bool io_remapped;
 
+   const char* importer;
 
 };
-
-extern struct sc_settings sc1000_settings;

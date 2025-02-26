@@ -15,9 +15,6 @@
 # MA 02110-1301, USA.
 #
 
-#CC=/root/buildroot-2018.08.4/output/host/usr/bin/arm-linux-gcc
-#CC=gcc -g
-
 BUILDROOT_PREFIX=/home/niklas/buildroot/buildroot-2018.08.4
 
 CC=$(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
@@ -48,9 +45,12 @@ CFLAGS += -Wall
 CPPFLAGS += -MMD
 LDFLAGS ?= -O3
 
+MAKEFLAGS += --warn-undefined-variables
+
 # Core objects and libraries
 
-OBJS = player/sc1000.o \
+OBJS = global/global.o \
+    player/sc1000.o \
     player/controller.o \
 	player/cues.o \
 	player/deck.o \

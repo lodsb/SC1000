@@ -115,27 +115,3 @@ void device_handle(struct device *dv)
         fputs("Error handling audio device; disabling it\n", stderr);
     }
 }
-
-/*
- * Send audio from a device for processing
- *
- * Pre: buffer pcm contains n stereo samples
- */
-
-void device_submit(struct device *dv, signed short *pcm, size_t n)
-{
-    //assert(dv->timecoder != NULL);
-    //timecoder_submit(dv->timecoder, pcm, n);
-}
-
-/*
- * Collect audio from the processing to send to a device
- *
- * Post: buffer pcm is filled with n stereo samples
- */
-
-void device_collect(struct device *dv, signed short *pcm, size_t n)
-{
-    assert(dv->scratch_player != NULL);
-    player_collect(dv->scratch_player, pcm, n);
-}

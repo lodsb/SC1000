@@ -49,16 +49,11 @@
 #include "thread/thread.h"
 #include "thread/rig.h"
 
+#include "global/global.h"
 
 #include "xwax.h"
 
 //#define DEFAULT_IMPORTER EXECDIR "/xwax-import"
-
-#define DEFAULT_IMPORTER "/root/xwax-import"
-
-struct sc1000      sc1000_engine;
-struct sc_settings sc1000_settings;
-struct rt rt;
 
 
 struct mapping *maps = NULL;
@@ -79,7 +74,7 @@ unsigned int countChars(char *string, char c)
 	return count;
 }
 
-void load_settings_file()
+void create_settings_and_load_user_configuration()
 {
 	FILE *fp;
 	char *line = NULL;
@@ -114,6 +109,7 @@ void load_settings_file()
    sc1000_settings.io_remapped = 0;
    sc1000_settings.jog_reverse = 0;
    sc1000_settings.cut_beats = 0;
+   sc1000_settings.importer = DEFAULT_IMPORTER;
 
 	// later we'll check for sc500 pin and use it to set following settings
 	sc1000_settings.disable_volume_adc = 0;
@@ -305,9 +301,9 @@ int main(int argc, char *argv[])
 
 	use_mlock = false;
 
-   load_settings_file();
+   create_settings_and_load_user_configuration();
 
-   sc1000_init(&sc1000_engine, &sc1000_settings, &rt, DEFAULT_IMPORTER);
+   sc1000_init(&sc1000_engine, &sc1000_settings, &rt);
    sc1000_load_sample_folders(&sc1000_engine);
 
 	rc = EXIT_FAILURE; /* until clean exit */

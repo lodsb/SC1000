@@ -223,7 +223,7 @@ static double build_silence(signed short *pcm, unsigned samples,
  */
 
 void player_init(struct player *pl, unsigned int sample_rate,
-				 struct track *track)
+				     struct track *track, struct sc_settings* settings)
 {
 	assert(track != NULL);
 	assert(sample_rate != 0);
@@ -242,7 +242,7 @@ void player_init(struct player *pl, unsigned int sample_rate,
 	pl->pitch = 0.0;
 	pl->sync_pitch = 1.0;
 	pl->volume = 0.0;
-	pl->setVolume = sc1000_settings.initial_volume;
+	pl->setVolume = settings->initial_volume;
 	pl->GoodToGo = 0;
 	pl->samplesSoFar = 0;
 	pl->note_pitch = 1.0;
@@ -451,7 +451,7 @@ bool NearlyEqual(double val1, double val2, double tolerance)
 		return false;
 }
 
-void player_collect(struct player *pl, signed short *pcm, unsigned samples)
+void player_collect(struct player *pl, signed short *pcm, unsigned samples, struct sc_settings* settings)
 {
 	double r, pitch=0.0, target_volume, amountToDecay, target_pitch, filtered_pitch;
 	double diff;
@@ -465,7 +465,7 @@ void player_collect(struct player *pl, signed short *pcm, unsigned samples)
 	{
 		// Simulate braking
 		if (pl->motor_speed > 0.1)
-			pl->motor_speed = pl->motor_speed - (double)samples / (sc1000_settings.brake_speed * 10);
+			pl->motor_speed = pl->motor_speed - (double)samples / (settings->brake_speed * 10);
 		else
 		{	
 			pl->motor_speed = 0.0;
@@ -488,9 +488,9 @@ void player_collect(struct player *pl, signed short *pcm, unsigned samples)
 		if (pl->pitch < -20.0) pl->pitch = -20.0;
 		// Simulate slipmat for lasers/phasers
 		if (pl->pitch < pl->motor_speed - 0.1)
-			target_pitch = pl->pitch + (double)samples / sc1000_settings.slippiness;
+			target_pitch = pl->pitch + (double)samples / settings->slippiness;
 		else if (pl->pitch > pl->motor_speed + 0.1)
-			target_pitch = pl->pitch - (double)samples / sc1000_settings.slippiness;
+			target_pitch = pl->pitch - (double)samples / settings->slippiness;
 		else
 			target_pitch = pl->motor_speed;
 	}

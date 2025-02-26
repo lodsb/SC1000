@@ -215,156 +215,170 @@ static void list_cards()
    snd_pcm_format_mask_t* fmask;
    snd_pcm_format_mask_alloca(&fmask);
 
-   while ( snd_card_next(&card_id) >= 0 && card_id >= 0 && last_card_id <= card_id )
+   printf("list_cards\n");
+
+   // force alsa to init some state
+   while ((err = snd_card_next(&card_id)) >= 0 && card_id < 0) {
+      printf("First call returned -1, retrying...\n");
+   }
+
+   if(card_id >= 0)
    {
-      snd_ctl_t* card_handle;
-
-      sprintf(str, "hw:%i", card_id);
-
-      printf("Open card %i: %s\n", card_id, str);
-
-      if ( (err = snd_ctl_open(&card_handle, str, 0)) < 0 )
+      do
       {
-         printf("Can't open card %i: %s\n", card_id, snd_strerror(err));
-      }
-      else
-      {
-         snd_ctl_card_info_t* card_info = NULL;
+         printf("card_id %i, last_card_id %i\n", card_id, last_card_id);
 
-         snd_ctl_card_info_alloca(&card_info);
+         snd_ctl_t* card_handle;
 
-         if ( (err = snd_ctl_card_info(card_handle, card_info)) < 0 )
+         sprintf(str, "hw:%i", card_id);
+
+         printf("Open card %i: %s\n", card_id, str);
+
+         if ( (err = snd_ctl_open(&card_handle, str, 0)) < 0 )
          {
-            printf("Can't get info for card %i: %s\n", card_id, snd_strerror(err));
+            printf("Can't open card %i: %s\n", card_id, snd_strerror(err));
          }
          else
          {
-            const char* card_name = snd_ctl_card_info_get_name(card_info);
+            snd_ctl_card_info_t* card_info = NULL;
 
-            printf("Card %i = %s\n", card_id, card_name);
+            snd_ctl_card_info_alloca(&card_info);
 
-            audio_interfaces[card_id].is_present = true;
-            if( strcmp(card_name, "sun4i-codec") == 0 )
+            if ( (err = snd_ctl_card_info(card_handle, card_info)) < 0 )
             {
-               audio_interfaces[card_id].is_internal = true;
-               audio_interfaces[card_id].period = 2;
+               printf("Can't get info for card %i: %s\n", card_id, snd_strerror(err));
             }
             else
             {
-               audio_interfaces[card_id].is_internal = false;
-               audio_interfaces[card_id].period = 3;
-            }
+               const char* card_name = snd_ctl_card_info_get_name(card_info);
 
-            int playback_count = 0;
-            int capture_count = 0;
+               printf("Card %i = %s\n", card_id, card_name);
 
-            int device_id = -1;
-
-            while ( snd_ctl_pcm_next_device(card_handle, &device_id) >= 0 && device_id >= 0 )
-            {
-               create_alsa_device_id_string(pcm_name, sizeof(pcm_name),card_id, device_id, false);
-
-               printf("\nChecking PCM device: %s\n", pcm_name);
-
-               snd_pcm_t* pcm;
-
-               // Try opening in playback mode
-               if ( snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_PLAYBACK, 0) >= 0 )
+               audio_interfaces[ card_id ].is_present = true;
+               if ( strcmp(card_name, "sun4i-codec") == 0 )
                {
-                  snd_pcm_hw_params_t* params;
-                  snd_pcm_hw_params_alloca(&params);
-                  snd_pcm_hw_params_any(pcm, params);
-
-                  // Check if sample rate is supported
-                  if ( snd_pcm_hw_params_test_rate(pcm, params, TARGET_SAMPLE_RATE, 0) == 0 )
-                  {
-                     printf("  - Playback supported at %d Hz\n", TARGET_SAMPLE_RATE);
-
-                     audio_interfaces[card_id].supports_48k_samplerate = true;
-                  }
-                  else
-                  {
-                     printf("  - Playback does NOT support %d Hz\n", TARGET_SAMPLE_RATE);
-
-                     audio_interfaces[card_id].supports_48k_samplerate = false;
-                  }
-
-                  if ( snd_pcm_hw_params_test_format(pcm, params, TARGET_SAMPLE_FORMAT) == 0 )
-                  {
-                     printf("    - Playback supports 16-bit signed format\n");
-
-                     audio_interfaces[card_id].supports_16bit_pcm = true;
-                  }
-                  else
-                  {
-                     printf("    - Playback does NOT support 16-bit signed format\n");
-
-                     audio_interfaces[card_id].supports_16bit_pcm = false;
-                  }
-
-                  unsigned int min, max;
-                  err = snd_pcm_hw_params_get_channels_min(params, &min);
-                  if ( err >= 0 )
-                  {
-                     err = snd_pcm_hw_params_get_channels_max(params, &max);
-                     if ( err >= 0 )
-                     {
-                        if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
-                        {
-                           printf("Outputs: %u\n", max);
-                           playback_count = max;
-                        }
-                     }
-                  }
-
-                  snd_pcm_hw_params_get_format_mask(params, fmask);
-                  printf("    Sample formats: ");
-                  printfmtmask(fmask);
-                  printf("\n");
-
-                  snd_pcm_close(pcm);
+                  audio_interfaces[ card_id ].is_internal = true;
+                  audio_interfaces[ card_id ].period = 2;
+               }
+               else
+               {
+                  audio_interfaces[ card_id ].is_internal = false;
+                  audio_interfaces[ card_id ].period = 3;
                }
 
-               // Try opening in capture mode
-               if ( snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_CAPTURE, 0) >= 0 )
-               {
-                  snd_pcm_hw_params_t* params;
-                  snd_pcm_hw_params_alloca(&params);
-                  snd_pcm_hw_params_any(pcm, params);
+               int playback_count = 0;
+               int capture_count = 0;
 
-                  unsigned int min, max;
-                  err = snd_pcm_hw_params_get_channels_min(params, &min);
-                  if ( err >= 0 )
+               int device_id = -1;
+
+               while ( snd_ctl_pcm_next_device(card_handle, &device_id) >= 0 && device_id >= 0 )
+               {
+                  create_alsa_device_id_string(pcm_name, sizeof(pcm_name), card_id, device_id, false);
+
+                  printf("\nChecking PCM device: %s\n", pcm_name);
+
+                  snd_pcm_t* pcm;
+
+                  // Try opening in playback mode
+                  if ( snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_PLAYBACK, 0) >= 0 )
                   {
-                     err = snd_pcm_hw_params_get_channels_max(params, &max);
+                     snd_pcm_hw_params_t* params;
+                     snd_pcm_hw_params_alloca(&params);
+                     snd_pcm_hw_params_any(pcm, params);
+
+                     // Check if sample rate is supported
+                     if ( snd_pcm_hw_params_test_rate(pcm, params, TARGET_SAMPLE_RATE, 0) == 0 )
+                     {
+                        printf("  - Playback supported at %d Hz\n", TARGET_SAMPLE_RATE);
+
+                        audio_interfaces[ card_id ].supports_48k_samplerate = true;
+                     }
+                     else
+                     {
+                        printf("  - Playback does NOT support %d Hz\n", TARGET_SAMPLE_RATE);
+
+                        audio_interfaces[ card_id ].supports_48k_samplerate = false;
+                     }
+
+                     if ( snd_pcm_hw_params_test_format(pcm, params, TARGET_SAMPLE_FORMAT) == 0 )
+                     {
+                        printf("    - Playback supports 16-bit signed format\n");
+
+                        audio_interfaces[ card_id ].supports_16bit_pcm = true;
+                     }
+                     else
+                     {
+                        printf("    - Playback does NOT support 16-bit signed format\n");
+
+                        audio_interfaces[ card_id ].supports_16bit_pcm = false;
+                     }
+
+                     unsigned int min, max;
+                     err = snd_pcm_hw_params_get_channels_min(params, &min);
                      if ( err >= 0 )
                      {
-                        if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
+                        err = snd_pcm_hw_params_get_channels_max(params, &max);
+                        if ( err >= 0 )
                         {
-                           printf("Inputs: %u\n", max);
-                           capture_count = max;
+                           if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
+                           {
+                              printf("Outputs: %u\n", max);
+                              playback_count = max;
+                           }
                         }
                      }
+
+                     snd_pcm_hw_params_get_format_mask(params, fmask);
+                     printf("    Sample formats: ");
+                     printfmtmask(fmask);
+                     printf("\n");
+
+                     snd_pcm_close(pcm);
                   }
 
-                  snd_pcm_close(pcm);
+                  // Try opening in capture mode
+                  if ( snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_CAPTURE, 0) >= 0 )
+                  {
+                     snd_pcm_hw_params_t* params;
+                     snd_pcm_hw_params_alloca(&params);
+                     snd_pcm_hw_params_any(pcm, params);
+
+                     unsigned int min, max;
+                     err = snd_pcm_hw_params_get_channels_min(params, &min);
+                     if ( err >= 0 )
+                     {
+                        err = snd_pcm_hw_params_get_channels_max(params, &max);
+                        if ( err >= 0 )
+                        {
+                           if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
+                           {
+                              printf("Inputs: %u\n", max);
+                              capture_count = max;
+                           }
+                        }
+                     }
+
+                     snd_pcm_close(pcm);
+                  }
+
+                  audio_interfaces[ card_id ].input_channels = capture_count;
+                  audio_interfaces[ card_id ].output_channels = playback_count;
+
+                  audio_interfaces[ card_id ].device_id = card_id;
+                  audio_interfaces[ card_id ].subdevice_id = 0; // for now
+
+                  printf("I / O %i %i\n", capture_count, playback_count);
                }
 
-               audio_interfaces[card_id].input_channels = capture_count;
-               audio_interfaces[card_id].output_channels= playback_count;
-
-               audio_interfaces[card_id].device_id    = card_id;
-               audio_interfaces[card_id].subdevice_id = 0; // for now
-
-               printf("I / O %i %i\n", capture_count, playback_count);
+               snd_ctl_close(card_handle);
             }
-
-            snd_ctl_close(card_handle);
          }
-      }
 
-      last_card_id = card_id;
+         last_card_id = card_id;
+      } while ( (err = snd_card_next(&card_id)) >= 0 && card_id >= 0 );
    }
+
+   printf("last card id %i %i\n", card_id, last_card_id);
 
    //ALSA allocates some mem to load its config file when we call some of the
    //above functions. Now that we're done getting the info, let's tell ALSA
@@ -862,7 +876,7 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
 
 int alsa_init( struct sc1000* sc1000_engine, int buffer_size )
 {
-
+   printf("alsa_init\n");
    list_cards();
 
    if(!audio_interfaces[0].is_internal && audio_interfaces[0].is_present)

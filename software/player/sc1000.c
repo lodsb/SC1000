@@ -10,6 +10,8 @@ void sc1000_init(struct sc1000* engine, struct sc_settings* settings,
                  struct rt *rt,
                  const char *importer)
 {
+   printf("sc1000_init\n");
+
    alsa_init(engine, settings->buffer_size);
 
    // Create two decks, both pointed at the same audio device

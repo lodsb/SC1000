@@ -5,7 +5,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include "../midi/sc_midimap.h"
+#include "sc_midimap.h"
+
 #include "../xwax.h"
 
 /*
@@ -131,23 +132,23 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
    else if (map->Action == ACTION_NEXTFILE)
    {
-      deck_next_file(deck);
+      deck_next_file(deck, settings);
    }
    else if (map->Action == ACTION_PREVFILE)
    {
-      deck_prev_file(deck);
+      deck_prev_file(deck, settings);
    }
    else if (map->Action == ACTION_RANDOMFILE)
    {
-      deck_random_file(deck);
+      deck_random_file(deck, settings);
    }
    else if (map->Action == ACTION_NEXTFOLDER)
    {
-      deck_next_folder(deck);
+      deck_next_folder(deck, settings);
    }
    else if (map->Action == ACTION_PREVFOLDER)
    {
-      deck_prev_folder(deck);
+      deck_prev_folder(deck, settings);
    }
    else if (map->Action == ACTION_VOLUME)
    {
@@ -222,28 +223,27 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
 }
 
-void io_event( struct mapping *map, unsigned char MidiBuffer[3], struct sc_settings* settings )
+void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000* sc1000_engine, struct sc_settings* settings )
 {
-
 	if (map != NULL)
 	{
       if (map->Action == ACTION_RECORD)
       {
-         if (sc1000_engine.scratch_deck.filesPresent)
+         if (sc1000_engine->scratch_deck.files_present)
          {
             // TODO fix me
-            deck_record(&sc1000_engine.beat_deck); // Always record on deck 0
+            deck_record(&sc1000_engine->beat_deck); // Always record on deck 0
          }
       }
       else
       {
          if ( map->DeckNo == 0 )
          {
-            perform_action_for_deck(&sc1000_engine.beat_deck, map, MidiBuffer, settings);
+            perform_action_for_deck(&sc1000_engine->beat_deck, map, midi_buffer, settings);
          }
          else
          {
-            perform_action_for_deck(&sc1000_engine.scratch_deck, map, MidiBuffer, settings);
+            perform_action_for_deck(&sc1000_engine->scratch_deck, map, midi_buffer, settings);
          }
       }
 	}

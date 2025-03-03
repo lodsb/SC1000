@@ -1,6 +1,3 @@
-#ifndef SC_INPUT_H
-#define SC_INPUT_H
+#pragma once
 
-void SC_Input_Start();
-
-#endif
+void start_sc_input_thread();

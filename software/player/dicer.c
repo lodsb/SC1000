@@ -21,10 +21,10 @@
 
 #include "../util/debug.h"
 
-#include "../midi/midi.h"
-#include "../thread/realtime.h"
+#include "../input/midi.h"
+#include "../input/sc_midimap.h"
 
-#include "../midi/sc_midimap.h"
+#include "../thread/realtime.h"
 #include "../xwax.h"
 
 #include "controller.h"

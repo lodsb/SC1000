@@ -20,7 +20,7 @@
 #ifndef DICER_H
 #define DICER_H
 
-#include "../midi/midi.h"
+#include "../input/midi.h"
 
 #define NUMDECKS 2
 

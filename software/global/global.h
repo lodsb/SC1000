@@ -9,6 +9,6 @@
 
 #define DEFAULT_IMPORTER "/root/xwax-import"
 
-extern struct sc_settings sc1000_settings;
-extern struct sc1000      sc1000_engine;
-extern struct rt          rt;
+extern struct sc_settings g_sc1000_settings;
+extern struct sc1000      g_sc1000_engine;
+extern struct rt          g_rt;

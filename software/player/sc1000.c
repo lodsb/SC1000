@@ -57,7 +57,7 @@ void sc1000_load_sample_folders(struct sc1000* engine)
    deck_load_folder(&engine->beat_deck, "/media/sda/beats/");
    deck_load_folder(&engine->scratch_deck, "/media/sda/samples/");
 
-   if (!engine->scratch_deck.filesPresent)
+   if (!engine->scratch_deck.files_present)
    {
       // Load the default sentence if no sample files found on usb stick
       player_set_track(&engine->scratch_deck.player, track_acquire_by_import(engine->scratch_deck.importer, "/var/scratchsentence.mp3"));

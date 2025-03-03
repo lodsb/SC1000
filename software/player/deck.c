@@ -69,15 +69,15 @@ int deck_init( struct deck *d, struct rt *rt,
 
 	//device_connect_timecoder(&d->device, &d->timecoder);
 
-	d->FirstFolder = NULL;
-	d->CurrentFile = NULL;
-	d->CurrentFolder = NULL;
-	d->NumFiles = 0;
-	d->filesPresent = 0;
+	d->first_folder = NULL;
+	d->current_file = NULL;
+	d->current_folder = NULL;
+	d->num_files = 0;
+	d->files_present = 0;
 
-	d->angleOffset = 0;
-	d->encoderAngle = 0xffff;
-	d->newEncoderAngle = 0xffff;
+	d->angle_offset = 0;
+	d->encoder_angle = 0xffff;
+	d->new_encoder_angle = 0xffff;
 
 	device_connect_player(&d->device, &d->player);
 	return 0;
@@ -202,28 +202,28 @@ void deck_punch_out(struct deck *d )
 void deck_load_folder( struct deck *d, char *FolderName )
 {
 	// Build index of all audio files on the USB stick
-	if ((d->FirstFolder = LoadFileStructure(FolderName, &d->NumFiles)) != NULL && d->NumFiles > 0)
+	if ( (d->first_folder = load_file_structure(FolderName, &d->num_files)) != NULL && d->num_files > 0)
 	{
-		printf("Folder '%s' Indexed with %d files: \n", FolderName, d->NumFiles);
-		d->filesPresent = 1;
+		printf("Folder '%s' Indexed with %d files: \n", FolderName, d->num_files);
+		d->files_present = 1;
 	}
-	if (d->filesPresent)
+	if (d->files_present)
 	{
 		//DumpFileStructure(d->FirstFolder);
-		d->CurrentFolder = d->FirstFolder;
-		d->CurrentFile = d->CurrentFolder->FirstFile;
+		d->current_folder = d->first_folder;
+		d->current_file = d->current_folder->first_file;
 
       printf("deck_load_folder\n");
 
 		// Load first beat
-		player_set_track(&d->player, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
+		player_set_track(&d->player, track_acquire_by_import(d->importer, d->current_file->full_path));
       printf("deck_load_folder set track ok\n");
 		cues_load_from_file(&d->cues, d->player.track->path);
       printf("deck_load_folder set cues_load_from_file ok\n");
 	}
 }
 
-void load_track( struct deck *d, struct track *track )
+void load_track( struct deck *d, struct track *track, struct sc_settings* settings )
 {
 	struct player *pl = &d->player;
 	cues_save_to_file(&d->cues, pl->track->path);
@@ -238,62 +238,62 @@ void load_track( struct deck *d, struct track *track )
 	if (!d->player.justPlay)
 	{
 		// If touch sensor is enabled, set the "zero point" to the current encoder angle
-		if (sc1000_settings.platter_enabled)
-			d->angleOffset = 0 - d->encoderAngle;
+		if (settings->platter_enabled)
+			d->angle_offset = 0 - d->encoder_angle;
 
 		else // If touch sensor is disabled, set the "zero point" to encoder zero point so sticker is exactly on each time sample is loaded
-			d->angleOffset = (pl->position * sc1000_settings.platter_speed) - d->encoderAngle;
+			d->angle_offset = (pl->position * settings->platter_speed) - d->encoder_angle;
 	}
 }
 
-void deck_next_file(struct deck *d )
+void deck_next_file(struct deck *d, struct sc_settings* settings )
 {
-	if (d->filesPresent && d->CurrentFile->next != NULL)
+	if ( d->files_present && d->current_file->next != NULL)
 	{
 		printf("files present\n");
-		d->CurrentFile = d->CurrentFile->next;
-		load_track(d, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
+		d->current_file = d->current_file->next;
+		load_track(d, track_acquire_by_import(d->importer, d->current_file->full_path), settings);
 	} else {
 		printf("file not present\n");
 	}
 	
 }
 
-void deck_prev_file(struct deck *d )
+void deck_prev_file(struct deck *d, struct sc_settings* settings )
 {
-	if (d->filesPresent && d->CurrentFile->prev != NULL)
+	if ( d->files_present && d->current_file->prev != NULL)
 	{
-		d->CurrentFile = d->CurrentFile->prev;
-		load_track(d, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
+		d->current_file = d->current_file->prev;
+		load_track(d, track_acquire_by_import(d->importer, d->current_file->full_path), settings);
 	}
 	
 }
 
-void deck_next_folder(struct deck *d )
+void deck_next_folder(struct deck *d, struct sc_settings* settings )
 {
-	if (d->filesPresent && d->CurrentFolder->next != NULL)
+	if ( d->files_present && d->current_folder->next != NULL)
 	{
-		d->CurrentFolder = d->CurrentFolder->next;
-		d->CurrentFile = d->CurrentFolder->FirstFile;
-		load_track(d, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
+		d->current_folder = d->current_folder->next;
+		d->current_file = d->current_folder->first_file;
+		load_track(d, track_acquire_by_import(d->importer, d->current_file->full_path), settings);
 	}
 }
-void deck_prev_folder(struct deck *d)
+void deck_prev_folder(struct deck *d, struct sc_settings* settings)
 {
-	if (d->filesPresent && d->CurrentFolder->prev != NULL)
+	if ( d->files_present && d->current_folder->prev != NULL)
 	{
-		d->CurrentFolder = d->CurrentFolder->prev;
-		d->CurrentFile = d->CurrentFolder->FirstFile;
-		load_track(d, track_acquire_by_import(d->importer, d->CurrentFile->FullPath));
+		d->current_folder = d->current_folder->prev;
+		d->current_file = d->current_folder->first_file;
+		load_track(d, track_acquire_by_import(d->importer, d->current_file->full_path), settings);
 	}
 }
 
-void deck_random_file(struct deck *d)
+void deck_random_file(struct deck *d, struct sc_settings* settings)
 {
-	if (d->filesPresent){
-		int r = rand() % d->NumFiles;
-		printf("Playing file %d/%d\n", r, d->NumFiles);
-		load_track(d, track_acquire_by_import(d->importer, GetFileAtIndex(r, d->FirstFolder)->FullPath));
+	if (d->files_present){
+		int r = rand() % d->num_files;
+		printf("Playing file %d/%d\n", r, d->num_files);
+		load_track(d, track_acquire_by_import(d->importer, get_file_at_index(r, d->first_folder)->full_path), settings);
 	}
 }
 

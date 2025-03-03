@@ -37,7 +37,7 @@
 
 #include "audio/alsa.h"
 #include "input/sc_input.h"
-#include "midi/sc_midimap.h"
+#include "input/sc_midimap.h"
 #include "player/controller.h"
 #include "player/device.h"
 #include "player/settings.h"
@@ -58,7 +58,7 @@
 
 struct mapping *maps = NULL;
 
-unsigned int countChars(char *string, char c)
+unsigned int count_chars( char *string, char c )
 {
 	unsigned int count = 0;
 	
@@ -74,7 +74,7 @@ unsigned int countChars(char *string, char c)
 	return count;
 }
 
-void create_settings_and_load_user_configuration()
+void create_settings_and_load_user_configuration(struct sc_settings* settings)
 {
 	FILE *fp;
 	char *line = NULL;
@@ -89,31 +89,31 @@ void create_settings_and_load_user_configuration()
 	unsigned char midicommand[3];
 	char *linetok, *valuetok;
 	// set defaults
-	sc1000_settings.buffer_size = 256;
-   sc1000_settings.fader_close_point = 2;
-   sc1000_settings.fader_open_point = 10;
-   sc1000_settings.platter_enabled = 1;
-   sc1000_settings.platter_speed = 2275;
-   sc1000_settings.sample_rate = 48000;
-   sc1000_settings.update_rate = 2000;
-   sc1000_settings.debounce_time = 5;
-   sc1000_settings.hold_time = 100;
-   sc1000_settings.slippiness = 200;
-   sc1000_settings.brake_speed = 3000;
-   sc1000_settings.pitch_range = 50;
-   sc1000_settings.midi_delay = 5;
-   sc1000_settings.volume_amount = 0.03;
-   sc1000_settings.volume_amount_held = 0.001;
-   sc1000_settings.initial_volume = 0.125;
-   sc1000_settings.midi_remapped = 0;
-   sc1000_settings.io_remapped = 0;
-   sc1000_settings.jog_reverse = 0;
-   sc1000_settings.cut_beats = 0;
-   sc1000_settings.importer = DEFAULT_IMPORTER;
+	settings->buffer_size = 256;
+   settings->fader_close_point = 2;
+   settings->fader_open_point = 10;
+   settings->platter_enabled = 1;
+   settings->platter_speed = 2275;
+   settings->sample_rate = 48000;
+   settings->update_rate = 2000;
+   settings->debounce_time = 5;
+   settings->hold_time = 100;
+   settings->slippiness = 200;
+   settings->brake_speed = 3000;
+   settings->pitch_range = 50;
+   settings->midi_delay = 5;
+   settings->volume_amount = 0.03;
+   settings->volume_amount_held = 0.001;
+   settings->initial_volume = 0.125;
+   settings->midi_remapped = 0;
+   settings->io_remapped = 0;
+   settings->jog_reverse = 0;
+   settings->cut_beats = 0;
+   settings->importer = DEFAULT_IMPORTER;
 
 	// later we'll check for sc500 pin and use it to set following settings
-	sc1000_settings.disable_volume_adc = 0;
-   sc1000_settings.disable_pic_buttons = 0;
+	settings->disable_volume_adc = 0;
+   settings->disable_pic_buttons = 0;
 
 	// Load any settings from config file
 	fp = fopen("/media/sda/scsettings.txt", "r");
@@ -137,38 +137,38 @@ void create_settings_and_load_user_configuration()
 				value = strtok_r(NULL, delim, &linetok);
 
 				if (strcmp(param, "buffer_size") == 0)
-               sc1000_settings.buffer_size = atoi(value);
+               settings->buffer_size = atoi(value);
 				else if (strcmp(param, "fader_close_point") == 0)
-               sc1000_settings.fader_close_point = atoi(value);
+               settings->fader_close_point = atoi(value);
 				else if (strcmp(param, "fader_open_point") == 0)
-               sc1000_settings.fader_open_point = atoi(value);
+               settings->fader_open_point = atoi(value);
 				else if (strcmp(param, "platter_enabled") == 0)
-               sc1000_settings.platter_enabled = atoi(value);
+               settings->platter_enabled = atoi(value);
 				else if (strcmp(param, "disable_volume_adc") == 0)
-               sc1000_settings.disable_volume_adc = atoi(value);
+               settings->disable_volume_adc = atoi(value);
 				else if (strcmp(param, "platter_speed") == 0)
-               sc1000_settings.platter_speed = atoi(value);
+               settings->platter_speed = atoi(value);
 				else if (strcmp(param, "sample_rate") == 0)
-               sc1000_settings.sample_rate = atoi(value);
+               settings->sample_rate = atoi(value);
 				else if (strcmp(param, "update_rate") == 0)
-               sc1000_settings.update_rate = atoi(value);
+               settings->update_rate = atoi(value);
 				else if (strcmp(param, "debounce_time") == 0)
-               sc1000_settings.debounce_time = atoi(value);
+               settings->debounce_time = atoi(value);
 				else if (strcmp(param, "hold_time") == 0)
-               sc1000_settings.hold_time = atoi(value);
+               settings->hold_time = atoi(value);
 				else if (strcmp(param, "slippiness") == 0)
-               sc1000_settings.slippiness = atoi(value);
+               settings->slippiness = atoi(value);
 				else if (strcmp(param, "brake_speed") == 0)
-               sc1000_settings.brake_speed = atoi(value);
+               settings->brake_speed = atoi(value);
 				else if (strcmp(param, "pitch_range") == 0)
-               sc1000_settings.pitch_range = atoi(value);
+               settings->pitch_range = atoi(value);
 				else if (strcmp(param, "jog_reverse") == 0)
-               sc1000_settings.jog_reverse = atoi(value);
+               settings->jog_reverse = atoi(value);
 				else if (strcmp(param, "cut_beats") == 0)
-               sc1000_settings.cut_beats = atoi(value);
+               settings->cut_beats = atoi(value);
 				else if (strstr(param, "midii") != NULL)
 				{
-               sc1000_settings.midi_remapped = 1;
+               settings->midi_remapped = 1;
 					controlType = atoi(strtok_r(value, delimc, &valuetok));
 					channel = atoi(strtok_r(NULL, delimc, &valuetok));
 					notenum = atoi(strtok_r(NULL, delimc, &valuetok));
@@ -216,8 +216,8 @@ void create_settings_and_load_user_configuration()
 				}
 				else if (strstr(param, "io") != NULL)
 				{
-               sc1000_settings.io_remapped = 1;
-					unsigned int commaCount = countChars(value, ',');
+               settings->io_remapped = 1;
+					unsigned int commaCount = count_chars(value, ',');
 					//printf("Found io %s - comacount %d\n", value, commaCount);
 					port = 0;
 					if (commaCount == 4){
@@ -241,7 +241,7 @@ void create_settings_and_load_user_configuration()
 						actions);
 				}
 				else if (strcmp(param, "midi_delay") == 0) // Literally just a sleep to allow USB devices longer to initialize
-					sc1000_settings.midi_delay = atoi(value);
+					settings->midi_delay = atoi(value);
 				else
 				{
 					printf("Unrecognised configuration line - Param : %s , value : %s\n", param, value);
@@ -253,13 +253,13 @@ void create_settings_and_load_user_configuration()
 	
 
 	printf("bs %d, fcp %d, fop %d, pe %d, ps %d, sr %d, ur %d\n",
-          sc1000_settings.buffer_size,
-          sc1000_settings.fader_close_point,
-          sc1000_settings.fader_open_point,
-          sc1000_settings.platter_enabled,
-          sc1000_settings.platter_speed,
-          sc1000_settings.sample_rate,
-          sc1000_settings.update_rate);
+          settings->buffer_size,
+          settings->fader_close_point,
+          settings->fader_open_point,
+          settings->platter_enabled,
+          settings->platter_speed,
+          settings->sample_rate,
+          settings->update_rate);
 
 	if (fp)
 		fclose(fp);
@@ -297,24 +297,24 @@ int main(int argc, char *argv[])
 		return -1;
 	if (rig_init() == -1)
 		return -1;
-	rt_init(&rt);
+	rt_init(&g_rt);
 
 	use_mlock = false;
 
-   create_settings_and_load_user_configuration();
+   create_settings_and_load_user_configuration(&g_sc1000_settings);
 
-   sc1000_init(&sc1000_engine, &sc1000_settings, &rt);
-   sc1000_load_sample_folders(&sc1000_engine);
+   sc1000_init(&g_sc1000_engine, &g_sc1000_settings, &g_rt);
+   sc1000_load_sample_folders(&g_sc1000_engine);
 
 	rc = EXIT_FAILURE; /* until clean exit */
 
 	// Start input processing thread
-	SC_Input_Start();
+   start_sc_input_thread();
 
 	// Start realtime stuff
 	priority = 0;
 
-	if (rt_start(&rt, priority) == -1)
+	if (rt_start(&g_rt, priority) == -1)
 		return -1;
 
 	if (use_mlock && mlockall(MCL_CURRENT) == -1)
@@ -337,9 +337,9 @@ int main(int argc, char *argv[])
 
 out_interface:
 out_rt:
-	rt_stop(&rt);
+	rt_stop(&g_rt);
 
-   sc1000_clear(&sc1000_engine);
+   sc1000_clear(&g_sc1000_engine);
 
 	rig_clear();
 	thread_global_clear();

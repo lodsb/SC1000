@@ -653,17 +653,18 @@ static int playback( struct device* dv, struct sc_settings* settings )
          }
       }
    }
-   r = snd_pcm_writei(alsa->playback.pcm, alsa->playback.buf,
-                      alsa->playback.period);
+
+   r = snd_pcm_writei(alsa->playback.pcm, alsa->playback.buf,alsa->playback.period);
+
    if ( r < 0 )
    {
+      fprintf(stderr, "Error writing pcm data %d\n", r);
       return r;
    }
 
    if ( r < alsa->playback.period )
    {
-      fprintf(stderr, "alsa: playback underrun %d/%ld.\n", r,
-              alsa->playback.period);
+      fprintf(stderr, "alsa: playback underrun %d/%ld.\n", r, alsa->playback.period);
    }
 
    if ( !dv->scratch_player->recordingStarted && dv->scratch_player->recording )
@@ -698,7 +699,7 @@ static int handle( struct device* dv )
 
    if ( revents & POLLOUT )
    {
-      r = playback(dv, &sc1000_settings);
+      r = playback(dv, &g_sc1000_settings);
 
       if ( r < 0 )
       {
@@ -797,6 +798,9 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
 int alsa_init( struct sc1000* sc1000_engine, int buffer_size )
 {
    printf("alsa_init\n");
+
+   sleep(2);
+
    fill_audio_interface_info();
 
    if(!audio_interfaces[0].is_internal && audio_interfaces[0].is_present)
@@ -809,6 +813,7 @@ int alsa_init( struct sc1000* sc1000_engine, int buffer_size )
    }
    else
    {
+      // must be internal
       return setup_alsa_device(sc1000_engine, &audio_interfaces[0], buffer_size);
    }
 }

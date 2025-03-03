@@ -55,20 +55,20 @@ OBJS = global/global.o \
 	player/cues.o \
 	player/deck.o \
 	player/device.o \
-	audio/dummy.o \
-	buffers/external.o \
+	player/sc_playlist.o \
+	player/dicer.o \
 	player/player.o \
-	thread/realtime.o \
-	thread/rig.o \
-	util/status.o \
-	thread/thread.o \
 	player/track.o \
 	audio/alsa.o \
+	audio/dummy.o \
+	buffers/external.o \
+	thread/realtime.o \
+	thread/rig.o \
+	thread/thread.o \
+	util/status.o \
 	input/sc_input.o \
-	player/sc_playlist.o \
-	midi/sc_midimap.o \
-	player/dicer.o \
-	midi/midi.o \
+	input/midi.o \
+	input/sc_midimap.o \
 	xwax.o
 DEVICE_CPPFLAGS = -DWITH_ALSA
 DEVICE_LIBS = $(ALSA_LIBS)
@@ -129,7 +129,6 @@ clean:
 		rm -f xwax \
 			$(OBJS) $(DEPS) \
 			$(TESTS) $(TEST_OBJS) \
-			mktimecode mktimecode.o \
 			TAGS
 
 -include $(DEPS)

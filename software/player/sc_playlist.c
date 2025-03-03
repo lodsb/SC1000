@@ -11,10 +11,10 @@
 #include <string.h>
 #include "sc_playlist.h"
 
-struct File * GetFileAtIndex(unsigned int index, struct Folder *FirstFolder) {
+struct sc_file * get_file_at_index( unsigned int index, struct sc_folder *first_folder ) {
 
-	struct Folder *CurrFolder = FirstFolder;
-	struct File *CurrFile = FirstFolder->FirstFile;
+	struct sc_folder *CurrFolder = first_folder;
+	struct sc_file *CurrFile = first_folder->first_file;
 
 	bool FoundIt = false;
 
@@ -30,43 +30,43 @@ struct File * GetFileAtIndex(unsigned int index, struct Folder *FirstFolder) {
 				if (CurrFolder == NULL)
 					return NULL;
 
-				CurrFile = CurrFolder->FirstFile;
+				CurrFile = CurrFolder->first_file;
 			}
 		}
 	}
 	return NULL;
 }
 
-struct Folder * LoadFileStructure(char *BaseFolderPath,
-		unsigned int *TotalNum) {
+struct sc_folder * load_file_structure( char *base_folder_path,
+                                        unsigned int *total_num ) {
 
-	struct Folder *prevFold = NULL;
-	struct File *prevFile = NULL;
+	struct sc_folder *prevFold = NULL;
+	struct sc_file *prevFile = NULL;
 
 	struct dirent **dirList, **fileList;
 	int n, m, o, p;
 
-	struct Folder *FirstFolder = NULL;
-	struct File *FirstFile = NULL;
+	struct sc_folder *FirstFolder = NULL;
+	struct sc_file *FirstFile = NULL;
 
-	struct File* new_file;
-	struct Folder* new_folder;
+	struct sc_file* new_file;
+	struct sc_folder* new_folder;
 
 	char tempName[257];
 	unsigned int FilesCount = 0;
 	
-	*TotalNum = 0;
+	*total_num = 0;
 	
-	printf("indexing %s\n", BaseFolderPath);
+	printf("indexing %s\n", base_folder_path);
 
-	n = scandir(BaseFolderPath, &dirList, 0, alphasort);
+	n = scandir(base_folder_path, &dirList, 0, alphasort);
 	if (n <= 0){
 		return NULL;
 	}
 	for (o = 0; o < n; o++) {
 		if (dirList[o]->d_name[0] != '.') {
 
-			sprintf(tempName, "%s%s", BaseFolderPath, dirList[o]->d_name);
+			sprintf(tempName, "%s%s", base_folder_path, dirList[o]->d_name);
 
 			m = scandir(tempName, &fileList, 0, alphasort);
 
@@ -76,9 +76,9 @@ struct Folder * LoadFileStructure(char *BaseFolderPath,
 			for (p = 0; p < m; p++) { 
 				if (fileList[p]->d_name[0] != '.' && strstr(fileList[p]->d_name, ".cue") == NULL) {
 
-					new_file = (struct File*) malloc(sizeof(struct File));
-					snprintf(new_file->FullPath, 256, "%s/%s", tempName,
-							fileList[p]->d_name);
+					new_file = (struct sc_file*) malloc(sizeof(struct sc_file));
+					snprintf(new_file->full_path, 256, "%s/%s", tempName,
+                        fileList[p]->d_name);
 
 					new_file->Index = FilesCount++;
 
@@ -106,9 +106,9 @@ struct Folder * LoadFileStructure(char *BaseFolderPath,
 
 			if (FirstFile != NULL) { // i.e. we found at least one file
 
-				new_folder = (struct Folder*) malloc(sizeof(struct Folder));
-				sprintf(new_folder->FullPath, "%s%s", BaseFolderPath,
-						dirList[o]->d_name);
+				new_folder = (struct sc_folder*) malloc(sizeof(struct sc_folder));
+				sprintf(new_folder->full_path, "%s%s", base_folder_path,
+                    dirList[o]->d_name);
 
 				// set up prev connection
 				new_folder->prev = prevFold;
@@ -126,7 +126,7 @@ struct Folder * LoadFileStructure(char *BaseFolderPath,
 					FirstFolder = new_folder;
 				}
 
-				new_folder->FirstFile = FirstFile;
+				new_folder->first_file = FirstFile;
 
 				//printf("Added Subfolder %s\n", new_folder->FullPath);
 
@@ -142,26 +142,26 @@ struct Folder * LoadFileStructure(char *BaseFolderPath,
 
 	free(dirList);
 
-	*TotalNum = FilesCount;
+	*total_num = FilesCount;
 	
-	printf ("Added folder %s : %d files found\n", BaseFolderPath, FilesCount);
+	printf ("Added folder %s : %d files found\n", base_folder_path, FilesCount);
 
 	return FirstFolder;
 
 }
 
-void DumpFileStructure(struct Folder *FirstFolder) {
+void dump_file_structure( struct sc_folder *FirstFolder ) {
 
-	struct Folder *currFold = FirstFolder;
-	struct File *currFile;
+	struct sc_folder *currFold = FirstFolder;
+	struct sc_file *currFile;
 
 	do {
-		currFile = currFold->FirstFile;
+		currFile = currFold->first_file;
 
 		if (currFile != NULL) {
 
 			do {
-				printf("%s - %s\n", currFold->FullPath, currFile->FullPath);
+				printf("%s - %s\n", currFold->full_path, currFile->full_path);
 
 			} while ((currFile = currFile->next) != NULL);
 		}

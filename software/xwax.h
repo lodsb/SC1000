@@ -21,5 +21,5 @@
 
 #include "player/sc1000.h"
 
-extern struct sc1000 sc1000_engine;
+extern struct sc1000 g_sc1000_engine;
 

@@ -53,13 +53,13 @@ struct deck
    // If a shift modifier has been pressed recently
    bool shifted;
 
-   struct Folder* FirstFolder, * CurrentFolder;
-   struct File* CurrentFile;
-   unsigned int NumFiles;
-   bool filesPresent;
+   struct sc_folder* first_folder, * current_folder;
+   struct sc_file* current_file;
+   unsigned int num_files;
+   bool files_present;
 
-   int32_t angleOffset; // Offset between encoder angle and track position, reset every time the platter is touched
-   int encoderAngle, newEncoderAngle;
+   int32_t angle_offset; // Offset between encoder angle and track position, reset every time the platter is touched
+   int encoder_angle, new_encoder_angle;
 };
 
 int deck_init( struct deck* deck, struct rt* rt,
@@ -84,15 +84,15 @@ void deck_punch_out( struct deck* d );
 
 void deck_load_folder( struct deck* d, char* FolderName );
 
-void deck_next_file( struct deck* d );
+void deck_next_file( struct deck* d, struct sc_settings* settings );
 
-void deck_prev_file( struct deck* d );
+void deck_prev_file( struct deck* d, struct sc_settings* settings );
 
-void deck_next_folder( struct deck* d );
+void deck_next_folder( struct deck* d, struct sc_settings* settings );
 
-void deck_prev_folder( struct deck* d );
+void deck_prev_folder( struct deck* d, struct sc_settings* settings );
 
-void deck_random_file( struct deck* d );
+void deck_random_file( struct deck* d, struct sc_settings* settings );
 
 void deck_record( struct deck* d );
 

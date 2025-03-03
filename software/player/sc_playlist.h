@@ -1,25 +1,23 @@
-#ifndef PLAYLIST_H
-#define PLAYLIST_H
+#pragma once
 
 // Folders contain files
-struct Folder {
-	char FullPath[260];
-	struct File* FirstFile;
-	struct Folder* next;
-	struct Folder* prev;
+struct sc_folder {
+	char full_path[256];
+	struct sc_file*   first_file;
+	struct sc_folder* next;
+	struct sc_folder* prev;
 };
 
 // Struct to hold file (beat or sample)
-struct File {
-	char FullPath[260];
+struct sc_file {
+	char full_path[256];
 	unsigned int Index;
-	struct File* next;
-	struct File* prev;
+	struct sc_file* next;
+	struct sc_file* prev;
 };
 
-struct File * GetFileAtIndex(unsigned int index, struct Folder *FirstFolder);
+struct sc_file * get_file_at_index( unsigned int index, struct sc_folder *first_folder );
 
-struct Folder * LoadFileStructure(char *BaseFolderPath, unsigned int *TotalNum);
+struct sc_folder * load_file_structure( char *base_folder_path, unsigned int *total_num );
 
-void DumpFileStructure(struct Folder *FirstFolder);
-#endif
+void dump_file_structure( struct sc_folder *FirstFolder );

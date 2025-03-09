@@ -203,77 +203,121 @@ static double build_pcm(signed short *pcm, unsigned samples, double sample_dt,
 	return (sample / tr->rate) - position;
 }
 
-static double build_pcm_add_dither( signed short *pcm, unsigned samples, double sample_dt,
-                                    struct track *tr, double position, double pitch, double end_pitch, double start_vol,
-                                    double end_vol )
+static inline void build_pcm_add_dither( signed short *pcm, unsigned samples,
+                                         double sample_dt_1, struct track *tr_1, double position_1, double pitch_1, double end_pitch_1, double start_vol_1, double end_vol_1, double* r1,
+                                         double sample_dt_2, struct track *tr_2, double position_2, double pitch_2, double end_pitch_2, double start_vol_2, double end_vol_2, double* r2)
 {
-   int s;
-   double sample, step, vol, gradient, pitchGradient;
+   double sample_1 = position_1 * tr_1->rate;
+   double vol_1 = start_vol_1;
+   double volume_gradient_1 = (end_vol_1 - start_vol_1) / samples;
+   double pitch_gradient_1 = (end_pitch_1 - pitch_1) / samples;
 
-   sample = position * tr->rate;
-   step = sample_dt * pitch * tr->rate;
+   double sample_2 = position_2 * tr_2->rate;
+   double vol_2 = start_vol_2;
+   double volume_gradient_2 = (end_vol_2 - start_vol_2) / samples;
+   double pitch_gradient_2 = (end_pitch_2 - pitch_2) / samples;
 
-   vol = start_vol;
-   gradient = (end_vol - start_vol) / samples;
 
-   pitchGradient = (end_pitch - pitch) / samples;
-
-   for (s = 0; s < samples; s++)
+   for (int s = 0; s < samples; s++)
    {
+      double step_1 = sample_dt_1 * pitch_1 * tr_1->rate;
 
-      step = sample_dt * pitch * tr->rate;
+      double f_1;
+      signed short i_1[PLAYER_CHANNELS][4];
+      {
 
-      int c, sa, q;
-      double f;
-      signed short i[PLAYER_CHANNELS][4];
+         /* 4-sample window for interpolation */
+         int sa = ( int ) sample_1;
+         if ( sample_1 < 0.0 )
+         {
+            sa--;
+         }
 
-      /* 4-sample window for interpolation */
-
-      sa = (int)sample;
-      if (sample < 0.0)
+         f_1 = sample_1 - sa;
          sa--;
-      f = sample - sa;
-      sa--;
 
-      // wrap to track boundary, i.e. loop
-      if (tr->length != 0)
-      {
-         sa = sa % (int)tr->length;
-         // Actually don't let people go to minus numbers
-         // as entire track might not be loaded yet
-         //if (sa < 0) sa += tr->length;
-      }
-
-      for (q = 0; q < 4; q++, sa++)
-      {
-         if (sa < 0 || sa >= tr->length)
+         // wrap to track boundary, i.e. loop
+         if ( tr_1->length != 0 )
          {
-            for (c = 0; c < PLAYER_CHANNELS; c++)
-               i[c][q] = 0;
+            sa = sa % ( int ) tr_1->length;
+            // Actually don't let people go to minus numbers
+            // as entire track might not be loaded yet
+            //if (sa < 0) sa += tr->length;
          }
-         else
-         {
-            signed short *ts;
-            int c;
 
-            ts = track_get_sample(tr, sa);
-            for (c = 0; c < PLAYER_CHANNELS; c++)
-               i[c][q] = ts[c];
+         for (int q = 0; q < 4; q++, sa++ )
+         {
+            if ( sa < 0 || sa >= tr_1->length )
+            {
+               for (int c = 0; c < PLAYER_CHANNELS; c++ )
+                  i_1[ c ][ q ] = 0;
+            }
+            else
+            {
+               signed short* ts;
+
+               ts = track_get_sample(tr_1, sa);
+               for (int c = 0; c < PLAYER_CHANNELS; c++ )
+                  i_1[ c ][ q ] = ts[ c ];
+            }
          }
       }
 
-      for (c = 0; c < PLAYER_CHANNELS; c++)
+      double step_2 = sample_dt_2 * pitch_2 * tr_2->rate;
+
+      double f_2;
+      signed short i_2[PLAYER_CHANNELS][4];
       {
-         double v;
 
-         v = vol * cubic_interpolate(i[c], f);
-         v = v + *pcm + dither();
+         /* 4-sample window for interpolation */
+         int sa = ( int ) sample_2;
+         if ( sample_2 < 0.0 )
+         {
+            sa--;
+         }
 
-         if (v > SHRT_MAX)
+         f_2 = sample_2 - sa;
+         sa--;
+
+         // wrap to track boundary, i.e. loop
+         if ( tr_2->length != 0 )
+         {
+            sa = sa % ( int ) tr_2->length;
+            // Actually don't let people go to minus numbers
+            // as entire track might not be loaded yet
+            //if (sa < 0) sa += tr->length;
+         }
+
+         for (int q = 0; q < 4; q++, sa++ )
+         {
+            if ( sa < 0 || sa >= tr_2->length )
+            {
+               for (int c = 0; c < PLAYER_CHANNELS; c++ )
+                  i_2[ c ][ q ] = 0;
+            }
+            else
+            {
+               signed short* ts;
+
+               ts = track_get_sample(tr_2, sa);
+               for (int c = 0; c < PLAYER_CHANNELS; c++ )
+                  i_2[ c ][ q ] = ts[ c ];
+            }
+         }
+      }
+
+      for (int c = 0; c < PLAYER_CHANNELS; c++)
+      {
+         double v_1 = vol_1 * cubic_interpolate(i_1[c], f_1);
+         double v_2 = vol_2 * cubic_interpolate(i_2[c], f_2);
+
+         double v = v_1 + v_2 + dither();
+
+         if ( v > SHRT_MAX)
          {
             *pcm++ = SHRT_MAX;
          }
-         else if (v < SHRT_MIN)
+         else if ( v < SHRT_MIN)
          {
             *pcm++ = SHRT_MIN;
          }
@@ -283,20 +327,17 @@ static double build_pcm_add_dither( signed short *pcm, unsigned samples, double 
          }
       }
 
-      sample += step;
+      sample_1 += step_1;
+      vol_1 += volume_gradient_1;
+      pitch_1 += pitch_gradient_1;
 
-      // Loop when track gets to end
-      /*f (sample > tr->length && looping){
-         sample = 0;
-
-      }*/
-
-      vol += gradient;
-      pitch += pitchGradient;
+      sample_2 += step_2;
+      vol_2 += volume_gradient_2;
+      pitch_2 += pitch_gradient_2;      
    }
 
-   //return sample_dt * pitch * samples;
-   return (sample / tr->rate) - position;
+   *r1 = (sample_1 / tr_1->rate) - position_1;
+   *r2 = (sample_2 / tr_2->rate) - position_2;
 }
 
 /*
@@ -709,36 +750,32 @@ void setup_player_for_block( struct player* pl, unsigned long samples, const str
 void player_collect_add( struct player *pl1, struct player *pl2, signed short *pcm, unsigned long samples, struct sc_settings* settings )
 {
    {
-      double r, target_volume, filtered_pitch;
+      double r1, target_volume,   filtered_pitch;
+      double r2, target_volume_2, filtered_pitch_2;
 
       setup_player_for_block(pl1, samples, settings, &target_volume, &filtered_pitch);
-
-      if ( spin_try_lock(&pl1->lock) )
-      {
-         r = build_pcm(pcm, samples, pl1->sample_dt, pl1->track,
-                       pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume);
-         pl1->pitch = filtered_pitch;
-         spin_unlock(&pl1->lock);
-      }
-
-      pl1->position += r;
-      pl1->volume = target_volume;
-   }
-
-   {
-      double r, target_volume_2, filtered_pitch_2;
-      
       setup_player_for_block(pl2, samples, settings, &target_volume_2, &filtered_pitch_2);
 
-      if ( spin_try_lock(&pl2->lock) )
+      if ( spin_try_lock(&pl1->lock) && spin_try_lock(&pl2->lock) )
       {
-         r = build_pcm_add_dither(pcm, samples, pl2->sample_dt, pl2->track,
-                       pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2, pl2->volume, target_volume_2);
+         /*r1 = build_pcm(pcm, samples, pl1->sample_dt, pl1->track,
+                       pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume);*/
+
+         build_pcm_add_dither(pcm, samples,
+                              pl1->sample_dt, pl1->track, pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume, &r1,
+                              pl2->sample_dt, pl2->track,pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2, pl2->volume, target_volume_2, &r2);
+
+         pl1->pitch = filtered_pitch;
+         spin_unlock(&pl1->lock);
+
          pl2->pitch = filtered_pitch_2;
          spin_unlock(&pl2->lock);
       }
 
-      pl2->position += r;
+      pl1->position += r1;
+      pl1->volume = target_volume;
+
+      pl2->position += r2;
       pl2->volume = target_volume_2;
    }
 }

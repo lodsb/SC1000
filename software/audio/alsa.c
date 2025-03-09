@@ -24,6 +24,7 @@
 #include <alsa/asoundlib.h>
 #include <stdint.h>
 #include <math.h>
+#include <stdint-gcc.h>
 
 #include "../global/global.h"
 
@@ -59,6 +60,7 @@ struct alsa_pcm
 struct alsa
 {
    struct alsa_pcm capture, playback;
+   bool playing;
 };
 
 static void alsa_error( const char* msg, int r )
@@ -312,94 +314,96 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
                      snd_pcm_stream_t stream, int buffer_size, int period )
 {
    int r, dir;
-   unsigned int p;
    size_t bytes;
-   snd_pcm_hw_params_t* hw_params;
+   snd_pcm_hw_params_t *hw_params;
+   snd_pcm_uframes_t frames;
 
    r = snd_pcm_open(&alsa->pcm, device_name, stream, SND_PCM_NONBLOCK);
-   if ( !chk("open", r) )
-   {
+   if (!chk("open", r))
       return -1;
-   }
 
    snd_pcm_hw_params_alloca(&hw_params);
 
    r = snd_pcm_hw_params_any(alsa->pcm, hw_params);
-   if ( !chk("hw_params_any", r) )
-   {
+   if (!chk("hw_params_any", r))
       return -1;
-   }
 
    r = snd_pcm_hw_params_set_access(alsa->pcm, hw_params,
-                                    SND_PCM_ACCESS_RW_INTERLEAVED);
-   if ( !chk("hw_params_set_access", r) )
-   {
+                                    SND_PCM_ACCESS_MMAP_INTERLEAVED);
+   if (!chk("hw_params_set_access", r))
       return -1;
-   }
 
-   r = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, TARGET_SAMPLE_FORMAT);
-   if ( !chk("hw_params_set_format", r) )
-   {
+   r = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, SND_PCM_FORMAT_S16);
+   if (!chk("hw_params_set_format", r)) {
       fprintf(stderr, "16-bit signed format is not available. "
                       "You may need to use a 'plughw' device.\n");
       return -1;
    }
 
+   /* Prevent accidentally introducing excess resamplers. There is
+    * already one on the signal path to handle pitch adjustments.
+    * This is even if a 'plug' device is used, which effectively lets
+    * the user unknowingly select any sample rate. */
+
+   r = snd_pcm_hw_params_set_rate_resample(alsa->pcm, hw_params, 0);
+   if (!chk("hw_params_set_rate_resample", r))
+      return -1;
+
    r = snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, TARGET_SAMPLE_RATE, 0);
-   if ( !chk("hw_params_set_rate", r) )
-   {
-      fprintf(stderr, "%dHz sample rate not available. You may need to use "
-                      "a 'plughw' device.\n",
+   if (!chk("hw_params_set_rate", r)) {
+      fprintf(stderr, "Sample rate of %dHz is not implemented by the hardware.\n",
               TARGET_SAMPLE_RATE);
       return -1;
    }
+
    alsa->rate = TARGET_SAMPLE_RATE;
 
    r = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, DEVICE_CHANNELS);
-   if ( !chk("hw_params_set_channels", r) )
-   {
+   if (!chk("hw_params_set_channels", r)) {
       fprintf(stderr, "%d channel audio not available on this device.\n",
               DEVICE_CHANNELS);
       return -1;
    }
 
-   /* p = buffer_time * 1000;
-   dir = -1;
-   r = snd_pcm_hw_params_set_buffer_time_near(alsa->pcm, hw_params, &p, &dir);
-   if (!chk("hw_params_set_buffer_time_near", r)) {
-       fprintf(stderr, "Buffer of %dms may be too small for this hardware.\n",
-               buffer_time);
-       return -1;
-   }*/
+   /* This is fundamentally a latency-sensitive application that is
+    * likely to be the primary application running, so assume we want
+    * the hardware to be giving us immediate wakeups */
 
-   if ( snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size) < 0 )
-   {
-      fprintf(stderr, "Error setting buffer_size.\n");
-      return (-1);
-   }
-
-   p = period;
-   dir = 1;
-   r = snd_pcm_hw_params_set_periods_min(alsa->pcm, hw_params, &p, &dir);
-   if ( !chk("hw_params_set_periods_min", r) )
-   {
-      fprintf(stderr, "Buffer may be too small for this hardware.\n");
+   r = snd_pcm_hw_params_set_period_size_first(alsa->pcm, hw_params, &frames, &dir);
+   if (!chk("hw_params_set_buffer_time_near", r))
       return -1;
+
+   switch (stream) {
+      case SND_PCM_STREAM_CAPTURE:
+         /* Maximum buffer to minimise drops */
+         r = snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames);
+         if (!chk("hw_params_set_buffer_size_last", r))
+            return -1;
+         break;
+
+      case SND_PCM_STREAM_PLAYBACK:
+         /* Smallest possible buffer to keep latencies low */
+         r = snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size);
+         if (!chk("hw_params_set_buffer_size", r)) {
+            fprintf(stderr, "Buffer of %u samples is probably too small; try increasing it with --buffer\n",
+                    buffer_size);
+            return -1;
+         }
+         break;
+
+      default:
+         abort();
    }
 
    r = snd_pcm_hw_params(alsa->pcm, hw_params);
-   if ( !chk("hw_params", r) )
-   {
+   if (!chk("hw_params", r))
       return -1;
-   }
 
    r = snd_pcm_hw_params_get_period_size(hw_params, &alsa->period, &dir);
    if ( !chk("get_period_size", r) )
    {
       return -1;
    }
-   snd_pcm_uframes_t fun;
-   r = snd_pcm_hw_params_get_buffer_size(hw_params, &fun);
 
    bytes = alsa->period * DEVICE_CHANNELS * sizeof(signed short);
    alsa->buf = malloc(bytes);
@@ -430,7 +434,9 @@ static void pcm_close( struct alsa_pcm* alsa )
    {
       abort();
    }
+
    free(alsa->buf);
+   free(alsa->buf2);
 }
 
 static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
@@ -482,6 +488,12 @@ static int pcm_revents( struct alsa_pcm* alsa, unsigned short* revents )
 
 static void start( struct device* dv )
 {
+   /*
+   struct alsa *alsa = (struct alsa*)dv->local;
+
+   if (snd_pcm_start(alsa->capture.pcm) < 0)
+      abort();
+   */
 }
 
 /* Register this device's interest in a set of pollfd file
@@ -513,14 +525,113 @@ static ssize_t pollfds( struct device* dv, struct pollfd* pe, size_t z )
    return total;
 }
 
+/* Access the interleaved area presented by the ALSA library.  The
+ * device is opened SND_PCM_FORMAT_S16 which is in the local endianess
+ * and therefore is "signed short" */
+
+static signed short* buffer(const snd_pcm_channel_area_t *area,
+                            snd_pcm_uframes_t offset)
+{
+   assert(area->first % 8 == 0);
+   assert(area->step == 32);  /* 2 channel 16-bit interleaved */
+
+   return area->addr + area->first / 8 + offset * area->step / 8;
+}
+
+static void process_players( struct device* dv, struct alsa* alsa, struct sc_settings* settings, signed short* pcm, unsigned long frames )
+{
+   //player_collect(dv->scratch_player, pcm , frames, settings);
+   //player_collect(dv->beat_player   , pcm, frames, settings);
+
+   // mix 2 stereo players together
+//   for ( int i = 0; i < frames * 2; i++ )
+//   {
+//      int32_t adder = ( int32_t ) alsa->playback.buf[ i ] + ( int32_t ) alsa->playback.buf2[ i ];
+//
+//      // saturate add
+//      if ( adder > INT16_MAX )
+//      {
+//         adder = INT16_MAX;
+//      }
+//      if ( adder < INT16_MIN )
+//      {
+//         adder = INT16_MIN;
+//      }
+//
+//      //pcm[ i ] = ( int16_t ) adder;
+//   }
+
+
+   player_collect_add(dv->beat_player, dv->scratch_player, pcm, frames, settings);
+}
+
+static void synthesize_beep( struct device* dv, struct alsa* alsa, unsigned long frames  )
+{// Add beeps, if we need to
+   if ( dv->scratch_player->playingBeep != -1 )
+   {
+      for ( int i = 0; i < frames * 2; i++ )
+      {
+         char curChar = BEEPS[ dv->scratch_player->playingBeep ][ dv->scratch_player->beepPos / BEEPSPEED ];
+         if ( curChar )
+         {
+            unsigned int beepFreq = 0;
+
+            if ( curChar == '-' )
+            {
+               beepFreq = 440;
+            }
+            else if ( curChar == '_' )
+            {
+               beepFreq = 220;
+            }
+            else
+            {
+               beepFreq = 0;
+            }
+
+            if ( beepFreq != 0 )
+            {
+               int32_t adder = ( int32_t ) alsa->playback.buf[ i ] +
+                               (sin((( double ) dv->scratch_player->beepPos / (48000.0 / ( double ) beepFreq)) * 6.2831) * 20000.0);
+
+               // saturate add
+               if ( adder > INT16_MAX )
+               {
+                  adder = INT16_MAX;
+               }
+               if ( adder < INT16_MIN )
+               {
+                  adder = INT16_MIN;
+               }
+               alsa->playback.buf[ i ] = ( int16_t ) adder;
+            }
+            dv->scratch_player->beepPos++;
+         }
+         else
+         {
+            dv->scratch_player->playingBeep = -1;
+            dv->scratch_player->beepPos = 0;
+            break;
+         }
+      }
+   }
+}
+
+static void record_to_file( struct device* dv, const struct alsa* alsa, unsigned long frames )
+{
+   if ( dv->scratch_player->recording )
+   {
+      fwrite(alsa->playback.buf, alsa->playback.period * DEVICE_CHANNELS * sizeof(signed short), 1, dv->scratch_player->recordingFile);
+   }
+}
+
 /* Collect audio from the player and push it into the device's buffer,
  * for playback */
 
 static int playback( struct device* dv, struct sc_settings* settings )
 {
-   int r, i;
+   int r;
    struct alsa* alsa = ( struct alsa* ) dv->local;
-   static int32_t adder = 0;
    static int16_t next_recording_number = 0;
    static char syncCommandLine[300];
 
@@ -572,99 +683,31 @@ static int playback( struct device* dv, struct sc_settings* settings )
       }
    }
 
-   /*if ((dv->player->GoodToGo && dv->player2->GoodToGo) || (dv->player->track->finished == 1 && dv->player2->track->finished)){
+   snd_pcm_uframes_t frames, offset;
+   const snd_pcm_channel_area_t *area;
 
-  dv->player->GoodToGo = 1;dv->player2->GoodToGo = 1;*/
+   frames = snd_pcm_avail_update(alsa->playback.pcm);
+   if (frames <= 0)
+      return (int)frames;
 
-   player_collect(dv->scratch_player, alsa->playback.buf , alsa->playback.period, settings);
-   player_collect(dv->beat_player   , alsa->playback.buf2, alsa->playback.period, settings);
+   r = snd_pcm_mmap_begin(alsa->playback.pcm, &area, &offset, &frames);
+   if (r < 0)
+      return r;
 
-   // mix 2 players together
-   for ( i = 0; i < alsa->playback.period * 2; i++ )
-   {
-      adder = ( int32_t ) alsa->playback.buf[ i ] + ( int32_t ) alsa->playback.buf2[ i ];
+   assert(frames > 0);  /* otherwise we were woken unnecessarily */
 
-      // saturate add
-      if ( adder > INT16_MAX )
-      {
-         adder = INT16_MAX;
-      }
-      if ( adder < INT16_MIN )
-      {
-         adder = INT16_MIN;
-      }
-      alsa->playback.buf[ i ] = ( int16_t ) adder;
-   }
-   //}
+   signed short* pcm = buffer(&area[0], offset);
 
-   if ( dv->scratch_player->recording )
-   {
-      fwrite(alsa->playback.buf, alsa->playback.period * DEVICE_CHANNELS * sizeof(signed short), 1,
-             dv->scratch_player->recordingFile);
-   }
+   process_players(dv, alsa, settings, pcm, frames);
 
-   // Add beeps, if we need to
-   if ( dv->scratch_player->playingBeep != -1 )
-   {
+   //record_to_file(dv, alsa, frames);
+   //synthesize_beep(dv, alsa, frames);
 
-      for ( i = 0; i < alsa->playback.period * 2; i++ )
-      {
-         char curChar = BEEPS[ dv->scratch_player->playingBeep ][ dv->scratch_player->beepPos / BEEPSPEED ];
-         if ( curChar )
-         {
-            unsigned int beepFreq = 0;
-
-            if ( curChar == '-' )
-            {
-               beepFreq = 440;
-            }
-            else if ( curChar == '_' )
-            {
-               beepFreq = 220;
-            }
-            else
-            {
-               beepFreq = 0;
-            }
-
-            if ( beepFreq != 0 )
-            {
-               adder = ( int32_t ) alsa->playback.buf[ i ] +
-                       (sin((( double ) dv->scratch_player->beepPos / (48000.0 / ( double ) beepFreq)) * 6.2831) * 20000.0);
-
-               // saturate add
-               if ( adder > INT16_MAX )
-               {
-                  adder = INT16_MAX;
-               }
-               if ( adder < INT16_MIN )
-               {
-                  adder = INT16_MIN;
-               }
-               alsa->playback.buf[ i ] = ( int16_t ) adder;
-            }
-            dv->scratch_player->beepPos++;
-         }
-         else
-         {
-            dv->scratch_player->playingBeep = -1;
-            dv->scratch_player->beepPos = 0;
-            break;
-         }
-      }
-   }
-
-   r = snd_pcm_writei(alsa->playback.pcm, alsa->playback.buf,alsa->playback.period);
-
-   if ( r < 0 )
+   r = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
+   if (r < 0)
    {
       fprintf(stderr, "Error writing pcm data %d\n", r);
       return r;
-   }
-
-   if ( r < alsa->playback.period )
-   {
-      fprintf(stderr, "alsa: playback underrun %d/%ld.\n", r, alsa->playback.period);
    }
 
    if ( !dv->scratch_player->recordingStarted && dv->scratch_player->recording )
@@ -675,6 +718,14 @@ static int playback( struct device* dv, struct sc_settings* settings )
       system(syncCommandLine);
       dv->scratch_player->recording = 0;
       dv->scratch_player->playingBeep = BEEP_RECORDINGSTOP;
+   }
+
+   if (!alsa->playing) {
+      r = snd_pcm_start(alsa->playback.pcm);
+      if (r < 0)
+         return r;
+
+      alsa->playing = true;
    }
 
    return 0;
@@ -713,6 +764,8 @@ static int handle( struct device* dv )
                alsa_error("prepare", r);
                return -1;
             }
+
+            alsa->playing = false;
 
             /* The device starts when data is written. POLLOUT
              * events are generated in prepared state. */

@@ -878,7 +878,9 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 		if (tv.tv_sec != lastTime)
 		{
 			lastTime = tv.tv_sec;
-			printf("\033[H\033[J"); // Clear Screen
+
+         //printf("\033[H\033[J"); // Clear Screen
+
 			printf("\nFPS: %06u - ADCS: %04u, %04u, %04u, %04u, %04u\nButtons: %01u,%01u,%01u,%01u,%01u\nTP: %f, P : %f\n%f -- %f\n",
                 frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3], sc1000_engine->scratch_deck.encoder_angle,
                 buttons[0], buttons[1], buttons[2], buttons[3], capIsTouched,

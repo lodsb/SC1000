@@ -40,10 +40,13 @@ DOCDIR ?= $(PREFIX)/share/doc
 
 # Build flags
 
-CFLAGS ?= -O3
+OPT_FLAGS = -O3 -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize
+
 CFLAGS += -Wall
+CFLAGS += -DNDEBUG
+CFLAGS += $(OPT_FLAGS)
 CPPFLAGS += -MMD
-LDFLAGS ?= -O3
+LDFLAGS += $(OPT_FLAGS)
 
 MAKEFLAGS += --warn-undefined-variables
 

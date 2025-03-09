@@ -171,7 +171,7 @@ static double build_pcm(signed short *pcm, unsigned samples, double sample_dt,
 		{
 			double v;
 
-			v = vol * cubic_interpolate(i[c], f) + dither();
+			v = vol * cubic_interpolate(i[c], f);// + dither();
 
 			if (v > SHRT_MAX)
 			{
@@ -201,6 +201,102 @@ static double build_pcm(signed short *pcm, unsigned samples, double sample_dt,
 
 	//return sample_dt * pitch * samples;
 	return (sample / tr->rate) - position;
+}
+
+static double build_pcm_add_dither( signed short *pcm, unsigned samples, double sample_dt,
+                                    struct track *tr, double position, double pitch, double end_pitch, double start_vol,
+                                    double end_vol )
+{
+   int s;
+   double sample, step, vol, gradient, pitchGradient;
+
+   sample = position * tr->rate;
+   step = sample_dt * pitch * tr->rate;
+
+   vol = start_vol;
+   gradient = (end_vol - start_vol) / samples;
+
+   pitchGradient = (end_pitch - pitch) / samples;
+
+   for (s = 0; s < samples; s++)
+   {
+
+      step = sample_dt * pitch * tr->rate;
+
+      int c, sa, q;
+      double f;
+      signed short i[PLAYER_CHANNELS][4];
+
+      /* 4-sample window for interpolation */
+
+      sa = (int)sample;
+      if (sample < 0.0)
+         sa--;
+      f = sample - sa;
+      sa--;
+
+      // wrap to track boundary, i.e. loop
+      if (tr->length != 0)
+      {
+         sa = sa % (int)tr->length;
+         // Actually don't let people go to minus numbers
+         // as entire track might not be loaded yet
+         //if (sa < 0) sa += tr->length;
+      }
+
+      for (q = 0; q < 4; q++, sa++)
+      {
+         if (sa < 0 || sa >= tr->length)
+         {
+            for (c = 0; c < PLAYER_CHANNELS; c++)
+               i[c][q] = 0;
+         }
+         else
+         {
+            signed short *ts;
+            int c;
+
+            ts = track_get_sample(tr, sa);
+            for (c = 0; c < PLAYER_CHANNELS; c++)
+               i[c][q] = ts[c];
+         }
+      }
+
+      for (c = 0; c < PLAYER_CHANNELS; c++)
+      {
+         double v;
+
+         v = vol * cubic_interpolate(i[c], f);
+         v = v + *pcm + dither();
+
+         if (v > SHRT_MAX)
+         {
+            *pcm++ = SHRT_MAX;
+         }
+         else if (v < SHRT_MIN)
+         {
+            *pcm++ = SHRT_MIN;
+         }
+         else
+         {
+            *pcm++ = (signed short)v;
+         }
+      }
+
+      sample += step;
+
+      // Loop when track gets to end
+      /*f (sample > tr->length && looping){
+         sample = 0;
+
+      }*/
+
+      vol += gradient;
+      pitch += pitchGradient;
+   }
+
+   //return sample_dt * pitch * samples;
+   return (sample / tr->rate) - position;
 }
 
 /*
@@ -443,7 +539,8 @@ unsigned long samplesSoFar = 0;
  * Post: buffer at pcm is filled with the given number of samples
  */
 
-bool NearlyEqual(double val1, double val2, double tolerance)
+
+bool nearly_equal( double val1, double val2, double tolerance )
 {
 	if (fabs(val1 - val2) < tolerance)
 		return true;
@@ -451,7 +548,7 @@ bool NearlyEqual(double val1, double val2, double tolerance)
 		return false;
 }
 
-void player_collect(struct player *pl, signed short *pcm, unsigned samples, struct sc_settings* settings)
+void player_collect(struct player *pl, signed short *pcm, unsigned long samples, struct sc_settings* settings)
 {
 	double r, pitch=0.0, target_volume, amountToDecay, target_pitch, filtered_pitch;
 	double diff;
@@ -506,7 +603,7 @@ void player_collect(struct player *pl, signed short *pcm, unsigned samples, stru
 
 	amountToDecay = (DECAYSAMPLES) / (double)samples;
 
-	if (NearlyEqual(pl->faderTarget, pl->faderVolume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
+	if ( nearly_equal(pl->faderTarget, pl->faderVolume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
 		pl->faderVolume = pl->faderTarget;
 	else if (pl->faderTarget > pl->faderVolume)
 		pl->faderVolume += amountToDecay;
@@ -538,4 +635,110 @@ void player_collect(struct player *pl, signed short *pcm, unsigned samples, stru
 	pl->position += r;
 
 	pl->volume = target_volume;
+}
+
+void setup_player_for_block( struct player* pl, unsigned long samples, const struct sc_settings* settings,
+                             double* target_volume,
+                             double* filtered_pitch )
+{
+   pl->samplesSoFar += samples;
+
+   double target_pitch, diff;
+
+   //pl->target_position = (sin(((double) pl->samplesSoFar) / 20000) + 1); // Sine wave to simulate scratching, used for debugging
+
+   // figure out motor speed
+   if (pl->stopped)
+   {
+      // Simulate braking
+      if (pl->motor_speed > 0.1)
+         pl->motor_speed = pl->motor_speed - (double)samples / (settings->brake_speed * 10);
+      else
+      {
+         pl->motor_speed = 0.0;
+      }
+   }
+   else
+   {
+      // stack all the pitch bends on top of each other
+      pl->motor_speed = pl->note_pitch * pl->fader_pitch * pl->bend_pitch;
+   }
+
+   // deal with case where we've released the platter
+   if ( pl->justPlay == 1 || // platter is always released on beat deck
+        (
+                pl->capTouch == 0 && pl->oldCapTouch == 0 // don't do it on the first iteration so we pick up backspins
+        )
+           )
+   {
+      if (pl->pitch > 20.0) pl->pitch = 20.0;
+      if (pl->pitch < -20.0) pl->pitch = -20.0;
+      // Simulate slipmat for lasers/phasers
+      if (pl->pitch < pl->motor_speed - 0.1)
+         target_pitch = pl->pitch + (double)samples / settings->slippiness;
+      else if (pl->pitch > pl->motor_speed + 0.1)
+         target_pitch = pl->pitch - (double)samples / settings->slippiness;
+      else
+         target_pitch = pl->motor_speed;
+   }
+   else
+   {
+      diff = pl->position - pl->target_position;
+
+      target_pitch = (-diff) * 40;
+   }
+   pl->oldCapTouch = pl->capTouch;
+
+   (*filtered_pitch) = (0.1 * target_pitch) + (0.9 * pl->pitch);
+
+   double amountToDecay = (DECAYSAMPLES) / (double)samples;
+
+   if ( nearly_equal(pl->faderTarget, pl->faderVolume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
+      pl->faderVolume = pl->faderTarget;
+   else if (pl->faderTarget > pl->faderVolume)
+      pl->faderVolume += amountToDecay;
+   else
+      pl->faderVolume -= amountToDecay;
+
+   (*target_volume) = fabs(pl->pitch) * VOLUME * pl->faderVolume;
+
+   if ( (*target_volume) > 1.0)
+      (*target_volume) = 1.0;
+}
+
+void player_collect_add( struct player *pl1, struct player *pl2, signed short *pcm, unsigned long samples, struct sc_settings* settings )
+{
+   {
+      double r, target_volume, filtered_pitch;
+
+      setup_player_for_block(pl1, samples, settings, &target_volume, &filtered_pitch);
+
+      if ( spin_try_lock(&pl1->lock) )
+      {
+         r = build_pcm(pcm, samples, pl1->sample_dt, pl1->track,
+                       pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume);
+         pl1->pitch = filtered_pitch;
+         spin_unlock(&pl1->lock);
+      }
+
+      pl1->position += r;
+      pl1->volume = target_volume;
+   }
+
+   {
+      double r, target_volume_2, filtered_pitch_2;
+      
+      setup_player_for_block(pl2, samples, settings, &target_volume_2, &filtered_pitch_2);
+
+      if ( spin_try_lock(&pl2->lock) )
+      {
+         r = build_pcm_add_dither(pcm, samples, pl2->sample_dt, pl2->track,
+                       pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2, pl2->volume, target_volume_2);
+         pl2->pitch = filtered_pitch_2;
+         spin_unlock(&pl2->lock);
+      }
+
+      pl2->position += r;
+      pl2->volume = target_volume_2;
+   }
 }

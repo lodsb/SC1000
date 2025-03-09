@@ -17,8 +17,7 @@
  *
  */
 
-#ifndef PLAYER_H
-#define PLAYER_H
+#pragma once
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -111,6 +110,6 @@ void player_seek_to( struct player* pl, double seconds );
 
 void player_recue( struct player* pl );
 
-void player_collect( struct player* pl, signed short* pcm, unsigned samples, struct sc_settings* settings);
+void player_collect( struct player* pl, signed short* pcm, unsigned long samples, struct sc_settings* settings);
+void player_collect_add( struct player *pl1, struct player *pl2, signed short *pcm, unsigned long samples, struct sc_settings* settings );
 
-#endif

@@ -217,7 +217,6 @@ static inline void build_pcm_add_dither( signed short *pcm, unsigned samples,
    double volume_gradient_2 = (end_vol_2 - start_vol_2) / samples;
    double pitch_gradient_2 = (end_pitch_2 - pitch_2) / samples;
 
-
    for (int s = 0; s < samples; s++)
    {
       double step_1 = sample_dt_1 * pitch_1 * tr_1->rate;
@@ -328,12 +327,12 @@ static inline void build_pcm_add_dither( signed short *pcm, unsigned samples,
       }
 
       sample_1 += step_1;
-      vol_1 += volume_gradient_1;
-      pitch_1 += pitch_gradient_1;
+      vol_1    += volume_gradient_1;
+      pitch_1  += pitch_gradient_1;
 
       sample_2 += step_2;
-      vol_2 += volume_gradient_2;
-      pitch_2 += pitch_gradient_2;      
+      vol_2    += volume_gradient_2;
+      pitch_2  += pitch_gradient_2;
    }
 
    *r1 = (sample_1 / tr_1->rate) - position_1;
@@ -369,7 +368,6 @@ void player_init(struct player *pl, unsigned int sample_rate,
 
 	pl->sample_dt = 1.0 / sample_rate;
 	pl->track = track;
-	//player_set_timecoder(pl, tc);
 
 	pl->position = 0.0;
 	pl->offset = 0.0;
@@ -379,17 +377,17 @@ void player_init(struct player *pl, unsigned int sample_rate,
 	pl->pitch = 0.0;
 	pl->sync_pitch = 1.0;
 	pl->volume = 0.0;
-	pl->setVolume = settings->initial_volume;
-	pl->GoodToGo = 0;
+	pl->set_volume = settings->initial_volume;
+
 	pl->samplesSoFar = 0;
 	pl->note_pitch = 1.0;
 	pl->fader_pitch = 1.0;
 	pl->bend_pitch = 1.0;
 	pl->stopped = 0;
 	pl->recording = false;
-	pl->recordingStarted = false;
-	pl->beepPos = 0;
-	pl->playingBeep = -1;
+	pl->recording_started = false;
+	pl->beep_pos = 0;
+	pl->playing_beep = -1;
 }
 
 /*
@@ -401,37 +399,6 @@ void player_clear(struct player *pl)
 {
 	spin_clear(&pl->lock);
 	track_release(pl->track);
-}
-
-/*
- * Enable or disable timecode control
- */
-
-void player_set_timecode_control(struct player *pl, bool on)
-{
-	if (on && !pl->timecode_control)
-		pl->recalibrate = true;
-	pl->timecode_control = on;
-}
-
-/*
- * Toggle timecode control
- *
- * Return: the new state of timecode control
- */
-
-bool player_toggle_timecode_control(struct player *pl)
-{
-	pl->timecode_control = !pl->timecode_control;
-	if (pl->timecode_control)
-		pl->recalibrate = true;
-	return pl->timecode_control;
-}
-
-void player_set_internal_playback(struct player *pl)
-{
-	pl->timecode_control = false;
-	pl->pitch = 1.0;
 }
 
 double player_get_position(struct player *pl)
@@ -512,51 +479,6 @@ void player_clone(struct player *pl, const struct player *from)
  * Return: 0 on success or -1 if the timecoder is not currently valid
  */
 
-/*
- * Synchronise to the position given by the timecoder without
- * affecting the audio playback position
- */
-
-static void calibrate_to_timecode_position(struct player *pl)
-{
-	assert(pl->target_position != TARGET_UNKNOWN);
-	pl->offset += pl->target_position - pl->position;
-	pl->position = pl->target_position;
-}
-
-void retarget(struct player *pl)
-{
-	double diff;
-
-	if (pl->recalibrate)
-	{
-		calibrate_to_timecode_position(pl);
-		pl->recalibrate = false;
-	}
-
-	/* Calculate the pitch compensation required to get us back on
-	 * track with the absolute timecode position */
-
-	diff = pl->position - pl->target_position;
-	pl->last_difference = diff; /* to print in user interface */
-
-	if (fabs(diff) > SKIP_THRESHOLD)
-	{
-
-		/* Jump the track to the time */
-
-		pl->position = pl->target_position;
-		fprintf(stderr, "Seek to new position %.2lfs.\n", pl->position);
-	}
-	else if (fabs(pl->pitch) > SYNC_PITCH)
-	{
-
-		/* Re-calculate the drift between the timecoder pitch from
-		 * the sine wave and the timecode values */
-
-		pl->sync_pitch = pl->pitch / (diff / SYNC_TIME + pl->pitch);
-	}
-}
 
 /*
  * Seek to the given position
@@ -616,9 +538,9 @@ void player_collect(struct player *pl, signed short *pcm, unsigned long samples,
 	}
 
 	// deal with case where we've released the platter
-	if ( pl->justPlay == 1 || // platter is always released on beat deck
+	if ( pl->just_play == 1 || // platter is always released on beat deck
 		(
-			pl->capTouch == 0 && pl->oldCapTouch == 0 // don't do it on the first iteration so we pick up backspins
+              pl->cap_touch == 0 && pl->cap_touch_old == 0 // don't do it on the first iteration so we pick up backspins
 		) 
 	)
 	{
@@ -638,20 +560,20 @@ void player_collect(struct player *pl, signed short *pcm, unsigned long samples,
 
 		target_pitch = (-diff) * 40;
 	}
-	pl->oldCapTouch = pl->capTouch;
+	pl->cap_touch_old = pl->cap_touch;
 
 	filtered_pitch = (0.1 * target_pitch) + (0.9 * pl->pitch);
 
 	amountToDecay = (DECAYSAMPLES) / (double)samples;
 
-	if ( nearly_equal(pl->faderTarget, pl->faderVolume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
-		pl->faderVolume = pl->faderTarget;
-	else if (pl->faderTarget > pl->faderVolume)
-		pl->faderVolume += amountToDecay;
+	if ( nearly_equal(pl->fader_target, pl->fader_volume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
+		pl->fader_volume = pl->fader_target;
+	else if ( pl->fader_target > pl->fader_volume)
+		pl->fader_volume += amountToDecay;
 	else
-		pl->faderVolume -= amountToDecay;
+		pl->fader_volume -= amountToDecay;
 
-	target_volume = fabs(pl->pitch) * VOLUME * pl->faderVolume;
+	target_volume = fabs(pl->pitch) * VOLUME * pl->fader_volume;
 
 	if (target_volume > 1.0)
 		target_volume = 1.0;
@@ -706,9 +628,9 @@ void setup_player_for_block( struct player* pl, unsigned long samples, const str
    }
 
    // deal with case where we've released the platter
-   if ( pl->justPlay == 1 || // platter is always released on beat deck
+   if ( pl->just_play == 1 || // platter is always released on beat deck
         (
-                pl->capTouch == 0 && pl->oldCapTouch == 0 // don't do it on the first iteration so we pick up backspins
+                pl->cap_touch == 0 && pl->cap_touch_old == 0 // don't do it on the first iteration so we pick up backspins
         )
            )
    {
@@ -728,20 +650,20 @@ void setup_player_for_block( struct player* pl, unsigned long samples, const str
 
       target_pitch = (-diff) * 40;
    }
-   pl->oldCapTouch = pl->capTouch;
+   pl->cap_touch_old = pl->cap_touch;
 
    (*filtered_pitch) = (0.1 * target_pitch) + (0.9 * pl->pitch);
 
-   double amountToDecay = (DECAYSAMPLES) / (double)samples;
+   double vol_decay_amount = (DECAYSAMPLES) / (double)samples;
 
-   if ( nearly_equal(pl->faderTarget, pl->faderVolume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
-      pl->faderVolume = pl->faderTarget;
-   else if (pl->faderTarget > pl->faderVolume)
-      pl->faderVolume += amountToDecay;
+   if ( nearly_equal(pl->fader_target, pl->fader_volume, vol_decay_amount)) // Make sure to set directly when we're nearly there to avoid oscilation
+      pl->fader_volume = pl->fader_target;
+   else if ( pl->fader_target > pl->fader_volume)
+      pl->fader_volume += vol_decay_amount;
    else
-      pl->faderVolume -= amountToDecay;
+      pl->fader_volume -= vol_decay_amount;
 
-   (*target_volume) = fabs(pl->pitch) * VOLUME * pl->faderVolume;
+   (*target_volume) = fabs(pl->pitch) * VOLUME * pl->fader_volume;
 
    if ( (*target_volume) > 1.0)
       (*target_volume) = 1.0;
@@ -750,10 +672,12 @@ void setup_player_for_block( struct player* pl, unsigned long samples, const str
 void player_collect_add( struct player *pl1, struct player *pl2, signed short *pcm, unsigned long samples, struct sc_settings* settings )
 {
    {
-      double r1, target_volume,   filtered_pitch;
-      double r2, target_volume_2, filtered_pitch_2;
+      double r1 = 0;
+      double r2 = 0;
+      double target_volume_1, filtered_pitch_1;
+      double target_volume_2, filtered_pitch_2;
 
-      setup_player_for_block(pl1, samples, settings, &target_volume, &filtered_pitch);
+      setup_player_for_block(pl1, samples, settings, &target_volume_1, &filtered_pitch_1);
       setup_player_for_block(pl2, samples, settings, &target_volume_2, &filtered_pitch_2);
 
       if ( spin_try_lock(&pl1->lock) && spin_try_lock(&pl2->lock) )
@@ -762,10 +686,10 @@ void player_collect_add( struct player *pl1, struct player *pl2, signed short *p
                        pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume);*/
 
          build_pcm_add_dither(pcm, samples,
-                              pl1->sample_dt, pl1->track, pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume, &r1,
+                              pl1->sample_dt, pl1->track, pl1->position - pl1->offset, pl1->pitch, filtered_pitch_1, pl1->volume, target_volume_1, &r1,
                               pl2->sample_dt, pl2->track,pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2, pl2->volume, target_volume_2, &r2);
 
-         pl1->pitch = filtered_pitch;
+         pl1->pitch = filtered_pitch_1;
          spin_unlock(&pl1->lock);
 
          pl2->pitch = filtered_pitch_2;
@@ -773,7 +697,7 @@ void player_collect_add( struct player *pl1, struct player *pl2, signed short *p
       }
 
       pl1->position += r1;
-      pl1->volume = target_volume;
+      pl1->volume = target_volume_1;
 
       pl2->position += r2;
       pl2->volume = target_volume_2;

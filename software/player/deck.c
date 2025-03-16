@@ -211,7 +211,7 @@ void deck_load_folder( struct deck *d, char *FolderName )
 	{
 		//DumpFileStructure(d->FirstFolder);
 		d->current_folder = d->first_folder;
-		d->current_file = d->current_folder->first_file;
+		d->current_file   = d->current_folder->first_file;
 
       printf("deck_load_folder\n");
 
@@ -235,14 +235,17 @@ void load_track( struct deck *d, struct track *track, struct sc_settings* settin
 	pl->fader_pitch = 1.0;
 	pl->bend_pitch = 1.0;
 	pl->note_pitch = 1.0;
-	if (!d->player.justPlay)
+	if (!d->player.just_play)
 	{
 		// If touch sensor is enabled, set the "zero point" to the current encoder angle
 		if (settings->platter_enabled)
-			d->angle_offset = 0 - d->encoder_angle;
-
+      {
+         d->angle_offset = 0 - d->encoder_angle;
+      }
 		else // If touch sensor is disabled, set the "zero point" to encoder zero point so sticker is exactly on each time sample is loaded
-			d->angle_offset = (pl->position * settings->platter_speed) - d->encoder_angle;
+      {
+         d->angle_offset = (pl->position * settings->platter_speed) - d->encoder_angle;
+      }
 	}
 }
 
@@ -299,5 +302,5 @@ void deck_random_file(struct deck *d, struct sc_settings* settings)
 
 void deck_record(struct deck *d )
 {
-	d->player.recordingStarted = !d->player.recordingStarted;
+	d->player.recording_started = !d->player.recording_started;
 }

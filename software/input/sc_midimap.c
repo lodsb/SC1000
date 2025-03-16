@@ -74,7 +74,7 @@ void add_IO_mapping(struct mapping **maps, unsigned char Pin, bool Pullup, bool 
  * Process an IO event
  */
 extern bool shifted;
-extern int pitchMode;
+extern int pitch_mode;
 
 // Queued command from the realtime thread
 // this is so dumb
@@ -152,7 +152,7 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
    else if (map->Action == ACTION_VOLUME)
    {
-      deck->player.setVolume = (double)MidiBuffer[2] / 128.0;
+      deck->player.set_volume = (double)MidiBuffer[2] / 128.0;
    }
    else if (map->Action == ACTION_PITCH)
    {
@@ -176,12 +176,12 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
    else if (map->Action == ACTION_JOGPIT)
    {
-      pitchMode = map->DeckNo + 1;
-      printf("Set Pitch Mode %d\n", pitchMode);
+      pitch_mode = map->DeckNo + 1;
+      printf("Set Pitch Mode %d\n", pitch_mode);
    }
    else if (map->Action == ACTION_JOGPSTOP)
    {
-      pitchMode = 0;
+      pitch_mode = 0;
    }
    else if (map->Action == ACTION_SC500)
    {
@@ -189,27 +189,27 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned ch
    }
    else if (map->Action == ACTION_VOLUP)
    {
-      deck->player.setVolume += settings->volume_amount;
-      if ( deck->player.setVolume > 1.0)
-         deck->player.setVolume = 1.0;
+      deck->player.set_volume += settings->volume_amount;
+      if ( deck->player.set_volume > 1.0)
+         deck->player.set_volume = 1.0;
    }
    else if (map->Action == ACTION_VOLDOWN)
    {
-      deck->player.setVolume -= settings->volume_amount;
-      if ( deck->player.setVolume < 0.0)
-         deck->player.setVolume = 0.0;
+      deck->player.set_volume -= settings->volume_amount;
+      if ( deck->player.set_volume < 0.0)
+         deck->player.set_volume = 0.0;
    }
    else if (map->Action == ACTION_VOLUHOLD)
    {
-      deck->player.setVolume += settings->volume_amount_held;
-      if ( deck->player.setVolume > 1.0)
-         deck->player.setVolume = 1.0;
+      deck->player.set_volume += settings->volume_amount_held;
+      if ( deck->player.set_volume > 1.0)
+         deck->player.set_volume = 1.0;
    }
    else if (map->Action == ACTION_VOLDHOLD)
    {
-      deck->player.setVolume -= settings->volume_amount_held;
-      if ( deck->player.setVolume < 0.0)
-         deck->player.setVolume = 0.0;
+      deck->player.set_volume -= settings->volume_amount_held;
+      if ( deck->player.set_volume < 0.0)
+         deck->player.set_volume = 0.0;
    }
    else if (map->Action == ACTION_JOGREVERSE)
    {

@@ -35,8 +35,6 @@
 
 struct track_block {
     signed short pcm[TRACK_BLOCK_SAMPLES * TRACK_CHANNELS];
-    unsigned char ppm[TRACK_BLOCK_SAMPLES / TRACK_PPM_RES],
-        overview[TRACK_BLOCK_SAMPLES / TRACK_OVERVIEW_RES];
 };
 
 struct track {
@@ -61,11 +59,6 @@ struct track {
     struct pollfd *pe;
     bool terminated;
 
-    /* Current value of audio meters when loading */
-    
-    unsigned short ppm;
-    unsigned int overview;
-    
    bool finished;
 };
 
@@ -88,24 +81,6 @@ void track_handle(struct track *tr);
 static inline bool track_is_importing(struct track *tr)
 {
     return tr->pid != 0;
-}
-
-/* Return the pseudo-PPM meter value for the given sample */
-
-static inline unsigned char track_get_ppm(struct track *tr, int s)
-{
-    struct track_block *b;
-    b = tr->block[s / TRACK_BLOCK_SAMPLES];
-    return b->ppm[(s % TRACK_BLOCK_SAMPLES) / TRACK_PPM_RES];
-}
-
-/* Return the overview meter value for the given sample */
-
-static inline unsigned char track_get_overview(struct track *tr, int s)
-{
-    struct track_block *b;
-    b = tr->block[s / TRACK_BLOCK_SAMPLES];
-    return b->overview[(s % TRACK_BLOCK_SAMPLES) / TRACK_OVERVIEW_RES];
 }
 
 /* Return a pointer to (not value of) the sample data for each channel */

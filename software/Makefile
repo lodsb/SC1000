@@ -18,6 +18,7 @@
 BUILDROOT_PREFIX=/home/niklas/buildroot/buildroot-2018.08.4
 
 CC=$(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
+CXX=$(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-cpp
 
 # Libraries and dependencies
 
@@ -45,7 +46,12 @@ OPT_FLAGS = -O3 -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize
 CFLAGS += -Wall
 CFLAGS += -DNDEBUG
 CFLAGS += $(OPT_FLAGS)
+
+CPPFLAGS += -Wall
+CPPFLAGS += -DNDEBUG
+CPPFLAGS += $(OPT_FLAGS)
 CPPFLAGS += -MMD
+
 LDFLAGS += $(OPT_FLAGS)
 
 MAKEFLAGS += --warn-undefined-variables
@@ -73,7 +79,8 @@ OBJS = global/global.o \
 	input/midi.o \
 	input/sc_midimap.o \
 	xwax.o
-DEVICE_CPPFLAGS = -DWITH_ALSA
+
+DEVICE_CFLAGS = -DWITH_ALSA
 DEVICE_LIBS = $(ALSA_LIBS)
 
 # Optional device types
@@ -100,8 +107,8 @@ xwax:		LDLIBS += $(SDL_LIBS) $(DEVICE_LIBS) -lm
 xwax:		LDFLAGS += -pthread
 
 #xwax.o:		CFLAGS += $(SDL_CFLAGS)
-xwax.o:		CPPFLAGS += $(DEVICE_CPPFLAGS)
-xwax.o:		CPPFLAGS += -DEXECDIR=\"$(EXECDIR)\" -DVERSION=\"$(VERSION)\"
+xwax.o:		CFLAGS += $(DEVICE_CFLAGS)
+xwax.o:		CFLAGS += -DEXECDIR=\"$(EXECDIR)\" -DVERSION=\"$(VERSION)\"
 xwax.o:		.version
 
 # Install to system

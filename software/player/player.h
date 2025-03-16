@@ -68,23 +68,22 @@ struct player
 
    bool timecode_control,
            recalibrate; /* re-sync offset at next opportunity */
-   bool justPlay;
-   double faderTarget; // Player should slowly fade to this level
-   double faderVolume; // current fader volume
-   double setVolume; // volume set by the volume controls on the back of the sc1000 or the volume buttons on the sc500 (or whatever over midi)
-   bool capTouch;
-   bool oldCapTouch;
-   bool GoodToGo;
+   bool just_play;
+   double fader_target; // Player should slowly fade to this level
+   double fader_volume; // current fader volume
+   double set_volume; // volume set by the volume controls on the back of the sc1000 or the volume buttons on the sc500 (or whatever over midi)
+   bool cap_touch;
+   bool cap_touch_old;
    bool stopped;
 
    bool recording;
-   bool recordingStarted;
+   bool recording_started;
 
-   int playingBeep;
-   unsigned long beepPos;
+   int playing_beep;
+   unsigned long beep_pos;
 
-   FILE* recordingFile;
-   char recordingFileName[256];
+   FILE* recording_file;
+   char recording_file_name[256];
 };
 
 void player_init( struct player* pl, unsigned int sample_rate,

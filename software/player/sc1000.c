@@ -21,7 +21,7 @@ void sc1000_init(struct sc1000* engine, struct sc_settings* settings,
    engine->scratch_deck.device.beat_player = engine->beat_deck.device.scratch_player;
 
    // Tell deck0 to just play without considering inputs
-   engine->beat_deck.player.justPlay = 1;
+   engine->beat_deck.player.just_play = 1;
 
    alsa_clear_config_cache();
 }

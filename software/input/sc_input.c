@@ -60,14 +60,14 @@ void i2c_read_address(int file_i2c, unsigned char address, unsigned char *result
 	*result = address;
 	if (write(file_i2c, result, 1) != 1)
 	{
-		printf("I2C read error\n");
-		exit(1);
+		printf("I2C read error (write)\n");
+		//exit(1);
 	}
 
 	if (read(file_i2c, result, 1) != 1)
 	{
 		printf("I2C read error\n");
-		exit(1);
+		//exit(1);
 	}
 }
 
@@ -362,7 +362,7 @@ void process_io(struct sc1000* sc1000_engine, struct sc_settings* settings)
 					{
 						player_set_track(&sc1000_engine->beat_deck.player, track_acquire_by_import(sc1000_engine->beat_deck.importer, "/var/os-version.mp3"));
 						cues_load_from_file(&sc1000_engine->beat_deck.cues, sc1000_engine->beat_deck.player.track->path);
-                  sc1000_engine->scratch_deck.player.setVolume = 0.0;
+                  sc1000_engine->scratch_deck.player.set_volume = 0.0;
 					}
 					else
 					{
@@ -449,9 +449,9 @@ void process_io(struct sc1000* sc1000_engine, struct sc_settings* settings)
 
 int file_i2c_rot, file_i2c_pic;
 
-int pitchMode = 0; // If we're in pitch-change mode
-int oldPitchMode = 0;
-bool capIsTouched = 0;
+int pitch_mode = 0; // If we're in pitch-change mode
+int old_pitch_mode = 0;
+bool cap_is_touched = 0;
 unsigned char buttons[4] = {0, 0, 0, 0}, totalbuttons[4] = {0, 0, 0, 0};
 unsigned int ADCs[4] = {0, 0, 0, 0};
 unsigned char buttonState = 0;
@@ -487,7 +487,7 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 	buttons[1] = !(result >> 1 & 0x01);
 	buttons[2] = !(result >> 2 & 0x01);
 	buttons[3] = !(result >> 3 & 0x01);
-	capIsTouched = (result >> 4 & 0x01);
+   cap_is_touched = (result >> 4 & 0x01);
 
 	process_io(sc1000_engine, settings);
 
@@ -495,8 +495,8 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 
 	if (!settings->disable_volume_adc)
 	{
-      sc1000_engine->beat_deck.player.setVolume = ((double)ADCs[2]) / 1024;
-      sc1000_engine->scratch_deck.player.setVolume = ((double)ADCs[3]) / 1024;
+      sc1000_engine->beat_deck.player.set_volume = ((double)ADCs[2]) / 1024;
+      sc1000_engine->scratch_deck.player.set_volume = ((double)ADCs[3]) / 1024;
 	}
 	
 	// Fader Hysteresis
@@ -505,8 +505,8 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 	
 	faderOpen1 = 1; faderOpen2 = 1;
 	
-	fadertarget0 = sc1000_engine->beat_deck.player.setVolume;
-	fadertarget1 = sc1000_engine->scratch_deck.player.setVolume;
+	fadertarget0 = sc1000_engine->beat_deck.player.set_volume;
+	fadertarget1 = sc1000_engine->scratch_deck.player.set_volume;
 	
 
 	if (ADCs[0] < faderCutPoint1)
@@ -522,8 +522,8 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 		faderOpen2 = 0;
 	}
 
-   sc1000_engine->beat_deck.player.faderTarget = fadertarget0;
-   sc1000_engine->scratch_deck.player.faderTarget = fadertarget1;
+   sc1000_engine->beat_deck.player.fader_target = fadertarget0;
+   sc1000_engine->scratch_deck.player.fader_target = fadertarget1;
 
 	if (!settings->disable_pic_buttons)
 	{
@@ -583,10 +583,10 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 		case BUTTONSTATE_ACTING_INSTANT:
 
 			// Any button to stop pitch mode
-			if (pitchMode)
+			if (pitch_mode)
 			{
-				pitchMode = 0;
-				oldPitchMode = 0;
+            pitch_mode = 0;
+            old_pitch_mode = 0;
 				printf("Pitch mode Disabled\n");
 			}
 			else if ( totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->scratch_deck.files_present)
@@ -594,13 +594,13 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 			else if ( !totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->scratch_deck.files_present)
 				deck_next_file(&sc1000_engine->scratch_deck, settings);
 			else if ( totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->scratch_deck.files_present)
-				pitchMode = 2;
+            pitch_mode = 2;
 			else if ( !totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && sc1000_engine->beat_deck.files_present)
 				deck_prev_file(&sc1000_engine->beat_deck, settings);
 			else if ( !totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && totalbuttons[3] && sc1000_engine->beat_deck.files_present)
 				deck_next_file(&sc1000_engine->beat_deck, settings);
 			else if ( !totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && sc1000_engine->beat_deck.files_present)
-				pitchMode = 1;
+            pitch_mode = 1;
 			else if (totalbuttons[0] && totalbuttons[1] && totalbuttons[2] && totalbuttons[3])
 				shiftLatched = 1;
 			else
@@ -660,12 +660,12 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 
 // Keep a running average of speed so if we suddenly let go it keeps going at that speed
 double averageSpeed = 0.0;
-unsigned int numBlips = 0;
+unsigned int num_blips = 0;
 void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
 {
 	unsigned char result;
-	int8_t crossedZero; // 0 when we haven't crossed zero, -1 when we've crossed in anti-clockwise direction, 1 when crossed in clockwise
-	int wrappedAngle = 0x0000;
+	int8_t crossed_zero; // 0 when we haven't crossed zero, -1 when we've crossed in anti-clockwise direction, 1 when crossed in clockwise
+	int wrapped_angle = 0x0000;
 	// Handle rotary sensor
 
 	i2c_read_address(file_i2c_rot, 0x0c, &result);
@@ -688,39 +688,39 @@ void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
 	if ( sc1000_engine->scratch_deck.new_encoder_angle < 1024 && sc1000_engine->scratch_deck.encoder_angle >= 3072)
 	{ // We crossed zero in the positive direction
 
-		crossedZero = 1;
-		wrappedAngle = sc1000_engine->scratch_deck.encoder_angle - 4096;
+		crossed_zero = 1;
+      wrapped_angle = sc1000_engine->scratch_deck.encoder_angle - 4096;
 	}
 	else if ( sc1000_engine->scratch_deck.new_encoder_angle >= 3072 && sc1000_engine->scratch_deck.encoder_angle < 1024)
 	{ // We crossed zero in the negative direction
-		crossedZero = -1;
-		wrappedAngle = sc1000_engine->scratch_deck.encoder_angle + 4096;
+		crossed_zero = -1;
+      wrapped_angle = sc1000_engine->scratch_deck.encoder_angle + 4096;
 	}
 	else
 	{
-		crossedZero = 0;
-		wrappedAngle = sc1000_engine->scratch_deck.encoder_angle;
+      crossed_zero = 0;
+      wrapped_angle = sc1000_engine->scratch_deck.encoder_angle;
 	}
 
 	// rotary sensor sometimes returns incorrect values, if we skip more than 100 ignore that value
 	// If we see 3 blips in a row, then I guess we better accept the new value
-	if ( abs(sc1000_engine->scratch_deck.new_encoder_angle - wrappedAngle) > 100 && numBlips < 2)
+	if ( abs(sc1000_engine->scratch_deck.new_encoder_angle - wrapped_angle) > 100 && num_blips < 2)
 	{
 		//printf("blip! %d %d %d\n", deck[1].newEncoderAngle, deck[1].encoderAngle, wrappedAngle);
-		numBlips++;
+		num_blips++;
 	}
 	else
 	{
-		numBlips = 0;
+      num_blips = 0;
       sc1000_engine->scratch_deck.encoder_angle = sc1000_engine->scratch_deck.new_encoder_angle;
 
-		if (pitchMode)
+		if (pitch_mode)
 		{
 
-			if (!oldPitchMode)
+			if (!old_pitch_mode)
 			{ // We just entered pitchmode, set offset etc
 
-            if(pitchMode == 0)
+            if( pitch_mode == 0)
             {
                sc1000_engine->beat_deck.player.note_pitch = 1.0;
             }
@@ -730,24 +730,24 @@ void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
             }
 
             sc1000_engine->scratch_deck.angle_offset = -sc1000_engine->scratch_deck.encoder_angle;
-				oldPitchMode = 1;
-            sc1000_engine->scratch_deck.player.capTouch = 0;
+            old_pitch_mode = 1;
+            sc1000_engine->scratch_deck.player.cap_touch = 0;
 			}
 
 			// Handle wrapping at zero
 
-			if (crossedZero > 0)
+			if ( crossed_zero > 0)
 			{
             sc1000_engine->scratch_deck.angle_offset += 4096;
 			}
-			else if (crossedZero < 0)
+			else if ( crossed_zero < 0)
 			{
             sc1000_engine->scratch_deck.angle_offset -= 4096;
 			}
 
 			// Use the angle of the platter to control sample pitch
 
-         if(pitchMode == 0)
+         if( pitch_mode == 0)
          {
             sc1000_engine->scratch_deck.player.note_pitch = (((double)(sc1000_engine->scratch_deck.encoder_angle + sc1000_engine->scratch_deck.angle_offset)) / 16384) + 1.0;
          }
@@ -762,37 +762,37 @@ void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
 			if (settings->platter_enabled)
 			{
 				// Handle touch sensor
-				if ( capIsTouched || sc1000_engine->scratch_deck.player.motor_speed == 0.0)
+				if ( cap_is_touched || sc1000_engine->scratch_deck.player.motor_speed == 0.0)
 				{
 
 					// Positive touching edge
-					if ( !sc1000_engine->scratch_deck.player.capTouch || (oldPitchMode && !sc1000_engine->scratch_deck.player.stopped) )
+					if ( !sc1000_engine->scratch_deck.player.cap_touch || (old_pitch_mode && !sc1000_engine->scratch_deck.player.stopped) )
 					{
                   sc1000_engine->scratch_deck.angle_offset = (sc1000_engine->scratch_deck.player.position * settings->platter_speed) - sc1000_engine->scratch_deck.encoder_angle;
 						printf("touch!\n");
                   sc1000_engine->scratch_deck.player.target_position = sc1000_engine->scratch_deck.player.position;
-                  sc1000_engine->scratch_deck.player.capTouch = 1;
+                  sc1000_engine->scratch_deck.player.cap_touch = 1;
 					}
 				}
 				else
 				{
-               sc1000_engine->scratch_deck.player.capTouch = 0;
+               sc1000_engine->scratch_deck.player.cap_touch = 0;
 				}
 			}
 
 			else
-            sc1000_engine->scratch_deck.player.capTouch = 1;
+            sc1000_engine->scratch_deck.player.cap_touch = 1;
 
 			/*if (deck[1].player.capTouch) we always want to dump the target position so we can do lasers etc
 			{*/
 
 			// Handle wrapping at zero
 
-			if (crossedZero > 0)
+			if ( crossed_zero > 0)
 			{
             sc1000_engine->scratch_deck.angle_offset += 4096;
 			}
-			else if (crossedZero < 0)
+			else if ( crossed_zero < 0)
 			{
             sc1000_engine->scratch_deck.angle_offset -= 4096;
 			}
@@ -810,7 +810,7 @@ void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
 					}*/
 		}
 		//}
-		oldPitchMode = pitchMode;
+		old_pitch_mode = pitch_mode;
 	}
 }
 
@@ -845,10 +845,10 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 
 	if (mmappresent)
 	{
-		volatile uint32_t *PortDataReg = gpio_addr + (6 * 0x24) + 0x10;
-		uint32_t PortData = *PortDataReg;
-		PortData ^= 0xffffffff;
-		if ((PortData >> 11) & 0x01)
+		volatile uint32_t *port_data_reg = gpio_addr + (6 * 0x24) + 0x10;
+		uint32_t port_data = *port_data_reg;
+      port_data ^= 0xffffffff;
+		if ( (port_data >> 11) & 0x01)
 		{
 			printf("SC500 detected\n");
          settings->disable_volume_adc = 1;
@@ -883,7 +883,7 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 
 			printf("\nFPS: %06u - ADCS: %04u, %04u, %04u, %04u, %04u\nButtons: %01u,%01u,%01u,%01u,%01u\nTP: %f, P : %f\n%f -- %f\n",
                 frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3], sc1000_engine->scratch_deck.encoder_angle,
-                buttons[0], buttons[1], buttons[2], buttons[3], capIsTouched,
+                buttons[0], buttons[1], buttons[2], buttons[3], cap_is_touched,
                 sc1000_engine->scratch_deck.player.target_position, sc1000_engine->scratch_deck.player.position,
                 sc1000_engine->beat_deck.player.volume, sc1000_engine->scratch_deck.player.volume);
 			//dump_maps();
@@ -936,10 +936,10 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 		}
 		else // couldn't find input processor, just play the tracks
 		{
-         sc1000_engine->scratch_deck.player.capTouch = 1;
-         sc1000_engine->beat_deck.player.faderTarget = 0.0;
-         sc1000_engine->scratch_deck.player.faderTarget = 0.5;
-         sc1000_engine->beat_deck.player.justPlay = 1;
+         sc1000_engine->scratch_deck.player.cap_touch = 1;
+         sc1000_engine->beat_deck.player.fader_target = 0.0;
+         sc1000_engine->scratch_deck.player.fader_target = 0.5;
+         sc1000_engine->beat_deck.player.just_play = 1;
          sc1000_engine->beat_deck.player.pitch = 1;
 
 			clock_gettime(CLOCK_MONOTONIC, &ts);

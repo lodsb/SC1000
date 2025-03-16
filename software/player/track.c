@@ -153,57 +153,10 @@ static void* access_pcm( struct track* tr, size_t* len )
 
 static void commit_pcm_samples( struct track* tr, unsigned int samples )
 {
-   unsigned int fill, n;
-   signed short* pcm;
-   struct track_block* block;
-
-   block = tr->block[ tr->length / TRACK_BLOCK_SAMPLES ];
-   fill = tr->length % TRACK_BLOCK_SAMPLES;
-   pcm = block->pcm + TRACK_CHANNELS * fill;
+   unsigned int fill = tr->length % TRACK_BLOCK_SAMPLES;
 
    assert(samples <= TRACK_BLOCK_SAMPLES - fill);
 
-   /* Meter the new audio */
-
-   for ( n = samples; n > 0; n-- )
-   {
-      unsigned short v;
-      unsigned int w;
-
-      v = abs(pcm[ 0 ]) + abs(pcm[ 1 ]);
-
-      /* PPM-style fast meter approximation */
-
-      if ( v > tr->ppm )
-      {
-         tr->ppm += (v - tr->ppm) >> 3;
-      }
-      else
-      {
-         tr->ppm -= (tr->ppm - v) >> 9;
-      }
-
-      block->ppm[ fill / TRACK_PPM_RES ] = tr->ppm >> 8;
-
-      /* Update the slow-metering overview. Fixed point arithmetic
-       * going on here */
-
-      w = v << 16;
-
-      if ( w > tr->overview )
-      {
-         tr->overview += (w - tr->overview) >> 8;
-      }
-      else
-      {
-         tr->overview -= (tr->overview - w) >> 17;
-      }
-
-      block->overview[ fill / TRACK_OVERVIEW_RES ] = tr->overview >> 24;
-
-      fill++;
-      pcm += TRACK_CHANNELS;
-   }
 
    /* Increment the track length. A memory barrier ensures the
     * realtime or UI thread does not access garbage audio */
@@ -255,8 +208,6 @@ static int track_init( struct track* t, const char* importer, const char* path )
 
    t->bytes = 0;
    t->length = 0;
-   t->ppm = 0;
-   t->overview = 0;
 
    t->importer = importer;
    t->path = path;

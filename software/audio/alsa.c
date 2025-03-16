@@ -52,8 +52,6 @@ struct alsa_pcm
    struct pollfd* pe;
    size_t pe_count; /* number of pollfd entries */
 
-   signed short* buf, * buf2;
-   snd_pcm_uframes_t period;
    int rate;
 };
 
@@ -399,32 +397,6 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
    if (!chk("hw_params", r))
       return -1;
 
-   r = snd_pcm_hw_params_get_period_size(hw_params, &alsa->period, &dir);
-   if ( !chk("get_period_size", r) )
-   {
-      return -1;
-   }
-
-   bytes = alsa->period * DEVICE_CHANNELS * sizeof(signed short);
-   alsa->buf = malloc(bytes);
-   if ( !alsa->buf )
-   {
-      perror("malloc");
-      return -1;
-   }
-   alsa->buf2 = malloc(bytes);
-   if ( !alsa->buf2 )
-   {
-      perror("malloc");
-      return -1;
-   }
-
-   /* snd_pcm_readi() returns uninitialised memory on first call,
-    * possibly caused by premature POLLIN. Keep valgrind happy. */
-
-   memset(alsa->buf, 0, bytes);
-   memset(alsa->buf2, 0, bytes);
-
    return 0;
 }
 
@@ -434,9 +406,6 @@ static void pcm_close( struct alsa_pcm* alsa )
    {
       abort();
    }
-
-   free(alsa->buf);
-   free(alsa->buf2);
 }
 
 static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
@@ -538,7 +507,7 @@ static signed short* buffer(const snd_pcm_channel_area_t *area,
    return area->addr + area->first / 8 + offset * area->step / 8;
 }
 
-static void process_players( struct device* dv, struct alsa* alsa, struct sc_settings* settings, signed short* pcm, unsigned long frames )
+static void process_players( struct device* dv, struct sc_settings* settings, signed short* pcm, unsigned long frames )
 {
    //player_collect(dv->scratch_player, pcm , frames, settings);
    //player_collect(dv->beat_player   , pcm, frames, settings);
@@ -565,13 +534,13 @@ static void process_players( struct device* dv, struct alsa* alsa, struct sc_set
    player_collect_add(dv->beat_player, dv->scratch_player, pcm, frames, settings);
 }
 
-static void synthesize_beep( struct device* dv, struct alsa* alsa, unsigned long frames  )
+static void synthesize_beep( struct device* dv, signed short* pcm, unsigned long frames  )
 {// Add beeps, if we need to
-   if ( dv->scratch_player->playingBeep != -1 )
+   if ( dv->scratch_player->playing_beep != -1 )
    {
       for ( int i = 0; i < frames * 2; i++ )
       {
-         char curChar = BEEPS[ dv->scratch_player->playingBeep ][ dv->scratch_player->beepPos / BEEPSPEED ];
+         char curChar = BEEPS[ dv->scratch_player->playing_beep ][ dv->scratch_player->beep_pos / BEEPSPEED ];
          if ( curChar )
          {
             unsigned int beepFreq = 0;
@@ -591,8 +560,8 @@ static void synthesize_beep( struct device* dv, struct alsa* alsa, unsigned long
 
             if ( beepFreq != 0 )
             {
-               int32_t adder = ( int32_t ) alsa->playback.buf[ i ] +
-                               (sin((( double ) dv->scratch_player->beepPos / (48000.0 / ( double ) beepFreq)) * 6.2831) * 20000.0);
+               int32_t adder = ( int32_t ) pcm[i] +
+                               (sin((( double ) dv->scratch_player->beep_pos / (48000.0 / ( double ) beepFreq)) * 6.2831) * 20000.0);
 
                // saturate add
                if ( adder > INT16_MAX )
@@ -603,25 +572,26 @@ static void synthesize_beep( struct device* dv, struct alsa* alsa, unsigned long
                {
                   adder = INT16_MIN;
                }
-               alsa->playback.buf[ i ] = ( int16_t ) adder;
+
+               pcm[i] = ( int16_t ) adder;
             }
-            dv->scratch_player->beepPos++;
+            dv->scratch_player->beep_pos++;
          }
          else
          {
-            dv->scratch_player->playingBeep = -1;
-            dv->scratch_player->beepPos = 0;
+            dv->scratch_player->playing_beep = -1;
+            dv->scratch_player->beep_pos = 0;
             break;
          }
       }
    }
 }
 
-static void record_to_file( struct device* dv, const struct alsa* alsa, unsigned long frames )
+static void record_to_file( struct device* dv, signed short* pcm, unsigned long frames )
 {
    if ( dv->scratch_player->recording )
    {
-      fwrite(alsa->playback.buf, alsa->playback.period * DEVICE_CHANNELS * sizeof(signed short), 1, dv->scratch_player->recordingFile);
+      fwrite(pcm, frames * DEVICE_CHANNELS * sizeof(signed short), 1, dv->scratch_player->recording_file);
    }
 }
 
@@ -633,15 +603,14 @@ static int playback( struct device* dv, struct sc_settings* settings )
    int r;
    struct alsa* alsa = ( struct alsa* ) dv->local;
    static int16_t next_recording_number = 0;
-   static char syncCommandLine[300];
 
-   if ( dv->scratch_player->recordingStarted && !dv->scratch_player->recording )
+   if ( dv->scratch_player->recording_started && !dv->scratch_player->recording )
    {
       next_recording_number = 0;
       while ( 1 )
       {
-         sprintf(dv->scratch_player->recordingFileName, "/media/sda/sc%06d.raw", next_recording_number);
-         if ( access(dv->scratch_player->recordingFileName, F_OK) != -1 )
+         sprintf(dv->scratch_player->recording_file_name, "/media/sda/sc%06d.raw", next_recording_number);
+         if ( access(dv->scratch_player->recording_file_name, F_OK) != -1 )
          {
             // file exists
             next_recording_number++;
@@ -651,8 +620,8 @@ static int playback( struct device* dv, struct sc_settings* settings )
             {
                printf("Too many recordings\n");
                next_recording_number = -1;
-               dv->scratch_player->playingBeep = BEEP_RECORDINGERROR;
-               dv->scratch_player->recordingStarted = 0;
+               dv->scratch_player->playing_beep = BEEP_RECORDINGERROR;
+               dv->scratch_player->recording_started = 0;
                break;
             }
          }
@@ -665,20 +634,20 @@ static int playback( struct device* dv, struct sc_settings* settings )
 
       if ( next_recording_number != -1 )
       {
-         printf("Opening file %s for recording\n", dv->scratch_player->recordingFileName);
-         dv->scratch_player->recordingFile = fopen(dv->scratch_player->recordingFileName, "w");
+         printf("Opening file %s for recording\n", dv->scratch_player->recording_file_name);
+         dv->scratch_player->recording_file = fopen(dv->scratch_player->recording_file_name, "w");
 
          // On error, don't start
-         if ( dv->scratch_player->recordingFile == NULL )
+         if ( dv->scratch_player->recording_file == NULL )
          {
             printf("Failed to open recording file\n");
-            dv->scratch_player->recordingStarted = 0;
-            dv->scratch_player->playingBeep = BEEP_RECORDINGERROR;
+            dv->scratch_player->recording_started = 0;
+            dv->scratch_player->playing_beep = BEEP_RECORDINGERROR;
          }
          else
          {
             dv->scratch_player->recording = 1;
-            dv->scratch_player->playingBeep = BEEP_RECORDINGSTART;
+            dv->scratch_player->playing_beep = BEEP_RECORDINGSTART;
          }
       }
    }
@@ -698,7 +667,7 @@ static int playback( struct device* dv, struct sc_settings* settings )
 
    signed short* pcm = buffer(&area[0], offset);
 
-   process_players(dv, alsa, settings, pcm, frames);
+   process_players(dv, settings, pcm, frames);
 
    //record_to_file(dv, alsa, frames);
    //synthesize_beep(dv, alsa, frames);
@@ -710,14 +679,16 @@ static int playback( struct device* dv, struct sc_settings* settings )
       return r;
    }
 
-   if ( !dv->scratch_player->recordingStarted && dv->scratch_player->recording )
+   if ( !dv->scratch_player->recording_started && dv->scratch_player->recording )
    {
-      fflush(dv->scratch_player->recordingFile);
-      fclose(dv->scratch_player->recordingFile);
-      sprintf(syncCommandLine, "/bin/sync %s", dv->scratch_player->recordingFileName);
-      system(syncCommandLine);
+      static char sync_command_line[300];
+
+      fflush(dv->scratch_player->recording_file);
+      fclose(dv->scratch_player->recording_file);
+      sprintf(sync_command_line, "/bin/sync %s", dv->scratch_player->recording_file_name);
+      system(sync_command_line);
       dv->scratch_player->recording = 0;
-      dv->scratch_player->playingBeep = BEEP_RECORDINGSTOP;
+      dv->scratch_player->playing_beep = BEEP_RECORDINGSTOP;
    }
 
    if (!alsa->playing) {

@@ -19,7 +19,6 @@
 #include "../player/sc_playlist.h"
 #include "../audio/alsa.h"
 #include "../player/controller.h"
-#include "../player/device.h"
 #include "../audio/dummy.h"
 #include "../thread/realtime.h"
 #include "../thread/thread.h"

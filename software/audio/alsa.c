@@ -27,19 +27,11 @@
 #include <stdint-gcc.h>
 
 #include "../global/global.h"
-
-#include "../player/player.h"
-#include "../player/track.h"
+#include "../player/sc1000.h"
 
 
 #include "alsa.h"
 
-
-const char* BEEPS[3] = {
-        "----------",          // Start Recording
-        "- - - - - - - - -",   // Stop Recording
-        "--__--__--__--__--__" // Recording error
-};
 
 /* This structure doesn't have corresponding functions to be an
  * abstraction of the ALSA calls; it is merely a container for these
@@ -478,10 +470,10 @@ static int pcm_revents( struct alsa_pcm* alsa, unsigned short* revents )
 
 /* Start the audio device capture and playback */
 
-static void start( struct device* dv )
+static void start( struct sc1000* dv )
 {
 
-   struct alsa *alsa = (struct alsa*)dv->local;
+   //struct alsa *alsa = (struct alsa*)dv->local;
 
    //if (snd_pcm_start(alsa->capture.pcm) < 0)
    //   abort();
@@ -490,11 +482,11 @@ static void start( struct device* dv )
 /* Register this device's interest in a set of pollfd file
  * descriptors */
 
-static ssize_t pollfds( struct device* dv, struct pollfd* pe, size_t z )
+static ssize_t pollfds( struct sc1000* engine, struct pollfd* pe, size_t z )
 {
    int r;
    int total = 0;
-   struct alsa* alsa = ( struct alsa* ) dv->local;
+   struct alsa* alsa = ( struct alsa* ) engine->local;
 
    /*
    r = pcm_pollfds(&alsa->capture, pe, z);
@@ -529,152 +521,16 @@ static signed short* buffer(const snd_pcm_channel_area_t *area,
    return area->addr + area->first / 8 + offset * area->step / 8;
 }
 
-static void process_players( struct device* dv, struct sc_settings* settings, signed short* pcm, unsigned long frames )
-{
-   //player_collect(dv->scratch_player, pcm , frames, settings);
-   //player_collect(dv->beat_player   , pcm, frames, settings);
-
-   // mix 2 stereo players together
-//   for ( int i = 0; i < frames * 2; i++ )
-//   {
-//      int32_t adder = ( int32_t ) alsa->playback.buf[ i ] + ( int32_t ) alsa->playback.buf2[ i ];
-//
-//      // saturate add
-//      if ( adder > INT16_MAX )
-//      {
-//         adder = INT16_MAX;
-//      }
-//      if ( adder < INT16_MIN )
-//      {
-//         adder = INT16_MIN;
-//      }
-//
-//      //pcm[ i ] = ( int16_t ) adder;
-//   }
-
-   player_collect_add(dv->beat_player, dv->scratch_player, pcm, frames, settings);
-}
-
-static void synthesize_beep( struct device* dv, signed short* pcm, unsigned long frames  )
-{// Add beeps, if we need to
-   if ( dv->scratch_player->playing_beep != -1 )
-   {
-      for ( int i = 0; i < frames * 2; i++ )
-      {
-         char curChar = BEEPS[ dv->scratch_player->playing_beep ][ dv->scratch_player->beep_pos / BEEPSPEED ];
-         if ( curChar )
-         {
-            unsigned int beepFreq = 0;
-
-            if ( curChar == '-' )
-            {
-               beepFreq = 440;
-            }
-            else if ( curChar == '_' )
-            {
-               beepFreq = 220;
-            }
-            else
-            {
-               beepFreq = 0;
-            }
-
-            if ( beepFreq != 0 )
-            {
-               int32_t adder = ( int32_t ) pcm[i] +
-                               (sin((( double ) dv->scratch_player->beep_pos / (48000.0 / ( double ) beepFreq)) * 6.2831) * 20000.0);
-
-               // saturate add
-               if ( adder > INT16_MAX )
-               {
-                  adder = INT16_MAX;
-               }
-               if ( adder < INT16_MIN )
-               {
-                  adder = INT16_MIN;
-               }
-
-               pcm[i] = ( int16_t ) adder;
-            }
-            dv->scratch_player->beep_pos++;
-         }
-         else
-         {
-            dv->scratch_player->playing_beep = -1;
-            dv->scratch_player->beep_pos = 0;
-            break;
-         }
-      }
-   }
-}
-
-static void record_to_file( struct device* dv, signed short* pcm, unsigned long frames )
-{
-   if ( dv->scratch_player->recording )
-   {
-      fwrite(pcm, frames * DEVICE_CHANNELS * sizeof(signed short), 1, dv->scratch_player->recording_file);
-   }
-}
 
 /* Collect audio from the player and push it into the device's buffer,
  * for playback */
 
-static int playback( struct device* dv, struct sc_settings* settings )
+static int playback( struct sc1000* engine, struct sc_settings* settings )
 {
-   static int16_t next_recording_number = 0;
-
-   if ( dv->scratch_player->recording_started && !dv->scratch_player->recording )
-   {
-      next_recording_number = 0;
-      while ( 1 )
-      {
-         sprintf(dv->scratch_player->recording_file_name, "/media/sda/sc%06d.raw", next_recording_number);
-         if ( access(dv->scratch_player->recording_file_name, F_OK) != -1 )
-         {
-            // file exists
-            next_recording_number++;
-
-            // If we've reached max files then abort (very unlikely, heh)
-            if ( next_recording_number == INT16_MAX )
-            {
-               printf("Too many recordings\n");
-               next_recording_number = -1;
-               dv->scratch_player->playing_beep = BEEP_RECORDINGERROR;
-               dv->scratch_player->recording_started = 0;
-               break;
-            }
-         }
-         else
-         {
-            // file doesn't exist
-            break;
-         }
-      }
-
-      if ( next_recording_number != -1 )
-      {
-         printf("Opening file %s for recording\n", dv->scratch_player->recording_file_name);
-         dv->scratch_player->recording_file = fopen(dv->scratch_player->recording_file_name, "w");
-
-         // On error, don't start
-         if ( dv->scratch_player->recording_file == NULL )
-         {
-            printf("Failed to open recording file\n");
-            dv->scratch_player->recording_started = 0;
-            dv->scratch_player->playing_beep = BEEP_RECORDINGERROR;
-         }
-         else
-         {
-            dv->scratch_player->recording = 1;
-            dv->scratch_player->playing_beep = BEEP_RECORDINGSTART;
-         }
-      }
-   }
-
 
    {
       int err;
-      struct alsa* alsa = ( struct alsa* ) dv->local;
+      struct alsa* alsa = ( struct alsa* ) engine->local;
 
       snd_pcm_sframes_t avail = snd_pcm_avail_update(alsa->playback.pcm);
       if (avail < 0)
@@ -730,10 +586,8 @@ static int playback( struct device* dv, struct sc_settings* settings )
                printf("proc players %0x% %d\n", pcm, frames);
             }
 
-            process_players(dv, settings, pcm, frames);
-
-            //record_to_file(dv, pcm, frames);
-            //synthesize_beep(dv, pcm, frames);
+            // the main thing...
+            sc1000_engine_process(engine, pcm, frames);
 
             commit_res = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
             if ( commit_res < 0 || commit_res != frames)
@@ -755,29 +609,17 @@ static int playback( struct device* dv, struct sc_settings* settings )
       }
    }
 
-   if ( !dv->scratch_player->recording_started && dv->scratch_player->recording )
-   {
-      static char sync_command_line[300];
-
-      fflush(dv->scratch_player->recording_file);
-      fclose(dv->scratch_player->recording_file);
-      sprintf(sync_command_line, "/bin/sync %s", dv->scratch_player->recording_file_name);
-      system(sync_command_line);
-      dv->scratch_player->recording = 0;
-      dv->scratch_player->playing_beep = BEEP_RECORDINGSTOP;
-   }
-
    return 0;
 }
 
 /* After poll() has returned, instruct a device to do all it can at
  * the present time. Return zero if success, otherwise -1 */
 
-static int handle( struct device* dv )
+static int handle( struct sc1000* engine )
 {
    int r;
    unsigned short revents;
-   struct alsa* alsa = ( struct alsa* ) dv->local;
+   struct alsa* alsa = ( struct alsa* ) engine->local;
 
    /* Check the output buffer for playback */
 
@@ -789,7 +631,7 @@ static int handle( struct device* dv )
 
    if ( revents & POLLOUT )
    {
-      r = playback(dv, &g_sc1000_settings);
+      r = playback(engine, &g_sc1000_settings);
 
       if ( r < 0 )
       {
@@ -820,25 +662,25 @@ static int handle( struct device* dv )
    return 0;
 }
 
-static unsigned int sample_rate( struct device* dv )
+static unsigned int sample_rate( struct sc1000* engine )
 {
-   struct alsa* alsa = ( struct alsa* ) dv->local;
+   struct alsa* alsa = ( struct alsa* ) engine->local;
 
    return alsa->playback.rate;
 }
 
 /* Close ALSA device and clear any allocations */
 
-static void clear( struct device* dv )
+static void clear(struct sc1000* engine )
 {
-   struct alsa* alsa = ( struct alsa* ) dv->local;
+   struct alsa* alsa = ( struct alsa* ) engine->local;
 
    pcm_close(&alsa->capture);
    pcm_close(&alsa->playback);
-   free(dv->local);
+   free(engine->local);
 }
 
-static struct device_ops alsa_ops = {
+static struct sc1000_ops alsa_ops = {
         .pollfds = pollfds,
         .handle = handle,
         .sample_rate = sample_rate,
@@ -872,11 +714,8 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
       goto fail_capture;
    }
 
-   device_init(&sc1000_engine->scratch_deck.device, &alsa_ops);
-   device_init(&sc1000_engine->beat_deck.device, &alsa_ops);
-
-   sc1000_engine->scratch_deck.device.local = alsa;
-   sc1000_engine->beat_deck.device.local = alsa;
+   sc1000_engine->local = alsa;
+   sc1000_engine_init(sc1000_engine, &alsa_ops);
 
    printf(" success!\n");
 

@@ -63,7 +63,6 @@ OBJS = global/global.o \
     player/controller.o \
 	player/cues.o \
 	player/deck.o \
-	player/device.o \
 	player/sc_playlist.o \
 	player/dicer.o \
 	player/player.o \

@@ -19,16 +19,16 @@
 
 #include "dummy.h"
 
-static unsigned int sample_rate(struct device *d)
+static unsigned int sample_rate(struct sc1000 *d)
 {
     return 48000;
 }
 
-static struct device_ops dummy_ops = {
+static struct sc1000_ops dummy_ops = {
     .sample_rate = sample_rate,
 };
 
-void dummy_init(struct device *d)
+void dummy_init(struct sc1000 *d)
 {
-    device_init(d, &dummy_ops);
+    sc1000_engine_init(d, &dummy_ops);
 }

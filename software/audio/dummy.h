@@ -20,8 +20,8 @@
 #ifndef DUMMY_H
 #define DUMMY_H
 
-#include "../player/device.h"
+#include "../player/sc1000.h"
 
-void dummy_init(struct device *d);
+void dummy_init(struct sc1000 *d);
 
 #endif

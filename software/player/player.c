@@ -28,7 +28,6 @@
 
 #include "../xwax.h"
 
-#include "device.h"
 #include "player.h"
 #include "track.h"
 

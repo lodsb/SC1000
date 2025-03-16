@@ -43,16 +43,9 @@
  * Pre: deck->device is valid
  */
 
-int deck_init( struct deck *d, struct rt *rt,
-               struct sc_settings* settings,
-               bool slave)
+int deck_init( struct deck *d,
+               struct sc_settings* settings)
 {
-	if (!slave)
-	{
-		if (rt_add_device(rt, &d->device) == -1)
-			return -1;
-	}
-
 	d->ncontrol = 0;
 	d->punch = NO_PUNCH;
 	d->protect = false;
@@ -79,7 +72,6 @@ int deck_init( struct deck *d, struct rt *rt,
 	d->encoder_angle = 0xffff;
 	d->new_encoder_angle = 0xffff;
 
-	device_connect_player(&d->device, &d->player);
 	return 0;
 }
 
@@ -88,7 +80,7 @@ void deck_clear(struct deck *d )
 	/* FIXME: remove from rig and rt */
 	player_clear(&d->player);
 	//timecoder_clear(&d->timecoder);
-	device_clear(&d->device);
+	//device_clear(&d->device);
 }
 
 bool deck_is_locked(const struct deck *d )

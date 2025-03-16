@@ -36,8 +36,7 @@ struct rt {
     bool finished;
     int priority;
 
-    size_t ndv;
-    struct device *dv[3];
+    struct sc1000 *engine;
 
     size_t nctl;
     struct controller *ctl[3];
@@ -52,7 +51,7 @@ void rt_not_allowed();
 void rt_init(struct rt *rt);
 void rt_clear(struct rt *rt);
 
-int rt_add_device(struct rt *rt, struct device *dv);
+int rt_set_sc1000(struct rt *rt, struct sc1000 *engine);
 int rt_add_controller(struct rt *rt, struct controller *c);
 
 int rt_start(struct rt *rt, int priority);

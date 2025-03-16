@@ -39,7 +39,6 @@
 #include "input/sc_input.h"
 #include "input/sc_midimap.h"
 #include "player/controller.h"
-#include "player/device.h"
 #include "player/settings.h"
 
 #include "audio//dummy.h"
@@ -360,7 +359,7 @@ int main( int argc, char* argv[] )
 
    create_settings_and_load_user_configuration(&g_sc1000_settings);
 
-   sc1000_init(&g_sc1000_engine, &g_sc1000_settings, &g_rt);
+   sc1000_setup(&g_sc1000_engine, &g_sc1000_settings, &g_rt);
    sc1000_load_sample_folders(&g_sc1000_engine);
 
    rc = EXIT_FAILURE; /* until clean exit */

@@ -25,7 +25,6 @@
 #include "../thread/realtime.h"
 
 #include "cues.h"
-#include "device.h"
 #include "player.h"
 #include "sc_playlist.h"
 
@@ -34,7 +33,6 @@
 
 struct deck
 {
-   struct device device;
    const char* importer;
    bool protect;
 
@@ -62,9 +60,8 @@ struct deck
    int encoder_angle, new_encoder_angle;
 };
 
-int deck_init( struct deck* deck, struct rt* rt,
-               struct sc_settings* settings,
-               bool slave );
+int deck_init( struct deck* deck,
+               struct sc_settings* settings);
 
 void deck_clear( struct deck* deck );
 

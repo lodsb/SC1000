@@ -39,7 +39,11 @@ pitch_range=50
 # How long to delay before looking for MIDI devices
 # Useful if your MIDI device takes a long time to initialize
 # Or to give you time to switch your phone to MIDI mode
-midi_delay=5
+midi_init_delay=5
+
+# How long to delay before looking for audio devices at startup
+# Useful if your audio device takes a long time to initialize
+audio_init_delay=5
 
 # Set this to 1 or 2 to make the fader cut the beats
 # 1 will cut on the left, 2 will cut on the right

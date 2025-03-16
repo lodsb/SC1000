@@ -11,7 +11,7 @@ void sc1000_init(struct sc1000* engine, struct sc_settings* settings,
 {
    printf("sc1000_init\n");
 
-   alsa_init(engine, settings->buffer_size);
+   alsa_init(engine, settings);
 
    // Create two decks, both pointed at the same audio device
    deck_init(&engine->scratch_deck, rt, settings, 0);

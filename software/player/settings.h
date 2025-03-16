@@ -6,7 +6,8 @@ struct sc_settings
 {
 
    // output buffer size, probably 256
-   int buffer_size;
+   int period_size;
+   int buffer_period_factor;
 
    // sample rate, probably 48000
    int sample_rate;
@@ -48,7 +49,10 @@ struct sc_settings
    int pitch_range;
 
    // How many seconds to wait before initializing MIDI
-   int midi_delay;
+   int midi_init_delay;
+
+   // How many seconds to wait before initializing Audio
+   int audio_init_delay;
 
    // whether or not to take input from the volume knobs (sc500 should enable this setting)
    int disable_volume_adc;

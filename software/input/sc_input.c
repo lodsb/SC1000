@@ -899,9 +899,9 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 
 			// Wait 10 seconds to enumerate MIDI devices
 			// Give them a little time to come up properly
-			if ( secondCount < settings->midi_delay)
+			if ( secondCount < settings->midi_init_delay)
 				secondCount++;
-			else if ( secondCount == settings->midi_delay)
+			else if ( secondCount == settings->midi_init_delay)
 			{
 				// Check for new midi devices
 				mididevicenum = listdev("rawmidi", mididevices);

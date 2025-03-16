@@ -53,6 +53,7 @@ struct alsa_pcm
    size_t pe_count; /* number of pollfd entries */
 
    int rate;
+   snd_pcm_uframes_t period_size;
 };
 
 struct alsa
@@ -93,7 +94,8 @@ struct audio_interface
    bool supports_48k_samplerate;
    bool supports_16bit_pcm;
 
-   int period;
+   int period_size;
+   int buffer_period_factor;
 };
 
 void print_audio_interface_info(struct audio_interface* iface)
@@ -106,7 +108,7 @@ void print_audio_interface_info(struct audio_interface* iface)
    printf("output_channels %i\n", iface->output_channels);
    printf("supports_48k_samplerate %i\n", iface->supports_48k_samplerate);
    printf("supports_16bit_pcm %i\n", iface->supports_16bit_pcm);
-   printf("period %i\n", iface->period);
+   printf("period %i\n", iface->period_size);
 }
 
 static struct audio_interface audio_interfaces[] = {
@@ -126,7 +128,7 @@ void create_alsa_device_id_string(char* str, int size, int dev, int subdev, bool
    }
 }
 
-static void fill_audio_interface_info()
+static void fill_audio_interface_info(struct sc_settings* settings)
 {
    register int err;
    int card_id, last_card_id = -1;
@@ -180,12 +182,14 @@ static void fill_audio_interface_info()
                if ( strcmp(card_name, "sun4i-codec") == 0 )
                {
                   audio_interfaces[ card_id ].is_internal = true;
-                  audio_interfaces[ card_id ].period = 2;
+                  audio_interfaces[ card_id ].period_size = settings->period_size;
+                  audio_interfaces[ card_id ].buffer_period_factor = settings->buffer_period_factor;
                }
                else
                {
                   audio_interfaces[ card_id ].is_internal = false;
-                  audio_interfaces[ card_id ].period = 3;
+                  audio_interfaces[ card_id ].period_size = settings->period_size;
+                  audio_interfaces[ card_id ].buffer_period_factor = settings->buffer_period_factor;
                }
 
                int playback_count = 0;
@@ -309,30 +313,30 @@ static void fill_audio_interface_info()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
-                     snd_pcm_stream_t stream, int buffer_size, int period )
+                     snd_pcm_stream_t stream, struct audio_interface* audio_interface)
 {
-   int r, dir;
-   size_t bytes;
+   int err, dir;
+
    snd_pcm_hw_params_t *hw_params;
    snd_pcm_uframes_t frames;
 
-   r = snd_pcm_open(&alsa->pcm, device_name, stream, SND_PCM_NONBLOCK);
-   if (!chk("open", r))
+   err = snd_pcm_open(&alsa->pcm, device_name, stream, SND_PCM_NONBLOCK);
+   if (!chk("open", err))
       return -1;
 
    snd_pcm_hw_params_alloca(&hw_params);
 
-   r = snd_pcm_hw_params_any(alsa->pcm, hw_params);
-   if (!chk("hw_params_any", r))
+   err = snd_pcm_hw_params_any(alsa->pcm, hw_params);
+   if (!chk("hw_params_any", err))
       return -1;
 
-   r = snd_pcm_hw_params_set_access(alsa->pcm, hw_params,
-                                    SND_PCM_ACCESS_MMAP_INTERLEAVED);
-   if (!chk("hw_params_set_access", r))
+   err = snd_pcm_hw_params_set_access(alsa->pcm, hw_params,
+                                      SND_PCM_ACCESS_MMAP_INTERLEAVED);
+   if (!chk("hw_params_set_access", err))
       return -1;
 
-   r = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, SND_PCM_FORMAT_S16);
-   if (!chk("hw_params_set_format", r)) {
+   err = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, SND_PCM_FORMAT_S16);
+   if (!chk("hw_params_set_format", err)) {
       fprintf(stderr, "16-bit signed format is not available. "
                       "You may need to use a 'plughw' device.\n");
       return -1;
@@ -343,12 +347,12 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
     * This is even if a 'plug' device is used, which effectively lets
     * the user unknowingly select any sample rate. */
 
-   r = snd_pcm_hw_params_set_rate_resample(alsa->pcm, hw_params, 0);
-   if (!chk("hw_params_set_rate_resample", r))
+   err = snd_pcm_hw_params_set_rate_resample(alsa->pcm, hw_params, 0);
+   if (!chk("hw_params_set_rate_resample", err))
       return -1;
 
-   r = snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, TARGET_SAMPLE_RATE, 0);
-   if (!chk("hw_params_set_rate", r)) {
+   err = snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, TARGET_SAMPLE_RATE, 0);
+   if (!chk("hw_params_set_rate", err)) {
       fprintf(stderr, "Sample rate of %dHz is not implemented by the hardware.\n",
               TARGET_SAMPLE_RATE);
       return -1;
@@ -356,8 +360,9 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
 
    alsa->rate = TARGET_SAMPLE_RATE;
 
-   r = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, DEVICE_CHANNELS);
-   if (!chk("hw_params_set_channels", r)) {
+   err = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, DEVICE_CHANNELS);
+   if (!chk("hw_params_set_channels", err))
+   {
       fprintf(stderr, "%d channel audio not available on this device.\n",
               DEVICE_CHANNELS);
       return -1;
@@ -367,23 +372,38 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
     * likely to be the primary application running, so assume we want
     * the hardware to be giving us immediate wakeups */
 
-   r = snd_pcm_hw_params_set_period_size_first(alsa->pcm, hw_params, &frames, &dir);
-   if (!chk("hw_params_set_buffer_time_near", r))
+   snd_pcm_uframes_t period_size = audio_interface->period_size;
+   err = snd_pcm_hw_params_set_period_size_near(alsa->pcm, hw_params, &period_size, &dir);
+   if (!chk("snd_pcm_hw_params_set_period_size_near", err))
+   {
       return -1;
+   }
+
+   err = snd_pcm_hw_params_get_period_size(hw_params, &period_size, 0);
+   if (!chk("snd_pcm_hw_params_get_period_size", err))
+   {
+      printf("Error getting period size: %s\n", snd_strerror(err));
+      return -1;
+   }
+
+   alsa->period_size = period_size;
+
+   printf("Period size: %lu frames\n", period_size);
+   int buffer_size = period_size * audio_interface->buffer_period_factor;
 
    switch (stream) {
       case SND_PCM_STREAM_CAPTURE:
          /* Maximum buffer to minimise drops */
-         r = snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames);
-         if (!chk("hw_params_set_buffer_size_last", r))
+         err = snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames);
+         if (!chk("hw_params_set_buffer_size_last", err))
             return -1;
          break;
 
       case SND_PCM_STREAM_PLAYBACK:
          /* Smallest possible buffer to keep latencies low */
-         r = snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size);
-         if (!chk("hw_params_set_buffer_size", r)) {
-            fprintf(stderr, "Buffer of %u samples is probably too small; try increasing it with --buffer\n",
+         err = snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size);
+         if (!chk("hw_params_set_buffer_size", err)) {
+            fprintf(stderr, "Buffer of %u samples is probably too small; try increasing period size or buffer_period_factor\n",
                     buffer_size);
             return -1;
          }
@@ -393,8 +413,8 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
          abort();
    }
 
-   r = snd_pcm_hw_params(alsa->pcm, hw_params);
-   if (!chk("hw_params", r))
+   err = snd_pcm_hw_params(alsa->pcm, hw_params);
+   if (!chk("hw_params", err))
       return -1;
 
    return 0;
@@ -414,6 +434,9 @@ static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
    int r, count;
 
    count = snd_pcm_poll_descriptors_count(alsa->pcm);
+
+   printf("poll %d ", count);
+
    if ( count > z )
    {
       return -1;
@@ -457,12 +480,11 @@ static int pcm_revents( struct alsa_pcm* alsa, unsigned short* revents )
 
 static void start( struct device* dv )
 {
-   /*
+
    struct alsa *alsa = (struct alsa*)dv->local;
 
-   if (snd_pcm_start(alsa->capture.pcm) < 0)
-      abort();
-   */
+   //if (snd_pcm_start(alsa->capture.pcm) < 0)
+   //   abort();
 }
 
 /* Register this device's interest in a set of pollfd file
@@ -470,10 +492,10 @@ static void start( struct device* dv )
 
 static ssize_t pollfds( struct device* dv, struct pollfd* pe, size_t z )
 {
-   int total, r;
+   int r;
+   int total = 0;
    struct alsa* alsa = ( struct alsa* ) dv->local;
 
-   total = 0;
    /*
    r = pcm_pollfds(&alsa->capture, pe, z);
    if (r < 0)
@@ -529,7 +551,6 @@ static void process_players( struct device* dv, struct sc_settings* settings, si
 //
 //      //pcm[ i ] = ( int16_t ) adder;
 //   }
-
 
    player_collect_add(dv->beat_player, dv->scratch_player, pcm, frames, settings);
 }
@@ -600,8 +621,6 @@ static void record_to_file( struct device* dv, signed short* pcm, unsigned long 
 
 static int playback( struct device* dv, struct sc_settings* settings )
 {
-   int r;
-   struct alsa* alsa = ( struct alsa* ) dv->local;
    static int16_t next_recording_number = 0;
 
    if ( dv->scratch_player->recording_started && !dv->scratch_player->recording )
@@ -652,31 +671,88 @@ static int playback( struct device* dv, struct sc_settings* settings )
       }
    }
 
-   snd_pcm_uframes_t frames, offset;
-   const snd_pcm_channel_area_t *area;
 
-   frames = snd_pcm_avail_update(alsa->playback.pcm);
-   if (frames <= 0)
-      return (int)frames;
-
-   r = snd_pcm_mmap_begin(alsa->playback.pcm, &area, &offset, &frames);
-   if (r < 0)
-      return r;
-
-   assert(frames > 0);  /* otherwise we were woken unnecessarily */
-
-   signed short* pcm = buffer(&area[0], offset);
-
-   process_players(dv, settings, pcm, frames);
-
-   //record_to_file(dv, alsa, frames);
-   //synthesize_beep(dv, alsa, frames);
-
-   r = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
-   if (r < 0)
    {
-      fprintf(stderr, "Error writing pcm data %d\n", r);
-      return r;
+      int err;
+      struct alsa* alsa = ( struct alsa* ) dv->local;
+
+      snd_pcm_sframes_t avail = snd_pcm_avail_update(alsa->playback.pcm);
+      if (avail < 0)
+      {
+         fprintf(stderr,"XRUN detected! Trying to recover... (%d)\n", avail);
+
+         err = snd_pcm_recover(alsa->playback.pcm, err, 1); // 1 enables silent recovery
+         if (err < 0)
+         {
+            fprintf(stderr,"Error: Unable to recover from XRUN: %s\n", snd_strerror(err));
+            return err;
+         }
+
+         // try it again ...
+         avail = snd_pcm_avail_update(alsa->playback.pcm);
+         if (avail < 0)
+         {
+            fprintf(stderr,"Error: Failed again to recover from XRUN: %s == %d\n", snd_strerror(avail), avail);
+            return avail;
+         }
+      }
+      else if(avail == 0)
+      {
+         fprintf(stderr, "Error available frames == %ld\n", avail);
+      }
+
+
+      snd_pcm_sframes_t period_size = alsa->playback.period_size;
+
+      if(avail >= period_size)
+      {
+         const snd_pcm_channel_area_t *areas;
+         snd_pcm_uframes_t offset, frames;
+         snd_pcm_sframes_t commit_res;
+
+         snd_pcm_sframes_t size = period_size;
+
+         while(size > 0)
+         {
+            frames = size;
+
+            err = snd_pcm_mmap_begin(alsa->playback.pcm, &areas, &offset, &frames);
+            if ( err < 0 )
+            {
+               fprintf(stderr, "Error snd_pcm_mmap_begin %d\n", err);
+               return err;
+            }
+
+            signed short* pcm = buffer(&areas[ 0 ], offset);
+
+            if ( frames == 0 )
+            {
+               printf("proc players %0x% %d\n", pcm, frames);
+            }
+
+            process_players(dv, settings, pcm, frames);
+
+            //record_to_file(dv, pcm, frames);
+            //synthesize_beep(dv, pcm, frames);
+
+            commit_res = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
+            if ( commit_res < 0 || commit_res != frames)
+            {
+               fprintf(stderr, "Error writing pcm data %d\n", err);
+               return commit_res >= 0 ? -EPIPE : commit_res;
+            }
+
+            size -= frames;
+         }
+      }
+
+      if (!alsa->playing) {
+         err = snd_pcm_start(alsa->playback.pcm);
+         if ( err < 0)
+            return err;
+
+         alsa->playing = true;
+      }
    }
 
    if ( !dv->scratch_player->recording_started && dv->scratch_player->recording )
@@ -689,14 +765,6 @@ static int playback( struct device* dv, struct sc_settings* settings )
       system(sync_command_line);
       dv->scratch_player->recording = 0;
       dv->scratch_player->playing_beep = BEEP_RECORDINGSTOP;
-   }
-
-   if (!alsa->playing) {
-      r = snd_pcm_start(alsa->playback.pcm);
-      if (r < 0)
-         return r;
-
-      alsa->playing = true;
    }
 
    return 0;
@@ -727,7 +795,7 @@ static int handle( struct device* dv )
       {
          if ( r == -EPIPE )
          {
-            fputs("ALSA: playback xrun.\n", stderr);
+            fprintf(stderr, "ALSA: playback xrun.\n");
 
             r = snd_pcm_prepare(alsa->playback.pcm);
             if ( r < 0 )
@@ -778,7 +846,7 @@ static struct device_ops alsa_ops = {
         .clear = clear
 };
 
-int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* audio_interface, int buffer_size )
+int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* audio_interface)
 {
    struct alsa* alsa;
 
@@ -795,9 +863,9 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
 
    char device_name[64];
    create_alsa_device_id_string(device_name, sizeof(device_name), audio_interface->device_id, audio_interface->subdevice_id, needs_plughw);
-   printf("Opening device %s with buffersize %i...", device_name, buffer_size);
+   printf("Opening device %s with period size %i...", device_name, audio_interface->period_size);
 
-   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, buffer_size, audio_interface->period) < 0 )
+   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, audio_interface) < 0 )
    {
       fputs("Failed to open device for playback.\n", stderr);
       printf(" failed!\n");
@@ -819,26 +887,26 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
    return -1;
 }
 
-int alsa_init( struct sc1000* sc1000_engine, int buffer_size )
+int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
 {
    printf("alsa_init\n");
 
-   sleep(2);
+   sleep(settings->audio_init_delay);
 
-   fill_audio_interface_info();
+   fill_audio_interface_info(settings);
 
    if(!audio_interfaces[0].is_internal && audio_interfaces[0].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &audio_interfaces[0], buffer_size);
+      return setup_alsa_device(sc1000_engine, &audio_interfaces[0]);
    }
    else if(!audio_interfaces[1].is_internal && audio_interfaces[1].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &audio_interfaces[1], buffer_size);
+      return setup_alsa_device(sc1000_engine, &audio_interfaces[1]);
    }
    else
    {
       // must be internal
-      return setup_alsa_device(sc1000_engine, &audio_interfaces[0], buffer_size);
+      return setup_alsa_device(sc1000_engine, &audio_interfaces[0]);
    }
 }
 

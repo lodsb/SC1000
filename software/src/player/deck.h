@@ -26,7 +26,7 @@
 
 #include "cues.h"
 #include "player.h"
-#include "sc_playlist.h"
+#include "playlist.h"
 
 
 #define NO_PUNCH (HUGE_VAL)

@@ -27,7 +27,6 @@
 #include <stdint-gcc.h>
 
 #include "../global/global.h"
-#include "../player/sc1000.h"
 
 
 #include "alsa.h"

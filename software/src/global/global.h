@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../player/settings.h"
-#include "../player/sc1000.h"
+#include "../app/settings.h"
+#include "../app/sc1000.h"
 #include "../thread/realtime.h"
 
 #define DEVICE_CHANNELS 2

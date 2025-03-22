@@ -5,8 +5,8 @@
 
 BUILDROOT_PREFIX=/home/niklas/buildroot/buildroot-2018.08.4
 
-CC=$(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
-CXX=$(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-g++
+CC=LD_LIBRARY_PATH=$(BUILDROOT_PREFIX)/output/target/usr/lib $(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
+CXX=LD_LIBRARY_PATH=$(BUILDROOT_PREFIX)/output/target/usr/lib $(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-g++
 
 ALSA_LIBS ?= -lasound
 DEVICE_CFLAGS = -DWITH_ALSA
@@ -65,11 +65,12 @@ CXXFLAGS                += -Wmissing-format-attribute
 CXXFLAGS                += -Wold-style-cast
 CXXFLAGS                += -Wshadow
 CXXFLAGS                += -Wctor-dtor-privacy
+CXXFLAGS                += -static-libstdc++ -static-libgcc
 
 # Linker
 LDFLAGS                 += $(TOOLCHAIN_SETTINGS) $(DEFS)
 LDFLAGS                 += $(OPT_FLAGS)
-LDFLAGS                 += $(DEVICE_LIBS) -lm
+LDFLAGS                 += $(DEVICE_LIBS) -lm -static-libstdc++ -static-libgcc
 
 # -------------------------------------------------------------
 # Build Type Modifiers

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../player/sc1000.h"
+#include "../app/sc1000.h"
 
 #ifdef __cplusplus
 #define EXTERNC extern "C"

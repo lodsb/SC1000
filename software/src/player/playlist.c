@@ -9,9 +9,10 @@
 #include <stdbool.h>
 #include <dirent.h>
 #include <string.h>
-#include "sc_playlist.h"
+#include "playlist.h"
 
-struct sc_file * get_file_at_index( unsigned int index, struct sc_folder *first_folder ) {
+struct sc_file * get_file_at_index( unsigned int index, struct sc_folder *first_folder )
+{
 
 	struct sc_folder *CurrFolder = first_folder;
 	struct sc_file *CurrFile = first_folder->first_file;

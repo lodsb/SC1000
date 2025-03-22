@@ -20,7 +20,7 @@
 #ifndef ALSA_H
 #define ALSA_H
 
-#include "../player/sc1000.h"
+#include "../app/sc1000.h"
 
 int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings);
 

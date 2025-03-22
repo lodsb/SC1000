@@ -27,8 +27,8 @@
 #include <linux/i2c-dev.h>              //Needed for I2C port
 
 
-#include "../player/controller.h"
-#include "../player/sc1000.h"
+#include "../input/controller.h"
+#include "../app/sc1000.h"
 #include "../util/debug.h"
 
 #include "realtime.h"

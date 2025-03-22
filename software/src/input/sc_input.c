@@ -16,15 +16,15 @@
 #include <fcntl.h>
 #include <sys/time.h>
 
-#include "../player/sc_playlist.h"
+#include "../player/playlist.h"
 #include "../audio/alsa.h"
-#include "../player/controller.h"
 #include "../audio/dummy.h"
 #include "../thread/realtime.h"
 #include "../thread/thread.h"
 #include "../thread/rig.h"
 #include "../player/track.h"
 
+#include "controller.h"
 #include "sc_midimap.h"
 #include "midi.h"
 

@@ -20,8 +20,8 @@
 #pragma once
 #include <stdbool.h>
 
-#include "../player/settings.h"
-#include "../player/sc1000.h"
+#include "../app/settings.h"
+#include "../app/sc1000.h"
 
 extern struct mapping *queued_midi_command;
 extern unsigned char queued_midi_buffer[3];

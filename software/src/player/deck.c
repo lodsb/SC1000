@@ -27,7 +27,7 @@
 #include "controller.h"
 #include "cues.h"
 #include "deck.h"
-#include "sc_playlist.h"
+#include "playlist.h"
 
 /*
  * An empty record, is used briefly until a record is loaded

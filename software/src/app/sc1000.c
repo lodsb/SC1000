@@ -94,11 +94,6 @@ void sc1000_clear(struct sc1000* engine)
       engine->ops->clear(engine);
 }
 
-static void process_players( struct sc1000* engine, signed short* pcm, unsigned long frames )
-{
-   player_collect_add(&(engine->beat_deck.player), &(engine->scratch_deck.player), pcm, frames, engine->settings);
-}
-
 /*
 static void synthesize_beep( struct device* dv, signed short* pcm, unsigned long frames  )
 {// Add beeps, if we need to
@@ -281,7 +276,6 @@ void sc1000_engine_process(struct sc1000* engine, signed short* pcm, unsigned lo
       }
    }
 
-   process_players(engine, pcm, frames);
    audio_engine_process(engine, pcm, frames);
 
    //record_to_file(dv, pcm, frames);

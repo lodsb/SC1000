@@ -35,13 +35,11 @@
 #include <string.h>
 #include <signal.h>
 
-#include "audio/alsa.h"
 #include "input/sc_input.h"
 #include "input/sc_midimap.h"
-#include "player/controller.h"
-#include "player/settings.h"
+#include "input/controller.h"
+#include "app/settings.h"
 
-#include "audio//dummy.h"
 #include "player/dicer.h"
 #include "player/track.h"
 #include "thread/realtime.h"

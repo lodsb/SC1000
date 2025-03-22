@@ -35,10 +35,11 @@
 #include <string.h>
 #include <signal.h>
 
-#include "input/sc_input.h"
 #include "input/sc_midimap.h"
 #include "input/controller.h"
-#include "app/settings.h"
+
+#include "app/sc_input.h"
+#include "app/sc_settings.h"
 
 #include "player/dicer.h"
 #include "player/track.h"

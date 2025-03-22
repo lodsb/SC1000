@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../app/settings.h"
+#include "../app/sc_settings.h"
 #include "../app/sc1000.h"
 #include "../thread/realtime.h"
 

@@ -20,7 +20,7 @@
 #pragma once
 #include <stdbool.h>
 
-#include "../app/settings.h"
+#include "../app/sc_settings.h"
 #include "../app/sc1000.h"
 
 extern struct mapping *queued_midi_command;

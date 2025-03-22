@@ -26,7 +26,6 @@
 #include "../thread/spin.h"
 
 #include "track.h"
-#include "settings.h"
 
 
 #define PLAYER_CHANNELS 2

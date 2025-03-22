@@ -14,7 +14,7 @@
 #include "../global/global.h"
 #include "../input/sc_midimap.h"
 
-#include "settings.h"
+#include "sc_settings.h"
 
 unsigned int count_chars( char* string, char c )
 {

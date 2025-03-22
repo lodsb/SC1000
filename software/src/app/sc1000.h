@@ -1,8 +1,9 @@
 #pragma once
 
-#include "deck.h"
-#include "recorder.h"
-#include "settings.h"
+#include "sc_settings.h"
+
+#include "../player/deck.h"
+#include "../player/recorder.h"
 
 struct sc1000
 {

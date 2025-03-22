@@ -4,10 +4,9 @@
 #include "../audio/alsa.h"
 #include "../util/debug.h"
 
-#include "../audio/audio.h"
+#include "../player/deck.h"
 
-#include "deck.h"
-
+#include "audio_engine.h"
 #include "sc1000.h"
 
 const char* BEEPS[3] = {

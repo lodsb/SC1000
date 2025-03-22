@@ -28,8 +28,7 @@
 #include "../util/list.h"
 #include "../util/debug.h"
 #include "../util/status.h"
-
-#include "../buffers/external.h"
+#include "../util/external.h"
 
 #include "../thread/realtime.h"
 #include "../thread/rig.h"

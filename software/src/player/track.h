@@ -43,9 +43,9 @@ struct track {
     int rate;
 
     /* pointers to external data */
-   
+
     const char *importer, *path;
-    
+
     size_t bytes; /* loaded in */
     unsigned int length, /* track length in samples */
         blocks; /* number of blocks allocated */

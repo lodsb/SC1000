@@ -47,9 +47,6 @@ struct player
    spin lock;
    struct track* track;
 
-   long samplesSoFar;
-
-
    /* Current playback parameters */
 
    double position, /* seconds */
@@ -109,6 +106,5 @@ void player_seek_to( struct player* pl, double seconds );
 
 void player_recue( struct player* pl );
 
-void player_collect( struct player* pl, signed short* pcm, unsigned long samples, struct sc_settings* settings);
 void player_collect_add( struct player *pl1, struct player *pl2, signed short *pcm, unsigned long samples, struct sc_settings* settings );
 

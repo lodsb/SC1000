@@ -2,9 +2,10 @@
 
 #include <stdbool.h>
 
+#include "../input/midi_mapping.h"
+
 struct sc_settings
 {
-
    // output buffer size, probably 256
    int period_size;
    int buffer_period_factor;
@@ -76,5 +77,6 @@ struct sc_settings
    bool io_remapped;
 
    const char* importer;
-
 };
+
+void settings_load_user_configuration( struct sc_settings* settings, struct mapping* maps);

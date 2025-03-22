@@ -56,9 +56,6 @@
 #define SQ(x) ((x) * (x))
 #define TARGET_UNKNOWN INFINITY
 
-/*
- * Return: the cubic interpolation of the sample at position 2 + mu
- */
 
 static inline double cubic_interpolate(signed short y[4], double mu)
 {
@@ -130,385 +127,6 @@ static float dither_f(void)
    return (float)v / 4096 - 0.5f; /* not quite whole range */
 }
 
-/*
- * Build a block of PCM audio, resampled from the track
- *
- * This is just a basic resampler which has a small amount of aliasing
- * where pitch > 1.0.
- *
- * Return: number of seconds advanced in the source audio track
- * Post: buffer at pcm is filled with the given number of samples
- */
-
-static double build_pcm(signed short *pcm, unsigned samples, double sample_dt,
-						struct track *tr, double position, double pitch, double end_pitch, double start_vol,
-						double end_vol)
-{
-	int s;
-	double sample, step, vol, gradient, pitchGradient;
-
-	sample = position * tr->rate;
-	step = sample_dt * pitch * tr->rate;
-
-	vol = start_vol;
-	gradient = (end_vol - start_vol) / samples;
-
-	pitchGradient = (end_pitch - pitch) / samples;
-
-	for (s = 0; s < samples; s++)
-	{
-
-		step = sample_dt * pitch * tr->rate;
-
-		int c, sa, q;
-		double f;
-		signed short i[PLAYER_CHANNELS][4];
-
-		/* 4-sample window for interpolation */
-
-		sa = (int)sample;
-		if (sample < 0.0)
-			sa--;
-		f = sample - sa;
-		sa--;
-
-		// wrap to track boundary, i.e. loop
-		if (tr->length != 0)
-		{
-			sa = sa % (int)tr->length;
-			// Actually don't let people go to minus numbers
-			// as entire track might not be loaded yet
-			//if (sa < 0) sa += tr->length;
-		}
-
-		for (q = 0; q < 4; q++, sa++)
-		{
-			if (sa < 0 || sa >= tr->length)
-			{
-				for (c = 0; c < PLAYER_CHANNELS; c++)
-					i[c][q] = 0;
-			}
-			else
-			{
-				signed short *ts;
-				int c;
-
-				ts = track_get_sample(tr, sa);
-				for (c = 0; c < PLAYER_CHANNELS; c++)
-					i[c][q] = ts[c];
-			}
-		}
-
-		for (c = 0; c < PLAYER_CHANNELS; c++)
-		{
-			double v;
-
-			v = vol * cubic_interpolate(i[c], f);// + dither();
-
-			if (v > SHRT_MAX)
-			{
-				*pcm++ = SHRT_MAX;
-			}
-			else if (v < SHRT_MIN)
-			{
-				*pcm++ = SHRT_MIN;
-			}
-			else
-			{
-				*pcm++ = (signed short)v;
-			}
-		}
-
-		sample += step;
-
-		// Loop when track gets to end
-		/*f (sample > tr->length && looping){
-			sample = 0;
-
-		}*/
-
-		vol += gradient;
-		pitch += pitchGradient;
-	}
-
-	//return sample_dt * pitch * samples;
-	return (sample / tr->rate) - position;
-}
-
-static inline void build_pcm_add_dither( signed short *pcm, unsigned samples,
-                                         double sample_dt_1, struct track *tr_1, double position_1, double pitch_1, double end_pitch_1, double start_vol_1, double end_vol_1, double* r1,
-                                         double sample_dt_2, struct track *tr_2, double position_2, double pitch_2, double end_pitch_2, double start_vol_2, double end_vol_2, double* r2)
-{
-   double sample_1 = position_1 * tr_1->rate;
-   double vol_1 = start_vol_1;
-   double volume_gradient_1 = (end_vol_1 - start_vol_1) / samples;
-   double pitch_gradient_1 = (end_pitch_1 - pitch_1) / samples;
-
-   double sample_2 = position_2 * tr_2->rate;
-   double vol_2 = start_vol_2;
-   double volume_gradient_2 = (end_vol_2 - start_vol_2) / samples;
-   double pitch_gradient_2 = (end_pitch_2 - pitch_2) / samples;
-
-   for (int s = 0; s < samples; s++)
-   {
-      double step_1 = sample_dt_1 * pitch_1 * tr_1->rate;
-      double step_2 = sample_dt_2 * pitch_2 * tr_2->rate;
-
-      double f_1;
-      signed short i_1[PLAYER_CHANNELS][4];
-      {
-
-         /* 4-sample window for interpolation */
-         int sa = ( int ) sample_1;
-         if ( sample_1 < 0.0 )
-         {
-            sa--;
-         }
-
-         f_1 = sample_1 - sa;
-         sa--;
-
-         // wrap to track boundary, i.e. loop
-         if ( tr_1->length != 0 )
-         {
-            sa = sa % ( int ) tr_1->length;
-            // Actually don't let people go to minus numbers
-            // as entire track might not be loaded yet
-            //if (sa < 0) sa += tr->length;
-         }
-
-         for (int q = 0; q < 4; q++, sa++ )
-         {
-            if ( sa < 0 || sa >= tr_1->length )
-            {
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_1[ c ][ q ] = 0;
-            }
-            else
-            {
-               signed short* ts;
-
-               ts = track_get_sample(tr_1, sa);
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_1[ c ][ q ] = ts[ c ];
-            }
-         }
-      }
-
-      double f_2;
-      signed short i_2[PLAYER_CHANNELS][4];
-      {
-
-         /* 4-sample window for interpolation */
-         int sa = ( int ) sample_2;
-         if ( sample_2 < 0.0 )
-         {
-            sa--;
-         }
-
-         f_2 = sample_2 - sa;
-         sa--;
-
-         // wrap to track boundary, i.e. loop
-         if ( tr_2->length != 0 )
-         {
-            sa = sa % ( int ) tr_2->length;
-            // Actually don't let people go to minus numbers
-            // as entire track might not be loaded yet
-            //if (sa < 0) sa += tr->length;
-         }
-
-         for (int q = 0; q < 4; q++, sa++ )
-         {
-            if ( sa < 0 || sa >= tr_2->length )
-            {
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_2[ c ][ q ] = 0;
-            }
-            else
-            {
-               signed short* ts;
-
-               ts = track_get_sample(tr_2, sa);
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_2[ c ][ q ] = ts[ c ];
-            }
-         }
-      }
-
-      for (int c = 0; c < PLAYER_CHANNELS; c++)
-      {
-         double v_1 = vol_1 * cubic_interpolate(i_1[c], f_1);
-         double v_2 = vol_2 * cubic_interpolate(i_2[c], f_2);
-
-         double v = v_1 + v_2 + dither();
-
-         if ( v > SHRT_MAX)
-         {
-            *pcm++ = SHRT_MAX;
-         }
-         else if ( v < SHRT_MIN)
-         {
-            *pcm++ = SHRT_MIN;
-         }
-         else
-         {
-            *pcm++ = (signed short)v;
-         }
-      }
-
-      sample_1 += step_1;
-      vol_1    += volume_gradient_1;
-      pitch_1  += pitch_gradient_1;
-
-      sample_2 += step_2;
-      vol_2    += volume_gradient_2;
-      pitch_2  += pitch_gradient_2;
-   }
-
-   *r1 = (sample_1 / tr_1->rate) - position_1;
-   *r2 = (sample_2 / tr_2->rate) - position_2;
-}
-
-static inline void build_pcm_add_dither_f( signed short *pcm, unsigned samples,
-                                           double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
-                                           double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2)
-{
-   double sample_1 = position_1 * tr_1->rate;
-   double sample_2 = position_2 * tr_2->rate;
-
-   float ONE_OVER_SAMPLES = 1.0f / (float)samples;
-
-   float vol_1 = start_vol_1;
-   float volume_gradient_1 = (end_vol_1 - start_vol_1) * ONE_OVER_SAMPLES;
-   float pitch_gradient_1 = (end_pitch_1 - pitch_1)    * ONE_OVER_SAMPLES;
-
-
-   float vol_2 = start_vol_2;
-   float volume_gradient_2 = (end_vol_2 - start_vol_2) * ONE_OVER_SAMPLES;
-   float pitch_gradient_2 = (end_pitch_2 - pitch_2)    * ONE_OVER_SAMPLES;
-
-   for (int s = 0; s < samples; s++)
-   {
-      double step_1 = sample_dt_1 * pitch_1 * tr_1->rate;
-      double step_2 = sample_dt_2 * pitch_2 * tr_2->rate;
-
-      double f_1;
-      signed short i_1[PLAYER_CHANNELS][4];
-      {
-
-         /* 4-sample window for interpolation */
-         int sa = ( int ) sample_1;
-         if ( sample_1 < 0.0 )
-         {
-            sa--;
-         }
-
-         f_1 = sample_1 - sa;
-         sa--;
-
-         // wrap to track boundary, i.e. loop
-         if ( tr_1->length != 0 )
-         {
-            sa = sa % ( int ) tr_1->length;
-            // Actually don't let people go to minus numbers
-            // as entire track might not be loaded yet
-            //if (sa < 0) sa += tr->length;
-         }
-
-         for (int q = 0; q < 4; q++, sa++ )
-         {
-            if ( sa < 0 || sa >= tr_1->length )
-            {
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_1[ c ][ q ] = 0;
-            }
-            else
-            {
-               signed short* ts;
-
-               ts = track_get_sample(tr_1, sa);
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_1[ c ][ q ] = ts[ c ];
-            }
-         }
-      }
-
-      double f_2;
-      signed short i_2[PLAYER_CHANNELS][4];
-      {
-
-         /* 4-sample window for interpolation */
-         int sa = ( int ) sample_2;
-         if ( sample_2 < 0.0 )
-         {
-            sa--;
-         }
-
-         f_2 = sample_2 - sa;
-         sa--;
-
-         // wrap to track boundary, i.e. loop
-         if ( tr_2->length != 0 )
-         {
-            sa = sa % ( int ) tr_2->length;
-            // Actually don't let people go to minus numbers
-            // as entire track might not be loaded yet
-            //if (sa < 0) sa += tr->length;
-         }
-
-         for (int q = 0; q < 4; q++, sa++ )
-         {
-            if ( sa < 0 || sa >= tr_2->length )
-            {
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_2[ c ][ q ] = 0;
-            }
-            else
-            {
-               signed short* ts;
-
-               ts = track_get_sample(tr_2, sa);
-               for (int c = 0; c < PLAYER_CHANNELS; c++ )
-                  i_2[ c ][ q ] = ts[ c ];
-            }
-         }
-      }
-
-      for (int c = 0; c < PLAYER_CHANNELS; c++)
-      {
-         float v_1 = vol_1 * cubic_interpolate_f(i_1[c], f_1);
-         float v_2 = vol_2 * cubic_interpolate_f(i_2[c], f_2);
-
-         float v = v_1 + v_2 + dither_f();
-
-         if ( v > SHRT_MAX)
-         {
-            *pcm++ = SHRT_MAX;
-         }
-         else if ( v < SHRT_MIN)
-         {
-            *pcm++ = SHRT_MIN;
-         }
-         else
-         {
-            *pcm++ = (signed short)v;
-         }
-      }
-
-      sample_1 += step_1;
-      vol_1    += volume_gradient_1;
-      pitch_1  += pitch_gradient_1;
-
-      sample_2 += step_2;
-      vol_2    += volume_gradient_2;
-      pitch_2  += pitch_gradient_2;
-   }
-
-   *r1 = (sample_1 / tr_1->rate) - position_1;
-   *r2 = (sample_2 / tr_2->rate) - position_2;
-}
-
 typedef float v4sf __attribute__ ((vector_size (16)));
 typedef int   v4si __attribute__ ((vector_size (16)));
 typedef float v2sf __attribute__ ((vector_size (8)));
@@ -550,9 +168,19 @@ static inline v2sf clamp_vector_2( v2sf v, v2sf min_val, v2sf max_val ) {
    return v;
 }
 
-static inline void build_pcm_add_dither_v( signed short *pcm, unsigned samples,
-                                           double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
-                                           double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2)
+/*
+ * Build a block of PCM audio, resampled from the track
+ *
+ * This is just a basic resampler which has a small amount of aliasing
+ * where pitch > 1.0.
+ *
+ * Return: number of seconds advanced in the source audio track
+ * Post: buffer at pcm is filled with the given number of samples
+ */
+
+static inline void process_add_players( signed short *pcm, unsigned samples,
+                                        double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
+                                        double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2 )
 {
    double sample_1 = position_1 * tr_1->rate;
    double sample_2 = position_2 * tr_2->rate;
@@ -753,6 +381,10 @@ static inline void build_pcm_add_dither_v( signed short *pcm, unsigned samples,
             }
          }
 
+         //
+         // Return: the cubic interpolation of the sample at position 2 + mu
+         //
+
          v4sf t0 = {f1l1, f1r1, f1l2, f1r2};
          v4sf t1 = {f2l1, f2r1, f2l2, f2r2};
          v4sf t2 = {f3l1, f3r1, f3l2, f3r2};
@@ -836,7 +468,6 @@ void player_init(struct player *pl, unsigned int sample_rate,
 	pl->volume = 0.0;
 	pl->set_volume = settings->initial_volume;
 
-	pl->samplesSoFar = 0;
 	pl->note_pitch = 1.0;
 	pl->fader_pitch = 1.0;
 	pl->bend_pitch = 1.0;
@@ -968,101 +599,10 @@ bool nearly_equal( double val1, double val2, double tolerance )
 		return false;
 }
 
-void player_collect(struct player *pl, signed short *pcm, unsigned long samples, struct sc_settings* settings)
+inline void setup_player_for_block( struct player* pl, unsigned long samples, const struct sc_settings* settings,
+                                    double* target_volume,
+                                    double* filtered_pitch )
 {
-	double r, pitch=0.0, target_volume, amountToDecay, target_pitch, filtered_pitch;
-	double diff;
-
-	pl->samplesSoFar += samples;
-
-	//pl->target_position = (sin(((double) pl->samplesSoFar) / 20000) + 1); // Sine wave to simulate scratching, used for debugging
-
-	// figure out motor speed
-	if (pl->stopped)
-	{
-		// Simulate braking
-		if (pl->motor_speed > 0.1)
-			pl->motor_speed = pl->motor_speed - (double)samples / (settings->brake_speed * 10);
-		else
-		{	
-			pl->motor_speed = 0.0;
-		}
-	}
-	else
-	{
-		// stack all the pitch bends on top of each other
-		pl->motor_speed = pl->note_pitch * pl->fader_pitch * pl->bend_pitch;
-	}
-
-	// deal with case where we've released the platter
-	if ( pl->just_play == 1 || // platter is always released on beat deck
-		(
-              pl->cap_touch == 0 && pl->cap_touch_old == 0 // don't do it on the first iteration so we pick up backspins
-		) 
-	)
-	{
-		if (pl->pitch > 20.0) pl->pitch = 20.0;
-		if (pl->pitch < -20.0) pl->pitch = -20.0;
-		// Simulate slipmat for lasers/phasers
-		if (pl->pitch < pl->motor_speed - 0.1)
-			target_pitch = pl->pitch + (double)samples / settings->slippiness;
-		else if (pl->pitch > pl->motor_speed + 0.1)
-			target_pitch = pl->pitch - (double)samples / settings->slippiness;
-		else
-			target_pitch = pl->motor_speed;
-	}
-	else
-	{
-		diff = pl->position - pl->target_position;
-
-		target_pitch = (-diff) * 40;
-	}
-	pl->cap_touch_old = pl->cap_touch;
-
-	filtered_pitch = (0.1 * target_pitch) + (0.9 * pl->pitch);
-
-	amountToDecay = (DECAYSAMPLES) / (double)samples;
-
-	if ( nearly_equal(pl->fader_target, pl->fader_volume, amountToDecay)) // Make sure to set directly when we're nearly there to avoid oscilation
-		pl->fader_volume = pl->fader_target;
-	else if ( pl->fader_target > pl->fader_volume)
-		pl->fader_volume += amountToDecay;
-	else
-		pl->fader_volume -= amountToDecay;
-
-	target_volume = fabs(pl->pitch) * VOLUME * pl->fader_volume;
-
-	if (target_volume > 1.0)
-		target_volume = 1.0;
-
-	/* Sync pitch is applied post-filtering */
-
-	/* We must return audio immediately to stay realtime. A spin
-	 * lock protects us from changes to the audio source */
-
-	if (!spin_try_lock(&pl->lock))
-	{
-		r = build_silence(pcm, samples, pl->sample_dt, pitch);
-	}
-	else
-	{
-		r = build_pcm(pcm, samples, pl->sample_dt, pl->track,
-					  pl->position - pl->offset, pl->pitch, filtered_pitch, pl->volume, target_volume);
-		pl->pitch = filtered_pitch;
-		spin_unlock(&pl->lock);
-	}
-
-	pl->position += r;
-
-	pl->volume = target_volume;
-}
-
-void setup_player_for_block( struct player* pl, unsigned long samples, const struct sc_settings* settings,
-                             double* target_volume,
-                             double* filtered_pitch )
-{
-   pl->samplesSoFar += samples;
-
    double target_pitch, diff;
 
    //pl->target_position = (sin(((double) pl->samplesSoFar) / 20000) + 1); // Sine wave to simulate scratching, used for debugging
@@ -1139,12 +679,11 @@ void player_collect_add( struct player *pl1, struct player *pl2, signed short *p
 
       if ( spin_try_lock(&pl1->lock) && spin_try_lock(&pl2->lock) )
       {
-         /*r1 = build_pcm(pcm, samples, pl1->sample_dt, pl1->track,
-                       pl1->position - pl1->offset, pl1->pitch, filtered_pitch, pl1->volume, target_volume);*/
-
-         build_pcm_add_dither_v(pcm, samples,
-                              pl1->sample_dt, pl1->track, pl1->position - pl1->offset, pl1->pitch, filtered_pitch_1, pl1->volume, target_volume_1, &r1,
-                              pl2->sample_dt, pl2->track,pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2, pl2->volume, target_volume_2, &r2);
+         process_add_players(pcm, samples,
+                             pl1->sample_dt, pl1->track, pl1->position - pl1->offset, pl1->pitch, filtered_pitch_1,
+                             pl1->volume, target_volume_1, &r1,
+                             pl2->sample_dt, pl2->track, pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2,
+                             pl2->volume, target_volume_2, &r2);
 
          pl1->pitch = filtered_pitch_1;
          spin_unlock(&pl1->lock);

@@ -455,14 +455,14 @@ unsigned char buttons[4] = {0, 0, 0, 0}, totalbuttons[4] = {0, 0, 0, 0};
 unsigned int ADCs[4] = {0, 0, 0, 0};
 unsigned char buttonState = 0;
 unsigned int butCounter = 0;
-unsigned char faderOpen1 = 0, faderOpen2 = 0;
+unsigned char fader_open1 = 0, fader_open2 = 0;
 void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 {
 	unsigned int i;
 
 	unsigned char result;
 
-	unsigned int faderCutPoint1, faderCutPoint2;
+	unsigned int fader_cut_point1, fader_cut_point2;
 	
 	double fadertarget0, fadertarget1;
 
@@ -499,26 +499,26 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 	}
 	
 	// Fader Hysteresis
-	faderCutPoint1 = faderOpen1 ? settings->fader_close_point : settings->fader_open_point;
-	faderCutPoint2 = faderOpen2 ? settings->fader_close_point : settings->fader_open_point;
-	
-	faderOpen1 = 1; faderOpen2 = 1;
+	fader_cut_point1 = (unsigned int) (fader_open1 ? settings->fader_close_point : settings->fader_open_point);
+   fader_cut_point2 = (unsigned int) (fader_open2 ? settings->fader_close_point : settings->fader_open_point);
+
+   fader_open1 = 1; fader_open2 = 1;
 	
 	fadertarget0 = sc1000_engine->beat_deck.player.set_volume;
 	fadertarget1 = sc1000_engine->scratch_deck.player.set_volume;
 	
 
-	if (ADCs[0] < faderCutPoint1)
+	if ( ADCs[0] < fader_cut_point1)
 	{ 
 		if ( settings->cut_beats == 1) fadertarget0 = 0.0;
 		else fadertarget1 = 0.0;
-		faderOpen1 = 0;
+      fader_open1 = 0;
 	}
-	if (ADCs[1] < faderCutPoint2)
+	if ( ADCs[1] < fader_cut_point2)
 	{
 		if ( settings->cut_beats == 2) fadertarget0 = 0.0;
 		else fadertarget1 = 0.0;
-		faderOpen2 = 0;
+      fader_open2 = 0;
 	}
 
    sc1000_engine->beat_deck.player.fader_target = fadertarget0;

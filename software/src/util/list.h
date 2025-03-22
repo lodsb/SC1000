@@ -45,31 +45,31 @@ static inline void list_init(struct list *list)
     list->prev = list;
 }
 
-static inline void __list_add(struct list *new, struct list *prev,
+static inline void __list_add(struct list *new_element, struct list *prev,
                               struct list *next)
 {
-    next->prev = new;
-    new->next = next;
-    new->prev = prev;
-    prev->next = new;
+   next->prev = new_element;
+   new_element->next = next;
+   new_element->prev = prev;
+   prev->next = new_element;
 }
 
 /*
  * Insert a new list entry after the given head
  */
 
-static inline void list_add(struct list *new, struct list *head)
+static inline void list_add(struct list *new_element, struct list *head)
 {
-    __list_add(new, head, head->next);
+    __list_add(new_element, head, head->next);
 }
 
 /*
  * Insert a new list entry before the given head (ie. end of list)
  */
 
-static inline void list_add_tail(struct list *new, struct list *head)
+static inline void list_add_tail(struct list *new_element, struct list *head)
 {
-    __list_add(new, head->prev, head);
+    __list_add(new_element, head->prev, head);
 }
 
 static inline void list_del(struct list *entry)

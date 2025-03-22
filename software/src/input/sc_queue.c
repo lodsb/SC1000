@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../player/sc_queue.h"
+#include "sc_queue.h"
 
 /*
  * Return: the cubic interpolation of the sample at position 2 + mu
@@ -30,7 +30,7 @@ char fifoPeek(statequeue *queue, unsigned int aheadby, inputstate *state)
    unsigned int newtail;
 
    // check we have enough in the queue to be able to look this far ahead
-   for (int i = 0; i < aheadby; i++)
+   for (unsigned i = 0; i < aheadby; i++)
    {
       newtail = (queue->tail + i) % queue->size;
       if (newtail == queue->head)

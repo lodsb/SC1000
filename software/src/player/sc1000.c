@@ -4,6 +4,8 @@
 #include "../audio/alsa.h"
 #include "../util/debug.h"
 
+#include "../audio/audio.h"
+
 #include "deck.h"
 
 #include "sc1000.h"
@@ -280,6 +282,7 @@ void sc1000_engine_process(struct sc1000* engine, signed short* pcm, unsigned lo
    }
 
    process_players(engine, pcm, frames);
+   audio_engine_process(engine, pcm, frames);
 
    //record_to_file(dv, pcm, frames);
    //synthesize_beep(dv, pcm, frames);

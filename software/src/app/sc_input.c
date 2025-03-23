@@ -18,11 +18,7 @@
 
 #include "../player/playlist.h"
 #include "../audio/alsa.h"
-#include "../audio/dummy.h"
-#include "../thread/realtime.h"
-#include "../thread/thread.h"
 #include "../thread/rig.h"
-#include "../player/track.h"
 
 #include "controller.h"
 #include "sc_midimap.h"

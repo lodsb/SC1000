@@ -7,7 +7,7 @@
 
 
 #include "../app/sc_input.h"
-#include "sc_midimap.h"
+#include "sc_control_mapping.h"
 
 /*
 void add_IO_mapping(struct mapping **maps, unsigned char Pin, bool Pullup, bool Edge, unsigned char DeckNo, unsigned char Action, unsigned char Param)

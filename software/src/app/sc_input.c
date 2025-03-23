@@ -16,19 +16,19 @@
 #include <fcntl.h>
 #include <sys/time.h>
 
-#include "../player/playlist.h"
-#include "../audio/alsa.h"
-#include "../thread/rig.h"
+#include "audio/alsa.h"
 
-#include "controller.h"
-#include "sc_midimap.h"
-#include "midi.h"
+#include "player/playlist.h"
+#include "player/dicer.h"
+#include "thread/rig.h"
 
-#include "../player/dicer.h"
+#include "input/controller.h"
+#include "input/midi.h"
 
-#include "../global/global.h"
 
+#include "global.h"
 #include "sc_input.h"
+#include "sc_control_mapping.h"
 
 bool shifted = 0;
 bool shiftLatched = 0;

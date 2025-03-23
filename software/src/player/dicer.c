@@ -19,11 +19,11 @@
 
 #include <stdlib.h>
 
-#include "../util/debug.h"
+#include "util/debug.h"
 
-#include "../input/midi.h"
-#include "../input/sc_midimap.h"
-#include "../global/global.h"
+#include "input/midi.h"
+#include "app/sc_control_mapping.h"
+#include "app/global.h"
 
 #include "controller.h"
 #include "deck.h"

@@ -19,10 +19,10 @@
 
 #include <assert.h>
 
-#include "../util/status.h"
-#include "../thread/rig.h"
-#include "../main.h"
-#include "../global/global.h"
+#include "app/global.h"
+
+#include "util/status.h"
+#include "thread/rig.h"
 
 #include "controller.h"
 #include "cues.h"

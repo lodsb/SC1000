@@ -26,8 +26,7 @@
 #include <math.h>
 #include <stdint-gcc.h>
 
-#include "../global/global.h"
-
+#include "app/global.h"
 
 #include "alsa.h"
 

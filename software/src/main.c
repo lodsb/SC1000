@@ -35,19 +35,18 @@
 #include <string.h>
 #include <signal.h>
 
-#include "input/sc_midimap.h"
+#include "app/sc_control_mapping.h"
 #include "input/controller.h"
 
 #include "app/sc_input.h"
 #include "app/sc_settings.h"
+#include "app/global.h"
 
-#include "player/dicer.h"
 #include "player/track.h"
 #include "thread/realtime.h"
 #include "thread/thread.h"
 #include "thread/rig.h"
 
-#include "global/global.h"
 
 #include "main.h"
 

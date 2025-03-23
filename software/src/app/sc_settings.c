@@ -11,10 +11,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "../global/global.h"
-#include "../input/sc_midimap.h"
 
+#include "sc_control_mapping.h"
 #include "sc_settings.h"
+#include "global.h"
 
 unsigned int count_chars( char* string, char c )
 {

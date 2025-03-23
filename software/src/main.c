@@ -51,8 +51,6 @@
 
 #include "main.h"
 
-struct mapping* maps = NULL;
-
 void sig_handler( int signo )
 {
    if ( signo == SIGINT )
@@ -91,9 +89,7 @@ int main( int argc, char* argv[] )
 
    use_mlock = false;
 
-   settings_load_user_configuration(&g_sc1000_settings, maps);
-
-   sc1000_setup(&g_sc1000_engine, &g_sc1000_settings, &g_rt);
+   sc1000_setup(&g_sc1000_engine, &g_rt);
    sc1000_load_sample_folders(&g_sc1000_engine);
 
    rc = EXIT_FAILURE; /* until clean exit */

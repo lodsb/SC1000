@@ -26,7 +26,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
-#include "../main.h"
+#include "../app/sc_settings.h"
 
 #include "player.h"
 #include "track.h"

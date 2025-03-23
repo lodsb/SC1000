@@ -51,8 +51,6 @@ int numControllers = 0;
 		(byte & 0x02 ? '1' : '0'), \
 		(byte & 0x01 ? '1' : '0')
 
-extern struct mapping *maps;
-
 void i2c_read_address(int file_i2c, unsigned char address, unsigned char *result)
 {
 
@@ -86,7 +84,7 @@ int i2c_write_address(int file_i2c, unsigned char address, unsigned char value)
 
 void dump_maps()
 {
-	struct mapping *new_map = maps;
+	struct mapping *new_map = g_sc1000_engine.mappings;
 	while (new_map != NULL)
 	{
 		printf("Dump Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->Type, new_map->port, new_map->Pin, new_map->Pullup, new_map->Edge, new_map->MidiBytes[0], new_map->MidiBytes[1], new_map->MidiBytes[2], new_map->DeckNo, new_map->Action, new_map->Param);
@@ -147,7 +145,7 @@ int file_i2c_gpio;
 volatile void *gpio_addr;
 
 bool firstTimeRound = 1;
-void init_io()
+void init_io(struct sc1000* sc1000_engine)
 {
 	int i, j;
 	struct mapping *map;
@@ -179,7 +177,7 @@ void init_io()
 		// For each pin
 		for (i = 0; i < 16; i++)
 		{
-			map = find_io_mapping(maps, 0, i, 1);
+			map = find_io_mapping(sc1000_engine->mappings, 0, i, 1);
 			// If pin is marked as ground
 			if (map != NULL && map->Action == ACTION_GND)
 			{
@@ -254,7 +252,7 @@ void init_io()
 			for (i = 0; i < 28; i++)
 			{
 
-				map = find_io_mapping(maps, j, i, 1);
+				map = find_io_mapping(sc1000_engine->mappings, j, i, 1);
 
 				if (map != NULL)
 				{
@@ -300,8 +298,11 @@ void init_io()
 
 }
 
-void process_io(struct sc1000* sc1000_engine, struct sc_settings* settings)
-{ // Iterate through all digital input mappings and check the appropriate pin
+void process_io(struct sc1000* sc1000_engine)
+{
+   struct sc_settings* settings = sc1000_engine->settings;
+
+   // Iterate through all digital input mappings and check the appropriate pin
 	unsigned int gpios = 0x00000000;
 	unsigned char result;
 	if (gpiopresent)
@@ -318,7 +319,9 @@ void process_io(struct sc1000* sc1000_engine, struct sc_settings* settings)
 		// invert logic
 		gpios ^= 0xFFFF;
 	}
-	struct mapping *last_map = maps;
+
+	struct mapping *last_map = sc1000_engine->mappings;
+
 	while (last_map != NULL)
 	{
 		//printf("arses : %d %d\n", last_map->port, last_map->Pin);
@@ -456,8 +459,11 @@ unsigned int ADCs[4] = {0, 0, 0, 0};
 unsigned char buttonState = 0;
 unsigned int butCounter = 0;
 unsigned char fader_open1 = 0, fader_open2 = 0;
-void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
+
+void process_pic(struct sc1000* sc1000_engine)
 {
+   struct sc_settings* settings = sc1000_engine->settings;
+
 	unsigned int i;
 
 	unsigned char result;
@@ -488,7 +494,7 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 	buttons[3] = !(result >> 3 & 0x01);
    cap_is_touched = (result >> 4 & 0x01);
 
-	process_io(sc1000_engine, settings);
+	process_io(sc1000_engine);
 
 	// Apply volume and fader
 
@@ -660,11 +666,15 @@ void process_pic(struct sc1000* sc1000_engine, struct sc_settings* settings)
 // Keep a running average of speed so if we suddenly let go it keeps going at that speed
 double averageSpeed = 0.0;
 unsigned int num_blips = 0;
-void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
+void process_rot(struct sc1000* sc1000_engine)
 {
-	unsigned char result;
+
+   struct sc_settings* settings = sc1000_engine->settings;
+
+   unsigned char result;
 	int8_t crossed_zero; // 0 when we haven't crossed zero, -1 when we've crossed in anti-clockwise direction, 1 when crossed in clockwise
 	int wrapped_angle = 0x0000;
+
 	// Handle rotary sensor
 
 	i2c_read_address(file_i2c_rot, 0x0c, &result);
@@ -813,8 +823,10 @@ void process_rot(struct sc1000* sc1000_engine, struct sc_settings* settings)
 	}
 }
 
-void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* settings)
+void *run_sc_input_thread(struct sc1000* sc1000_engine)
 {
+   struct sc_settings* settings = sc1000_engine->settings;
+
 	unsigned char picskip = 0;
 	unsigned char picpresent = 1;
 	//unsigned char rotarypresent = 1;
@@ -838,7 +850,7 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 		picpresent = 0;
 	}
 
-	init_io();
+	init_io(sc1000_engine);
 
 	//detect SC500 by seeing if G11 is pulled low
 
@@ -927,11 +939,11 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 			if (picskip > 4)
 			{
 				picskip = 0;
-				process_pic(sc1000_engine, settings);
+				process_pic(sc1000_engine);
 				firstTimeRound = 0;
 			}
 
-			process_rot(sc1000_engine, settings);
+			process_rot(sc1000_engine);
 		}
 		else // couldn't find input processor, just play the tracks
 		{
@@ -958,7 +970,7 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine, struct sc_settings* sett
 
 void *sc_input_thread( void *ptr )
 {
-   return run_sc_input_thread(&g_sc1000_engine, &g_sc1000_settings);
+   return run_sc_input_thread(&g_sc1000_engine);
 }
 
 // Start the input thread

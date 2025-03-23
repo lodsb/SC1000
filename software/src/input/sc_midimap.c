@@ -5,9 +5,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include "sc_midimap.h"
 
-#include "../main.h"
+#include "../app/sc_input.h"
+#include "sc_midimap.h"
 
 /*
 void add_IO_mapping(struct mapping **maps, unsigned char Pin, bool Pullup, bool Edge, unsigned char DeckNo, unsigned char Action, unsigned char Param)
@@ -254,6 +254,8 @@ void add_config_mapping(struct mapping **maps, unsigned char Type, unsigned char
 {
 	unsigned char deckno, action, parameter = 0;
 
+   printf("config mapping\n");
+
 	// Extract deck no from action (CHx)
 	if (actions[2] == '0')
 		deckno = 0;
@@ -341,7 +343,7 @@ void add_mapping(struct mapping **maps, unsigned char Type, unsigned char deckno
 	new_map->DeckNo = deckno;
 	new_map->debounce = 0;
 
-	//printf("Adding Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->Type, new_map->port, new_map->Pin, new_map->Pullup, new_map->Edge, new_map->MidiBytes[0], new_map->MidiBytes[1], new_map->MidiBytes[2], new_map->DeckNo, new_map->Action, new_map->Param);
+	printf("Adding Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->Type, new_map->port, new_map->Pin, new_map->Pullup, new_map->Edge, new_map->MidiBytes[0], new_map->MidiBytes[1], new_map->MidiBytes[2], new_map->DeckNo, new_map->Action, new_map->Param);
 
 	if (*maps == NULL)
 	{
@@ -389,20 +391,20 @@ struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], c
 }
 
 // Find a mapping from a GPIO event
-struct mapping *find_io_mapping( struct mapping *maps, unsigned char port, unsigned char pin, char edge )
+struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, char edge )
 {
 
-	struct mapping *last_map = maps;
+	struct mapping *last_mapping = mappings;
 
-	while (last_map != NULL)
+	while ( last_mapping != NULL)
 	{
 
-		if (last_map->Type == MAP_IO && last_map->Pin == pin && last_map->Edge == edge && last_map->port == port)
+		if ( last_mapping->Type == MAP_IO && last_mapping->Pin == pin && last_mapping->Edge == edge && last_mapping->port == port)
 		{
-			return last_map;
+			return last_mapping;
 		}
 
-		last_map = last_map->next;
+      last_mapping = last_mapping->next;
 	}
 	return NULL;
 }

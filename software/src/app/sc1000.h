@@ -1,9 +1,10 @@
 #pragma once
 
-#include "sc_settings.h"
-
 #include "../player/deck.h"
 #include "../player/recorder.h"
+
+struct sc_settings;
+struct mapping;
 
 struct sc1000
 {
@@ -12,6 +13,7 @@ struct sc1000
    struct recorder recorder;
 
    struct sc_settings* settings;
+   struct mapping*     mappings;
 
    /////////////////////////
    bool fault;
@@ -30,7 +32,7 @@ struct sc1000_ops {
    void (*clear)(struct sc1000 *engine);
 };
 
-void sc1000_setup(struct sc1000* engine, struct sc_settings* settings, struct rt *rt);
+void sc1000_setup(struct sc1000* engine, struct rt *rt);
 
 void sc1000_load_sample_folders(struct sc1000* engine);
 

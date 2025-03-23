@@ -37,6 +37,7 @@
 #define BEEP_RECORDINGERROR 2
 
 struct track;
+struct sc_settings;
 
 struct player
 {

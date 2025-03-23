@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../app/sc_settings.h"
+#include "../app/sc_input.h"
 #include "../app/sc1000.h"
 #include "../thread/realtime.h"
 
@@ -10,6 +11,5 @@
 
 #define DEFAULT_IMPORTER "/root/xwax-import"
 
-extern struct sc_settings g_sc1000_settings;
 extern struct sc1000      g_sc1000_engine;
 extern struct rt          g_rt;

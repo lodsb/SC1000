@@ -32,7 +32,7 @@ unsigned int count_chars( char* string, char c )
    return count;
 }
 
-void settings_load_user_configuration( struct sc_settings* settings, struct mapping* maps )
+void settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings )
 {
    FILE* fp;
    char* line = NULL;
@@ -183,7 +183,7 @@ void settings_load_user_configuration( struct sc_settings* settings, struct mapp
                   {
                      sprintf(tempact, "%s%u", actions, midicommand[ 1 ]);
                      add_config_mapping(
-                             &maps,
+                             mappings,
                              MAP_MIDI,
                              midicommand,
                              0,
@@ -201,7 +201,7 @@ void settings_load_user_configuration( struct sc_settings* settings, struct mapp
                   midicommand[ 1 ] = notenum;
                   midicommand[ 2 ] = 0;
                   add_config_mapping(
-                          &maps,
+                          mappings,
                           MAP_MIDI,
                           midicommand,
                           0,
@@ -229,8 +229,11 @@ void settings_load_user_configuration( struct sc_settings* settings, struct mapp
                pullup = atoi(strtok_r(NULL, delimc, &valuetok));
                edge = atoi(strtok_r(NULL, delimc, &valuetok));
                actions = strtok_r(NULL, delimc, &valuetok);
+
+               printf("IO\n");
+
                add_config_mapping(
-                       &maps,
+                       mappings,
                        MAP_IO,
                        NULL,
                        port,

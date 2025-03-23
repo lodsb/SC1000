@@ -9,6 +9,7 @@
 
 #include "audio_engine.h"
 #include "sc1000.h"
+#include "sc_settings.h"
 
 const char* BEEPS[3] = {
         "----------",          // Start Recording
@@ -16,10 +17,17 @@ const char* BEEPS[3] = {
         "--__--__--__--__--__" // Recording error
 };
 
-void sc1000_setup(struct sc1000* engine, struct sc_settings* settings,
+void sc1000_setup(struct sc1000* engine,
                   struct rt *rt)
 {
    printf("sc1000_init\n");
+
+   struct sc_settings* settings = (struct sc_settings*) malloc(sizeof(struct sc_settings));
+
+   engine->settings = settings;
+   engine->mappings = NULL;
+
+   settings_load_user_configuration(engine->settings, &engine->mappings);
 
    alsa_init(engine, settings);
 
@@ -34,8 +42,6 @@ void sc1000_setup(struct sc1000* engine, struct sc_settings* settings,
 
    // Tell deck0 to just play without considering inputs
    engine->beat_deck.player.just_play = 1;
-
-   engine->settings = settings;
 
    alsa_clear_config_cache();
 }

@@ -23,9 +23,7 @@
 
 #include "../input/midi.h"
 #include "../input/sc_midimap.h"
-
-#include "../thread/realtime.h"
-#include "../main.h"
+#include "../global/global.h"
 
 #include "controller.h"
 #include "deck.h"
@@ -56,7 +54,6 @@ typedef unsigned char led_t;
 #define PRESSED 0x2
 #define SYNCED 0x4
 
-extern struct mapping *maps;
 extern bool shifted;
 
 /*
@@ -95,7 +92,7 @@ static void event(struct dicer *d)
 	printf("%x %x %x\n",d->MidiBuffer[0], d->MidiBuffer[1], d->MidiBuffer[2]);
 		
 	// This is so dumb, there should be a proper event buffer, but oh well
-	queued_midi_command = find_midi_mapping(maps, d->MidiBuffer, shifted ? 3 : 1);
+	queued_midi_command = find_midi_mapping(g_sc1000_engine.mappings, d->MidiBuffer, shifted ? 3 : 1);
    queued_midi_buffer[0] = d->MidiBuffer[0];
    queued_midi_buffer[1] = d->MidiBuffer[1];
    queued_midi_buffer[2] = d->MidiBuffer[2];

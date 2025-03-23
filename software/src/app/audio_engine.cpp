@@ -1,8 +1,9 @@
-#include "audio_engine.h"
-
 #include <iostream>
 #include <cmath>
 #include <climits>
+
+#include "audio_engine.h"
+#include "sc_settings.h"
 
 #include "../player/track.h"
 #include "../player/deck.h"

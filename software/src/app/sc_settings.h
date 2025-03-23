@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 
-#include "../input/midi_mapping.h"
+struct mapping;
 
 struct sc_settings
 {
@@ -79,4 +79,4 @@ struct sc_settings
    const char* importer;
 };
 
-void settings_load_user_configuration( struct sc_settings* settings, struct mapping* maps);
+void settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings );

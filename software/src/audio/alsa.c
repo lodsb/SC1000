@@ -524,7 +524,7 @@ static signed short* buffer(const snd_pcm_channel_area_t *area,
 /* Collect audio from the player and push it into the device's buffer,
  * for playback */
 
-static int playback( struct sc1000* engine, struct sc_settings* settings )
+static int playback( struct sc1000* engine)
 {
 
    {
@@ -630,7 +630,7 @@ static int handle( struct sc1000* engine )
 
    if ( revents & POLLOUT )
    {
-      r = playback(engine, &g_sc1000_settings);
+      r = playback(engine);
 
       if ( r < 0 )
       {

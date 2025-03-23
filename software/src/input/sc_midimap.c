@@ -7,7 +7,7 @@
 
 #include "sc_midimap.h"
 
-#include "../xwax.h"
+#include "../main.h"
 
 /*
 void add_IO_mapping(struct mapping **maps, unsigned char Pin, bool Pullup, bool Edge, unsigned char DeckNo, unsigned char Action, unsigned char Param)

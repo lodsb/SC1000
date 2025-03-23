@@ -30,5 +30,5 @@ static struct sc1000_ops dummy_ops = {
 
 void dummy_init(struct sc1000 *d)
 {
-    sc1000_engine_init(d, &dummy_ops);
+    sc1000_audio_engine_init(d, &dummy_ops);
 }

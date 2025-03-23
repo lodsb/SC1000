@@ -968,6 +968,8 @@ void start_sc_input_thread()
 	const char *message1 = "Thread 1";
 	int iret1;
 
+   printf("Starting GPIO input thread\n");
+
 	iret1 = pthread_create(&thread1, NULL, sc_input_thread, ( void* ) message1);
 
 	if (iret1)

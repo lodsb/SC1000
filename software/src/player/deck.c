@@ -21,7 +21,7 @@
 
 #include "../util/status.h"
 #include "../thread/rig.h"
-#include "../xwax.h"
+#include "../main.h"
 #include "../global/global.h"
 
 #include "controller.h"

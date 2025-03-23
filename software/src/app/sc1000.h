@@ -37,9 +37,9 @@ void sc1000_load_sample_folders(struct sc1000* engine);
 void sc1000_clear(struct sc1000* engine);
 
 
-void sc1000_engine_start(struct sc1000* engine);
-void sc1000_engine_stop(struct sc1000* engine);
-void sc1000_engine_init(struct sc1000* engine, struct sc1000_ops *ops);
-void sc1000_engine_process(struct sc1000* engine, signed short* pcm, unsigned long frames);
-ssize_t sc1000_engine_pollfds(struct sc1000* engine, struct pollfd *pe, size_t z);
-void sc1000_engine_handle(struct sc1000* engine);
+void sc1000_audio_engine_start(struct sc1000* engine);
+void sc1000_audio_engine_stop(struct sc1000* engine);
+void sc1000_audio_engine_init(struct sc1000* engine, struct sc1000_ops *ops);
+void sc1000_audio_engine_process(struct sc1000* engine, signed short* pcm, unsigned long frames);
+ssize_t sc1000_audio_engine_pollfds(struct sc1000* engine, struct pollfd *pe, size_t z);
+void sc1000_audio_engine_handle(struct sc1000* engine);

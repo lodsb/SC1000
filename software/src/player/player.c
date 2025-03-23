@@ -26,7 +26,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
-#include "../xwax.h"
+#include "../main.h"
 
 #include "player.h"
 #include "track.h"

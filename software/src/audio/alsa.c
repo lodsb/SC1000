@@ -586,7 +586,7 @@ static int playback( struct sc1000* engine, struct sc_settings* settings )
             }
 
             // the main thing...
-            sc1000_engine_process(engine, pcm, frames);
+            sc1000_audio_engine_process(engine, pcm, frames);
 
             commit_res = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
             if ( commit_res < 0 || commit_res != frames)
@@ -714,7 +714,7 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
    }
 
    sc1000_engine->local = alsa;
-   sc1000_engine_init(sc1000_engine, &alsa_ops);
+   sc1000_audio_engine_init(sc1000_engine, &alsa_ops);
 
    printf(" success!\n");
 

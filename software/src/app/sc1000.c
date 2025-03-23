@@ -5,6 +5,7 @@
 #include "../util/debug.h"
 
 #include "../player/deck.h"
+#include "../player/track.h"
 
 #include "audio_engine.h"
 #include "sc1000.h"
@@ -158,7 +159,7 @@ static void record_to_file( struct device* dv, signed short* pcm, unsigned long 
 }
 */
 
-void sc1000_engine_init(struct sc1000* engine, struct sc1000_ops *ops)
+void sc1000_audio_engine_init(struct sc1000* engine, struct sc1000_ops *ops)
 {
    debug("%p", dv);
    engine->fault = false;
@@ -169,7 +170,7 @@ void sc1000_engine_init(struct sc1000* engine, struct sc1000_ops *ops)
  * Start the device inputting and outputting audio
  */
 
-void sc1000_engine_start(struct sc1000* engine)
+void sc1000_audio_engine_start(struct sc1000* engine)
 {
    if (engine->ops->start != NULL)
       engine->ops->start(engine);
@@ -179,7 +180,7 @@ void sc1000_engine_start(struct sc1000* engine)
  * Stop the device
  */
 
-void sc1000_engine_stop(struct sc1000* engine)
+void sc1000_audio_engine_stop(struct sc1000* engine)
 {
    if (engine->ops->stop != NULL)
       engine->ops->stop(engine);
@@ -194,7 +195,7 @@ void sc1000_engine_stop(struct sc1000* engine)
  * Return: the number of pollfd filled, or -1 on error
  */
 
-ssize_t sc1000_engine_pollfds(struct sc1000* engine, struct pollfd *pe, size_t z)
+ssize_t sc1000_audio_engine_pollfds(struct sc1000* engine, struct pollfd *pe, size_t z)
 {
    if (engine->ops->pollfds != NULL)
       return engine->ops->pollfds(engine, pe, z);
@@ -209,7 +210,7 @@ ssize_t sc1000_engine_pollfds(struct sc1000* engine, struct pollfd *pe, size_t z
  * descriptor, not specifically one returned by this device.
  */
 
-void sc1000_engine_handle(struct sc1000* engine)
+void sc1000_audio_engine_handle(struct sc1000* engine)
 {
    if (engine->fault)
       return;
@@ -223,7 +224,7 @@ void sc1000_engine_handle(struct sc1000* engine)
    }
 }
 
-void sc1000_engine_process(struct sc1000* engine, signed short* pcm, unsigned long frames)
+void sc1000_audio_engine_process(struct sc1000* engine, signed short* pcm, unsigned long frames)
 {
    static int16_t next_recording_number = 0;
 

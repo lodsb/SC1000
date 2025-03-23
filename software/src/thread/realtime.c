@@ -124,7 +124,7 @@ static void rt_main( struct rt* rt )
          controller_handle(rt->ctl[ n ]);
 
 
-      sc1000_engine_handle(rt->engine);
+      sc1000_audio_engine_handle(rt->engine);
    }
 }
 
@@ -173,7 +173,7 @@ int rt_set_sc1000( struct rt* rt, struct sc1000* engine )
    /* The requested poll events never change, so populate the poll
     * entry table before entering the realtime thread */
 
-   z = sc1000_engine_pollfds(engine, &rt->pt[ rt->npt ], sizeof(rt->pt) - rt->npt);
+   z = sc1000_audio_engine_pollfds(engine, &rt->pt[ rt->npt ], sizeof(rt->pt) - rt->npt);
    if ( z == -1 )
    {
       fprintf(stderr, "Device failed to return file descriptors.\n");
@@ -285,7 +285,7 @@ int rt_start( struct rt* rt, int priority )
    }
 
 
-   sc1000_engine_start(rt->engine);
+   sc1000_audio_engine_start(rt->engine);
 
    return 0;
 }
@@ -302,7 +302,7 @@ void rt_stop( struct rt* rt )
 
    /* Stop audio rolling on devices */
 
-   sc1000_engine_stop(rt->engine);
+   sc1000_audio_engine_stop(rt->engine);
 
    if ( rt->npt > 0 )
    {

@@ -49,7 +49,7 @@
 
 #include "global/global.h"
 
-#include "xwax.h"
+#include "main.h"
 
 struct mapping* maps = NULL;
 
@@ -70,7 +70,7 @@ int main( int argc, char* argv[] )
 
    if ( signal(SIGINT, sig_handler) == SIG_ERR )
    {
-      printf("\ncan't catch SIGINT\n");
+      printf("\nCan't catch SIGINT\n");
       exit(1);
    }
 

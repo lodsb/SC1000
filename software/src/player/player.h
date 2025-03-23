@@ -25,8 +25,6 @@
 
 #include "../thread/spin.h"
 
-#include "track.h"
-
 
 #define PLAYER_CHANNELS 2
 
@@ -38,6 +36,7 @@
 #define BEEP_RECORDINGSTOP 1
 #define BEEP_RECORDINGERROR 2
 
+struct track;
 
 struct player
 {
@@ -104,6 +103,3 @@ bool player_is_active( const struct player* pl );
 void player_seek_to( struct player* pl, double seconds );
 
 void player_recue( struct player* pl );
-
-void player_collect_add( struct player *pl1, struct player *pl2, signed short *pcm, unsigned long samples, struct sc_settings* settings );
-

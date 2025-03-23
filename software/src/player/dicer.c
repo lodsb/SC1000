@@ -25,7 +25,7 @@
 #include "../input/sc_midimap.h"
 
 #include "../thread/realtime.h"
-#include "../xwax.h"
+#include "../main.h"
 
 #include "controller.h"
 #include "deck.h"

@@ -22,11 +22,13 @@
 
 #include <math.h>
 
-#include "../thread/realtime.h"
-
 #include "cues.h"
 #include "player.h"
-#include "playlist.h"
+
+struct sc_folder;
+struct sc_file;
+struct controller;
+struct sc_settings;
 
 
 #define NO_PUNCH (HUGE_VAL)

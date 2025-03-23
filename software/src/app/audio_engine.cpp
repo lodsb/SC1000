@@ -4,6 +4,9 @@
 #include <cmath>
 #include <climits>
 
+#include "../player/track.h"
+#include "../player/deck.h"
+
 // Time in seconds fader takes to decay
 #define FADERDECAY 0.020
 #define DECAYSAMPLES FADERDECAY * 48000
@@ -29,10 +32,10 @@ static float dither_f(void)
 
    v = (x & 0x0000000f) | ((x & 0x000f0000) >> 12) | ((x & 0x0f000000) >> 16);
 
-   return (float)v / 4096 - 0.5f; /* not quite whole range */
+   return static_cast<float>(v) / 4096 - 0.5f; /* not quite whole range */
 }
 
-bool nearly_equal( double val1, double val2, double tolerance )
+static bool nearly_equal( double val1, double val2, double tolerance )
 {
    if (std::fabs(val1 - val2) < tolerance)
       return true;
@@ -44,6 +47,140 @@ typedef float v4sf __attribute__ ((vector_size (16)));
 typedef int   v4si __attribute__ ((vector_size (16)));
 typedef float v2sf __attribute__ ((vector_size (8)));
 typedef int   v2si __attribute__ ((vector_size (8)));
+
+inline static v4sf interpolate_two_stereo_samples( v4sf t0, v4sf t1, v4sf t2, v4sf t3, float tsp1, float tsp2 )
+{
+
+   //
+   // the cubic interpolation of the sample at position 2 + mu
+   //
+
+   v4sf mu = {tsp1, tsp1, tsp2, tsp2};
+   v4sf mu2= mu*mu;
+
+   v4sf a0 = t3 - t2 - t0 + t1;
+   v4sf a1 = t0 - t1 - a0;
+   v4sf a2 = t2 - t0;
+   v4sf a3 = t1;
+
+   v4sf interpol = (mu * mu2 * a0) + (mu2 * a1) + (mu * a2) + a3;
+   return interpol;
+}
+
+inline static void
+collect_track_samples( track* tr_1, double sample_1, double tr_1_len, double& subpos_1, float& f1l1, float& f2l1,
+                       float& f3l1, float& f4l1, float& f1r1, float& f2r1, float& f3r1, float& f4r1 )
+{
+   /* 4-sample window for interpolation */
+   int sa = ( int ) sample_1;
+   if ( sample_1 < 0.0 )
+   {
+      sa--;
+   }
+
+   subpos_1 = sample_1 - sa;
+   sa--;
+
+   // wrap to track boundary, i.e. loop
+   if ( tr_1_len != 0 )
+   {
+      sa = sa % ( int ) tr_1_len;
+      // Actually don't let people go to minus numbers
+      // as entire track might not be loaded yet
+      //if (sa < 0) sa += tr->length;
+   }
+
+   signed short* ts;
+   if ( sa < 0 || sa >= tr_1_len )
+   {
+      f1l1 = 0;
+      f1r1 = 0;
+   }
+   else
+   {
+      ts = track_get_sample(tr_1, sa);
+      f1l1 = ts[ 0 ];
+      f1r1 = ts[ 1 ];
+   }
+
+   sa++;
+   if ( sa < 0 || sa >= tr_1_len )
+   {
+      f2l1 = 0;
+      f2r1 = 0;
+   }
+   else
+   {
+      ts = track_get_sample(tr_1, sa);
+      f2l1 = ts[ 0 ];
+      f2r1 = ts[ 1 ];
+   }
+
+   sa++;
+   if ( sa < 0 || sa >= tr_1_len )
+   {
+      f3l1 = 0;
+      f3r1 = 0;
+   }
+   else
+   {
+      ts = track_get_sample(tr_1, sa);
+      f3l1 = ts[ 0 ];
+      f3r1 = ts[ 1 ];
+   }
+
+   sa++;
+   if ( sa < 0 || sa >= tr_1_len )
+   {
+      f4l1 = 0;
+      f4r1 = 0;
+   }
+   else
+   {
+      ts = track_get_sample(tr_1, sa);
+      f4l1 = ts[ 0 ];
+      f4r1 = ts[ 1 ];
+   }
+}
+
+inline static void
+collect_track_samples_vectorized( track* tr_1, track* tr_2, double sample_1, double sample_2, double tr_1_len,
+                                  double tr_2_len, double& subpos_1, double& subpos_2,
+                                  v4sf& t0, v4sf& t1, v4sf& t2, v4sf& t3 )
+{
+   float f1l1;
+   float f2l1;
+   float f3l1;
+   float f4l1;
+
+   float f1r1;
+   float f2r1;
+   float f3r1;
+   float f4r1;
+
+   float f1l2;
+   float f2l2;
+   float f3l2;
+   float f4l2;
+
+   float f1r2;
+   float f2r2;
+   float f3r2;
+   float f4r2;
+
+   collect_track_samples(tr_1, sample_1, tr_1_len, subpos_1, f1l1, f2l1, f3l1, f4l1, f1r1, f2r1, f3r1, f4r1);
+   collect_track_samples(tr_2, sample_2, tr_2_len, subpos_2, f1l2, f2l2, f3l2, f4l2, f1r2, f2r2, f3r2, f4r2);
+
+   v4sf vt0= {f1l1, f1r1, f1l2, f1r2};
+   v4sf vt1= {f2l1, f2r1, f2l2, f2r2};
+   v4sf vt2= {f3l1, f3r1, f3l2, f3r2};
+   v4sf vt3= {f4l1, f4r1, f4l2, f4r2};
+
+   t0 = vt0;
+   t1 = vt1;
+   t2 = vt2;
+   t3 = vt3;
+}
 
 // Shuffle helper function for selection
 static inline v4sf select_vector_4(v4sf a, v4sf b, v4si mask) {
@@ -138,31 +275,30 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
                                         double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
                                         double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2 )
 {
+   static constexpr v2sf max2 = {SHRT_MAX, SHRT_MAX};
+   static constexpr v2sf min2 = {SHRT_MIN, SHRT_MIN};
+
+   const float ONE_OVER_SAMPLES = 1.0f / static_cast<float>(samples);
+
+   const float volume_gradient_1 = (end_vol_1 - start_vol_1) * ONE_OVER_SAMPLES;
+   const float pitch_gradient_1  = (end_pitch_1 - pitch_1)   * ONE_OVER_SAMPLES;
+   const float volume_gradient_2 = (end_vol_2 - start_vol_2) * ONE_OVER_SAMPLES;
+   const float pitch_gradient_2  = (end_pitch_2 - pitch_2)   * ONE_OVER_SAMPLES;
+
+   const double tr_1_len = tr_1->length;
+   const double tr_2_len = tr_2->length;
+
+   const double tr_1_rate = tr_1->rate;
+   const double tr_2_rate = tr_2->rate;
+
+   const double dt_rate_1 = sample_dt_1*tr_1_rate;
+   const double dt_rate_2 = sample_dt_2*tr_2_rate;
+
    double sample_1 = position_1 * tr_1->rate;
    double sample_2 = position_2 * tr_2->rate;
 
-   float ONE_OVER_SAMPLES = 1.0f / (float)samples;
-
    float vol_1 = start_vol_1;
-   float volume_gradient_1 = (end_vol_1 - start_vol_1) * ONE_OVER_SAMPLES;
-   float pitch_gradient_1 = (end_pitch_1 - pitch_1)    * ONE_OVER_SAMPLES;
-
-
    float vol_2 = start_vol_2;
-   float volume_gradient_2 = (end_vol_2 - start_vol_2) * ONE_OVER_SAMPLES;
-   float pitch_gradient_2 = (end_pitch_2 - pitch_2)    * ONE_OVER_SAMPLES;
-
-   double tr_1_len = tr_1->length;
-   double tr_2_len = tr_2->length;
-
-   double tr_1_rate = tr_1->rate;
-   double tr_2_rate = tr_2->rate;
-
-   v2sf max2 = {SHRT_MAX, SHRT_MAX};
-   v2sf min2 = {SHRT_MIN, SHRT_MIN};
-
-   double dt_rate_1 = sample_dt_1*tr_1_rate;
-   double dt_rate_2 = sample_dt_2*tr_2_rate;
 
    for (int s = 0; s < samples; s++)
    {
@@ -173,194 +309,19 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
       double subpos_2;
 
       {
-         float f1l1;
-         float f2l1;
-         float f3l1;
-         float f4l1;
+         v4sf t0;
+         v4sf t1;
+         v4sf t2;
+         v4sf t3;
 
-         float f1r1;
-         float f2r1;
-         float f3r1;
-         float f4r1;
+         collect_track_samples_vectorized(tr_1, tr_2, sample_1, sample_2, tr_1_len, tr_2_len, subpos_1, subpos_2,
+                                          t0, t1, t2, t3);
 
-         float f1l2;
-         float f2l2;
-         float f3l2;
-         float f4l2;
-
-         float f1r2;
-         float f2r2;
-         float f3r2;
-         float f4r2;
-
-         {
-            /* 4-sample window for interpolation */
-            int sa = ( int ) sample_1;
-            if ( sample_1 < 0.0 )
-            {
-               sa--;
-            }
-
-            subpos_1 = sample_1 - sa;
-            sa--;
-
-            // wrap to track boundary, i.e. loop
-            if ( tr_1_len != 0 )
-            {
-               sa = sa % ( int ) tr_1_len;
-               // Actually don't let people go to minus numbers
-               // as entire track might not be loaded yet
-               //if (sa < 0) sa += tr->length;
-            }
-
-            signed short* ts;
-            if ( sa < 0 || sa >= tr_1_len )
-            {
-               f1l1 = 0;
-               f1r1 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_1, sa);
-               f1l1 = ts[ 0 ];
-               f1r1 = ts[ 1 ];
-            }
-
-            sa++;
-            if ( sa < 0 || sa >= tr_1_len )
-            {
-               f2l1 = 0;
-               f2r1 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_1, sa);
-               f2l1 = ts[ 0 ];
-               f2r1 = ts[ 1 ];
-            }
-
-            sa++;
-            if ( sa < 0 || sa >= tr_1_len )
-            {
-               f3l1 = 0;
-               f3r1 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_1, sa);
-               f3l1 = ts[ 0 ];
-               f3r1 = ts[ 1 ];
-            }
-
-            sa++;
-            if ( sa < 0 || sa >= tr_1_len )
-            {
-               f4l1 = 0;
-               f4r1 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_1, sa);
-               f4l1 = ts[ 0 ];
-               f4r1 = ts[ 1 ];
-            }
-
-            ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-            /* 4-sample window for interpolation */
-            sa = ( int ) sample_2;
-            if ( sample_2 < 0.0 )
-            {
-               sa--;
-            }
-
-            subpos_2 = sample_2 - sa;
-            sa--;
-
-            // wrap to track boundary, i.e. loop
-            if ( tr_2_len != 0 )
-            {
-               sa = sa % ( int ) tr_2_len;
-               // Actually don't let people go to minus numbers
-               // as entire track might not be loaded yet
-               //if (sa < 0) sa += tr->length;
-            }
-
-            if ( sa < 0 || sa >= tr_2_len )
-            {
-               f1l2 = 0;
-               f1r2 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_2, sa);
-               f1l2 = ts[ 0 ];
-               f1r2 = ts[ 1 ];
-            }
-
-            sa++;
-            if ( sa < 0 || sa >= tr_2_len )
-            {
-               f2l2 = 0;
-               f2r2 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_2, sa);
-               f2l2 = ts[ 0 ];
-               f2r2 = ts[ 1 ];
-            }
-
-            sa++;
-            if ( sa < 0 || sa >= tr_2_len )
-            {
-               f3l2 = 0;
-               f3r2 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_2, sa);
-               f3l2 = ts[ 0 ];
-               f3r2 = ts[ 1 ];
-            }
-
-            sa++;
-            if ( sa < 0 || sa >= tr_2_len )
-            {
-               f4l2 = 0;
-               f4r2 = 0;
-            }
-            else
-            {
-               ts = track_get_sample(tr_2, sa);
-               f4l2 = ts[ 0 ];
-               f4r2 = ts[ 1 ];
-            }
-         }
-
-         //
-         // Return: the cubic interpolation of the sample at position 2 + mu
-         //
-
-         v4sf t0 = {f1l1, f1r1, f1l2, f1r2};
-         v4sf t1 = {f2l1, f2r1, f2l2, f2r2};
-         v4sf t2 = {f3l1, f3r1, f3l2, f3r2};
-         v4sf t3 = {f4l1, f4r1, f4l2, f4r2};
-
-         float tsp1 = (float) subpos_1;
-         float tsp2 = (float) subpos_2;
-
-         v4sf mu = {tsp1, tsp1, tsp2, tsp2};
-         v4sf mu2= mu*mu;
-
-         v4sf a0 = t3 - t2 - t0 + t1;
-         v4sf a1 = t0 - t1 - a0;
-         v4sf a2 = t2 - t0;
-         v4sf a3 = t1;
-
-         v4sf interpol = (mu * mu2 * a0) + (mu2 * a1) + (mu * a2) + a3;
+         v4sf interpol = interpolate_two_stereo_samples(t0, t1, t2, t3,
+                                                        static_cast<float>(subpos_1),
+                                                        static_cast<float>(subpos_2));
 
          v4sf tvol = {vol_1, vol_1, vol_2, vol_2};
-
          v4sf res = interpol * tvol;
 
          v2sf sum = {res[0] + res[2], res[1] + res[3]};
@@ -383,7 +344,6 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
    *r1 = (sample_1 / tr_1->rate) - position_1;
    *r2 = (sample_2 / tr_2->rate) - position_2;
 }
-
 
 void player_collect_add( struct player *pl1, struct player *pl2,
                          signed short *pcm, unsigned long samples, struct sc_settings* settings )

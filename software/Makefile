@@ -5,14 +5,24 @@
 
 BUILDROOT_PREFIX=/home/niklas/buildroot/buildroot-2018.08.4
 
-CC=LD_LIBRARY_PATH=$(BUILDROOT_PREFIX)/output/target/usr/lib $(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
-CXX=LD_LIBRARY_PATH=$(BUILDROOT_PREFIX)/output/target/usr/lib $(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-g++
+cc.SC1000 := LD_LIBRARY_PATH=$(BUILDROOT_PREFIX)/output/target/usr/lib $(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-gcc
+cc.NATIVE := $(CC)
+
+cxx.SC1000 := LD_LIBRARY_PATH=$(BUILDROOT_PREFIX)/output/target/usr/lib $(BUILDROOT_PREFIX)/output/host/usr/bin/arm-linux-g++
+cxx.NATIVE := $(CXX)
+
+opt_flags.SC1000 := -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize
+opt_flags.NATIVE := -flto -ftree-vectorize
+
+CC := $(cc.$(ARCH))
+CXX := $(cxx.$(ARCH))
+OPT_FLAGS := $(opt_flags.$(ARCH))
 
 ALSA_LIBS ?= -lasound
 DEVICE_CFLAGS = -DWITH_ALSA
 DEVICE_LIBS = $(ALSA_LIBS)
 
-# Use Bash sdf
+# Use Bash
 SHELL = /bin/sh
 
 # Functions
@@ -34,8 +44,6 @@ DEFS                    :=
 # ---------------------------------------------------------------------------------------------------------------------------------------
 # Flags sent to all tools in the Toolchain
 TOOLCHAIN_SETTINGS      := -fmessage-length=0
-
-OPT_FLAGS = -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize
 
 # C Compiler -- Warnings
 CFLAGS                  += $(TOOLCHAIN_SETTINGS) $(DEFS) $(addprefix -I, $(INC_DIRS))
@@ -134,7 +142,7 @@ $$(BUILD_DIR)/$1 : $$(OBJECTS) | $$(BUILD_DIR)
 	@echo ' '
 	@echo 'Building $$(@)'
 	@echo 'Invoking: C++ Linker'
-	$$(CXX) $$(LDFLAGS) $$(LDSCRIPTS) -o $$(@) $$(OBJECTS)
+	$$(CXX) $$(LDSCRIPTS) -o $$(@) $$(OBJECTS) $$(LDFLAGS)
 	@echo 'Finished building: $$@'
 	@echo ' '
 

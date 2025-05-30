@@ -286,7 +286,7 @@ void deck_prev_folder(struct deck *d, struct sc_settings* settings)
 void deck_random_file(struct deck *d, struct sc_settings* settings)
 {
 	if (d->files_present){
-		int r = rand() % d->num_files;
+		unsigned int r = rand() % d->num_files;
 		printf("Playing file %d/%d\n", r, d->num_files);
 		load_track(d, track_acquire_by_import(d->importer, get_file_at_index(r, d->first_folder)->full_path), settings);
 	}

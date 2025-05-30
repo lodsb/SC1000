@@ -83,7 +83,7 @@ void dump_maps()
 	struct mapping *new_map = g_sc1000_engine.mappings;
 	while (new_map != NULL)
 	{
-		printf("Dump Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->Type, new_map->port, new_map->Pin, new_map->Pullup, new_map->Edge, new_map->MidiBytes[0], new_map->MidiBytes[1], new_map->MidiBytes[2], new_map->DeckNo, new_map->Action, new_map->Param);
+		printf("Dump Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->type, new_map->gpio_port, new_map->pin, new_map->pullup, new_map->edge_type, new_map->midi_command_bytes[0], new_map->midi_command_bytes[1], new_map->midi_command_bytes[2], new_map->deck_no, new_map->action_type, new_map->parameter);
 		new_map = new_map->next;
 	}
 }
@@ -140,7 +140,7 @@ unsigned char mmappresent = 1;
 int file_i2c_gpio;
 volatile void *gpio_addr;
 
-bool firstTimeRound = 1;
+bool first_time = 1;
 void init_io(struct sc1000* sc1000_engine)
 {
 	int i, j;
@@ -175,14 +175,14 @@ void init_io(struct sc1000* sc1000_engine)
 		{
 			map = find_io_mapping(sc1000_engine->mappings, 0, i, 1);
 			// If pin is marked as ground
-			if (map != NULL && map->Action == ACTION_GND)
+			if (map != NULL && map->action_type == GND)
 			{
 				//printf("Grounding pin %d\n", i);
 				iodirs &= ~(0x0001 << i);
 			}
 
 			// If pin's pullup is disabled
-			if (map != NULL && !map->Pullup)
+			if (map != NULL && !map->pullup)
 			{
 				//printf("Disabling pin %d pullup\n", i);
 				pullups &= ~(0x0001 << i);
@@ -254,7 +254,7 @@ void init_io(struct sc1000* sc1000_engine)
 				{
 					// dirty hack, don't map J7 SCL/SDA pins if MCP is present
 					if (gpiopresent && j == 1 && (i == 15 || i == 16)){
-						map->Action = ACTION_NOTHING;
+						map->action_type = NOTHING;
 					}
 					else {
 						//printf("Pulling %d %d %d\n", j, i, map->Pullup);
@@ -283,7 +283,7 @@ void init_io(struct sc1000* sc1000_engine)
 						// portConfig = (portConfig & configMask) | (0b0000 << configShift); (not needed because input is 0 anyway)
 						portConfig = (portConfig & configMask);
 
-						portPull = (portPull & pullMask) | (map->Pullup << pullShift);
+						portPull = (portPull & pullMask) | (map->pullup << pullShift);
 						*PortConfigRegister = portConfig;
 						*PortPullRegister = portPull;
 					}
@@ -323,24 +323,24 @@ void process_io(struct sc1000* sc1000_engine)
 		//printf("arses : %d %d\n", last_map->port, last_map->Pin);
 
 		// Only digital pins
-		if (last_map->Type == MAP_IO && (!(last_map->port == 0 && !gpiopresent)))
+		if ( last_map->type == IO && (!(last_map->gpio_port == 0 && !gpiopresent)))
 		{
 
-			bool pinVal = 0;
-			if (last_map->port == 0 && gpiopresent) // port 0, I2C GPIO expander
+			bool pin_value = 0;
+			if ( last_map->gpio_port == 0 && gpiopresent) // port 0, I2C GPIO expander
 			{
-				pinVal = (bool)((gpios >> last_map->Pin) & 0x01);
+            pin_value = (bool)((gpios >> last_map->pin) & 0x01);
 			}
 			else if (mmappresent) // Ports 1-6, olimex GPIO
 			{
-				volatile uint32_t *PortDataReg = gpio_addr + (last_map->port * 0x24) + 0x10;
-				uint32_t PortData = *PortDataReg;
-				PortData ^= 0xffffffff;
-				pinVal = (bool)((PortData >> last_map->Pin) & 0x01);
+				volatile uint32_t *port_data_reg = gpio_addr + (last_map->gpio_port * 0x24) + 0x10;
+				uint32_t port_data = *port_data_reg;
+            port_data ^= 0xffffffff;
+            pin_value = (bool)((port_data >> last_map->pin) & 0x01);
 			}
 			else
 			{
-				pinVal = 0;
+            pin_value = 0;
 			}
 
 			// iodebounce = 0 when button not pressed,
@@ -353,10 +353,10 @@ void process_io(struct sc1000* sc1000_engine)
 			// Button not pressed, check for button
 			if (last_map->debounce == 0)
 			{
-				if (pinVal)
+				if (pin_value)
 				{
-					printf("Button %d pressed\n", last_map->Pin);
-					if (firstTimeRound && last_map->DeckNo == 1 && (last_map->Action == ACTION_VOLUP || last_map->Action == ACTION_VOLDOWN))
+					printf("Button %d pressed\n", last_map->pin);
+					if ( first_time && last_map->deck_no == 1 && (last_map->action_type == VOLUP || last_map->action_type == VOLDOWN))
 					{
 						player_set_track(&sc1000_engine->beat_deck.player, track_acquire_by_import(sc1000_engine->beat_deck.importer, "/var/os-version.mp3"));
 						cues_load_from_file(&sc1000_engine->beat_deck.cues, sc1000_engine->beat_deck.player.track->path);
@@ -364,7 +364,7 @@ void process_io(struct sc1000* sc1000_engine)
 					}
 					else
 					{
-						if ((!shifted && last_map->Edge == 1) || (shifted && last_map->Edge == 3))
+						if ( (!shifted && last_map->edge_type == PRESSED) || (shifted && last_map->edge_type == PRESSED_SHIFT))
                      io_event(last_map, NULL, sc1000_engine, settings);
 
 						// start the counter
@@ -383,10 +383,10 @@ void process_io(struct sc1000* sc1000_engine)
 			else if ( last_map->debounce >= settings->debounce_time && last_map->debounce < settings->hold_time)
 			{
 				// check to see if unpressed
-				if (!pinVal)
+				if (!pin_value)
 				{
-					printf("Button %d released\n", last_map->Pin);
-					if (last_map->Edge == 0)
+					printf("Button %d released\n", last_map->pin);
+					if ( last_map->edge_type == RELEASED)
                   io_event(last_map, NULL, sc1000_engine, settings);
 					// start the counter
 					last_map->debounce = -settings->debounce_time;
@@ -398,8 +398,8 @@ void process_io(struct sc1000* sc1000_engine)
 			// Button has been held for a while
 			else if ( last_map->debounce == settings->hold_time)
 			{
-				printf("Button %d-%d held\n", last_map->port, last_map->Pin);
-				if ((!shifted && last_map->Edge == 2) || (shifted && last_map->Edge == 4))
+				printf("Button %d-%d held\n", last_map->gpio_port, last_map->pin);
+				if ( (!shifted && last_map->edge_type == HOLDING) || (shifted && last_map->edge_type == HOLDING_SHIFT))
                io_event(last_map, NULL, sc1000_engine, settings);
 				last_map->debounce++;
 			}
@@ -407,20 +407,20 @@ void process_io(struct sc1000* sc1000_engine)
 			// Button still holding, check for release
 			else if ( last_map->debounce > settings->hold_time)
 			{
-				if (pinVal)
+				if (pin_value)
 				{
-					if (last_map->Action == ACTION_VOLUHOLD || last_map->Action == ACTION_VOLDHOLD)
+					if ( last_map->action_type == VOLUHOLD || last_map->action_type == VOLDHOLD)
 					{
 						// keep running the vol up/down actions if they're held
-						if ((!shifted && last_map->Edge == 2) || (shifted && last_map->Edge == 4))
+						if ( (!shifted && last_map->edge_type == HOLDING) || (shifted && last_map->edge_type == HOLDING_SHIFT))
                      io_event(last_map, NULL, sc1000_engine, settings);
 					}
 				}
 				// check to see if unpressed
 				else
 				{
-					printf("Button %d released\n", last_map->Pin);
-					if (last_map->Edge == 0)
+					printf("Button %d released\n", last_map->pin);
+					if ( last_map->edge_type == RELEASED)
                   io_event(last_map, NULL, sc1000_engine, settings);
 					// start the counter
 					last_map->debounce = -settings->debounce_time;
@@ -553,7 +553,7 @@ void process_pic(struct sc1000* sc1000_engine)
 			{
 				buttonState = BUTTONSTATE_PRESSING;
 
-				if (firstTimeRound)
+				if (first_time)
 				{
 					player_set_track(&sc1000_engine->beat_deck.player, track_acquire_by_import(sc1000_engine->beat_deck.importer, "/var/os-version.mp3"));
 					cues_load_from_file(&sc1000_engine->beat_deck.cues, sc1000_engine->beat_deck.player.track->path);
@@ -773,7 +773,10 @@ void process_rot(struct sc1000* sc1000_engine)
 					// Positive touching edge
 					if ( !sc1000_engine->scratch_deck.player.cap_touch || (old_pitch_mode && !sc1000_engine->scratch_deck.player.stopped) )
 					{
-                  sc1000_engine->scratch_deck.angle_offset = (sc1000_engine->scratch_deck.player.position * settings->platter_speed) - sc1000_engine->scratch_deck.encoder_angle;
+                  sc1000_engine->scratch_deck.angle_offset = ( int32_t ) (
+                          (sc1000_engine->scratch_deck.player.position * settings->platter_speed) -
+                          sc1000_engine->scratch_deck.encoder_angle);
+
 						printf("touch!\n");
                   sc1000_engine->scratch_deck.player.target_position = sc1000_engine->scratch_deck.player.position;
                   sc1000_engine->scratch_deck.player.cap_touch = 1;
@@ -936,7 +939,7 @@ void *run_sc_input_thread(struct sc1000* sc1000_engine)
 			{
 				picskip = 0;
 				process_pic(sc1000_engine);
-				firstTimeRound = 0;
+            first_time = 0;
 			}
 
 			process_rot(sc1000_engine);

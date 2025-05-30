@@ -7,8 +7,8 @@ struct mapping;
 struct sc_settings
 {
    // output buffer size, probably 256
-   int period_size;
-   int buffer_period_factor;
+   unsigned int period_size;
+   unsigned int buffer_period_factor;
 
    // sample rate, probably 48000
    int sample_rate;
@@ -50,10 +50,10 @@ struct sc_settings
    int pitch_range;
 
    // How many seconds to wait before initializing MIDI
-   int midi_init_delay;
+   unsigned int midi_init_delay;
 
    // How many seconds to wait before initializing Audio
-   int audio_init_delay;
+   unsigned int audio_init_delay;
 
    // whether or not to take input from the volume knobs (sc500 should enable this setting)
    int disable_volume_adc;
@@ -79,4 +79,13 @@ struct sc_settings
    const char* importer;
 };
 
-void settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings );
+#ifdef __cplusplus
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
+#endif
+
+EXTERNC void sc_settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings );
+
+#undef EXTERNC
+

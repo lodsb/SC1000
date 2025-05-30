@@ -20,15 +20,14 @@
 #pragma once
 #include <stdbool.h>
 
-#include "../app/sc_settings.h"
-#include "../app/sc1000.h"
+#include "sc_settings.h"
+#include "sc_input.h"
+#include "sc1000.h"
 
 extern struct mapping *queued_midi_command;
 extern unsigned char queued_midi_buffer[3];
 
-void add_mapping(struct mapping **maps, unsigned char Type, unsigned char deckno, unsigned char buf[3], unsigned char port, unsigned char Pin, bool Pullup, char Edge, unsigned char action, unsigned char parameter);
-struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], char edge );
-struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, char edge );
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EdgeType edge );
+struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EdgeType edge );
 void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000* sc1000_engine, struct sc_settings* settings );
-void add_config_mapping(struct mapping **maps, unsigned char Type, unsigned char buf[3], unsigned char port, unsigned char Pin, bool Pullup, char Edge, char *actions);
 

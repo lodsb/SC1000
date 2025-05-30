@@ -82,144 +82,144 @@ extern int pitch_mode;
 struct mapping *queued_midi_command = NULL;
 unsigned char queued_midi_buffer[3];
 
-void perform_action_for_deck(struct deck* deck, struct mapping* map, unsigned char MidiBuffer[3], struct sc_settings* settings)
+void perform_action_for_deck( struct deck* deck, struct mapping* map, const unsigned char midi_buffer[3], struct sc_settings* settings )
 {
    //printf("Map notnull type:%d deck:%d po:%d edge:%d pin:%d action:%d param:%d\n", map->Type, map->DeckNo, map->port, map->Edge, map->Pin, map->Action, map->Param);
    //dump_maps();
-   if (map->Action == ACTION_CUE)
+   if ( map->action_type == CUE)
    {
       unsigned int cuenum = 0;
-      if (map->Type == MAP_MIDI)
-         cuenum = map->MidiBytes[1];
+      if ( map->type == MIDI)
+         cuenum = map->midi_command_bytes[1];
       else
-         cuenum = (map->port * 32) + map->Pin + 128;
+         cuenum = (map->gpio_port * 32) + map->pin + 128;
 
       /*if (shifted)
          deck_unset_cue(&deck[map->DeckNo], cuenum);
       else*/
       deck_cue(deck, cuenum);
    }
-   else if (map->Action == ACTION_DELETECUE)
+   else if ( map->action_type == DELETECUE)
    {
       unsigned int cuenum = 0;
-      if (map->Type == MAP_MIDI)
-         cuenum = map->MidiBytes[1];
+      if ( map->type == MIDI)
+         cuenum = map->midi_command_bytes[1];
       else
-         cuenum = (map->port * 32) + map->Pin + 128;
+         cuenum = (map->gpio_port * 32) + map->pin + 128;
 
       //if (shifted)
       deck_unset_cue(deck, cuenum);
       /*else
          deck_cue(&deck[map->DeckNo], cuenum);*/
    }
-   else if (map->Action == ACTION_NOTE)
+   else if ( map->action_type == NOTE)
    {
-      deck->player.note_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C); // equal temperament
+      deck->player.note_pitch = pow(pow(2, (double)1 / 12), map->parameter - 0x3C); // equal temperament
    }
-   else if (map->Action == ACTION_STARTSTOP)
+   else if ( map->action_type == STARTSTOP)
    {
       deck->player.stopped = !deck->player.stopped;
    }
-   else if (map->Action == ACTION_SHIFTON)
+   else if ( map->action_type == SHIFTON)
    {
       printf("Shifton\n");
       shifted = 1;
    }
-   else if (map->Action == ACTION_SHIFTOFF)
+   else if ( map->action_type == SHIFTOFF)
    {
       printf("Shiftoff\n");
       shifted = 0;
    }
-   else if (map->Action == ACTION_NEXTFILE)
+   else if ( map->action_type == NEXTFILE)
    {
       deck_next_file(deck, settings);
    }
-   else if (map->Action == ACTION_PREVFILE)
+   else if ( map->action_type == PREVFILE)
    {
       deck_prev_file(deck, settings);
    }
-   else if (map->Action == ACTION_RANDOMFILE)
+   else if ( map->action_type == RANDOMFILE)
    {
       deck_random_file(deck, settings);
    }
-   else if (map->Action == ACTION_NEXTFOLDER)
+   else if ( map->action_type == NEXTFOLDER)
    {
       deck_next_folder(deck, settings);
    }
-   else if (map->Action == ACTION_PREVFOLDER)
+   else if ( map->action_type == PREVFOLDER)
    {
       deck_prev_folder(deck, settings);
    }
-   else if (map->Action == ACTION_VOLUME)
+   else if ( map->action_type == VOLUME)
    {
-      deck->player.set_volume = (double)MidiBuffer[2] / 128.0;
+      deck->player.set_volume = (double)midi_buffer[2] / 128.0;
    }
-   else if (map->Action == ACTION_PITCH)
+   else if ( map->action_type == PITCH)
    {
-      if (map->Type == MAP_MIDI)
+      if ( map->type == MIDI)
       {
          double pitch = 0.0;
          // If this came from a pitch bend message, use 14 bit accuracy
-         if ((MidiBuffer[0] & 0xF0) == 0xE0)
+         if ( (midi_buffer[0] & 0xF0) == 0xE0)
          {
-            unsigned int pval = (((unsigned int)MidiBuffer[2]) << 7) | ((unsigned int)MidiBuffer[1]);
+            unsigned int pval = (((unsigned int)midi_buffer[2]) << 7) | ((unsigned int)midi_buffer[1]);
             pitch = (((double)pval - 8192.0) * ((double)settings->pitch_range / 819200.0)) + 1;
          }
             // Otherwise 7bit (boo)
          else
          {
-            pitch = (((double)MidiBuffer[2] - 64.0) * ((double)settings->pitch_range / 6400.0) + 1);
+            pitch = (((double)midi_buffer[2] - 64.0) * ((double)settings->pitch_range / 6400.0) + 1);
          }
 
          deck->player.fader_pitch = pitch;
       }
    }
-   else if (map->Action == ACTION_JOGPIT)
+   else if ( map->action_type == JOGPIT)
    {
-      pitch_mode = map->DeckNo + 1;
+      pitch_mode = map->deck_no + 1;
       printf("Set Pitch Mode %d\n", pitch_mode);
    }
-   else if (map->Action == ACTION_JOGPSTOP)
+   else if ( map->action_type == JOGPSTOP)
    {
       pitch_mode = 0;
    }
-   else if (map->Action == ACTION_SC500)
+   else if ( map->action_type == SC500)
    {
       printf("SC500 detected\n");
    }
-   else if (map->Action == ACTION_VOLUP)
+   else if ( map->action_type == VOLUP)
    {
       deck->player.set_volume += settings->volume_amount;
       if ( deck->player.set_volume > 1.0)
          deck->player.set_volume = 1.0;
    }
-   else if (map->Action == ACTION_VOLDOWN)
+   else if ( map->action_type == VOLDOWN)
    {
       deck->player.set_volume -= settings->volume_amount;
       if ( deck->player.set_volume < 0.0)
          deck->player.set_volume = 0.0;
    }
-   else if (map->Action == ACTION_VOLUHOLD)
+   else if ( map->action_type == VOLUHOLD)
    {
       deck->player.set_volume += settings->volume_amount_held;
       if ( deck->player.set_volume > 1.0)
          deck->player.set_volume = 1.0;
    }
-   else if (map->Action == ACTION_VOLDHOLD)
+   else if ( map->action_type == VOLDHOLD)
    {
       deck->player.set_volume -= settings->volume_amount_held;
       if ( deck->player.set_volume < 0.0)
          deck->player.set_volume = 0.0;
    }
-   else if (map->Action == ACTION_JOGREVERSE)
+   else if ( map->action_type == JOGREVERSE)
    {
       printf("Reversed Jog Wheel - %d", settings->jog_reverse);
       settings->jog_reverse = !settings->jog_reverse;
       printf(",%d", settings->jog_reverse);
    }
-   else if (map->Action == ACTION_BEND) // temporary bend of pitch that goes on top of the other pitch values
+   else if ( map->action_type == BEND) // temporary bend of pitch that goes on top of the other pitch values
    {
-      deck->player.bend_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C);
+      deck->player.bend_pitch = pow(pow(2, (double)1 / 12), map->parameter - 0x3C);
    }
 }
 
@@ -227,7 +227,7 @@ void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000*
 {
 	if (map != NULL)
 	{
-      if (map->Action == ACTION_RECORD)
+      if ( map->action_type == RECORD)
       {
          if (sc1000_engine->scratch_deck.files_present)
          {
@@ -237,7 +237,7 @@ void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000*
       }
       else
       {
-         if ( map->DeckNo == 0 )
+         if ( map->deck_no == 0 )
          {
             perform_action_for_deck(&sc1000_engine->beat_deck, map, midi_buffer, settings);
          }
@@ -249,121 +249,8 @@ void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000*
 	}
 }
 
-// Add a mapping from an action string and other params
-void add_config_mapping(struct mapping **maps, unsigned char Type, unsigned char *buf, unsigned char port, unsigned char Pin, bool Pullup, char Edge, char *actions)
-{
-	unsigned char deckno, action, parameter = 0;
-
-   printf("config mapping\n");
-
-	// Extract deck no from action (CHx)
-	if (actions[2] == '0')
-		deckno = 0;
-	if (actions[2] == '1')
-		deckno = 1;
-
-	// figure out which action it is
-	if (strstr(actions + 4, "CUE") != NULL)
-		action = ACTION_CUE;
-	if (strstr(actions + 4, "DELETECUE") != NULL)
-		action = ACTION_DELETECUE;
-	else if (strstr(actions + 4, "SHIFTON") != NULL)
-		action = ACTION_SHIFTON;
-	else if (strstr(actions + 4, "SHIFTOFF") != NULL)
-		action = ACTION_SHIFTOFF;
-	else if (strstr(actions + 4, "STARTSTOP") != NULL)
-		action = ACTION_STARTSTOP;
-	else if (strstr(actions + 4, "GND") != NULL)
-		action = ACTION_GND;
-	else if (strstr(actions + 4, "NEXTFILE") != NULL)
-		action = ACTION_NEXTFILE;
-	else if (strstr(actions + 4, "PREVFILE") != NULL)
-		action = ACTION_PREVFILE;
-	else if (strstr(actions + 4, "RANDOMFILE") != NULL)
-		action = ACTION_RANDOMFILE;
-	else if (strstr(actions + 4, "NEXTFOLDER") != NULL)
-		action = ACTION_NEXTFOLDER;
-	else if (strstr(actions + 4, "PREVFOLDER") != NULL)
-		action = ACTION_PREVFOLDER;
-	else if (strstr(actions + 4, "PITCH") != NULL)
-		action = ACTION_PITCH;
-	else if (strstr(actions + 4, "JOGPIT") != NULL)
-		action = ACTION_JOGPIT;
-	else if (strstr(actions + 4, "JOGPSTOP") != NULL)
-		action = ACTION_JOGPSTOP;
-	else if (strstr(actions + 4, "RECORD") != NULL)
-		action = ACTION_RECORD;
-	else if (strstr(actions + 4, "VOLUME") != NULL)
-		action = ACTION_VOLUME;
-	else if (strstr(actions + 4, "VOLUP") != NULL)
-		action = ACTION_VOLUP;
-	else if (strstr(actions + 4, "VOLDOWN") != NULL)
-		action = ACTION_VOLDOWN;
-	else if (strstr(actions + 4, "VOLUHOLD") != NULL)
-		action = ACTION_VOLUHOLD;
-	else if (strstr(actions + 4, "VOLDHOLD") != NULL)
-		action = ACTION_VOLDHOLD;
-	else if (strstr(actions + 4, "JOGREVERSE") != NULL)
-		action = ACTION_JOGREVERSE;
-	else if (strstr(actions + 4, "SC500") != NULL)
-		action = ACTION_SC500;
-	else if (strstr(actions + 4, "NOTE") != NULL)
-	{
-		action = ACTION_NOTE;
-		parameter = atoi(actions + 8);
-	}
-	add_mapping(maps, Type, deckno, buf, port, Pin, Pullup, Edge, action, parameter);
-}
-
-void add_mapping(struct mapping **maps, unsigned char Type, unsigned char deckno, unsigned char *buf, unsigned char port, unsigned char Pin, bool Pullup, char Edge, unsigned char action, unsigned char parameter)
-{
-	struct mapping *new_map = (struct mapping *)malloc(sizeof(struct mapping));
-	new_map->Type = Type;
-	new_map->Pin = Pin;
-	new_map->port = port;
-	new_map->Pullup = Pullup;
-	if (buf == NULL)
-	{
-		new_map->MidiBytes[0] = 0x00;
-		new_map->MidiBytes[1] = 0x00;
-		new_map->MidiBytes[2] = 0x00;
-	}
-	else
-	{
-		new_map->MidiBytes[0] = buf[0];
-		new_map->MidiBytes[1] = buf[1];
-		new_map->MidiBytes[2] = buf[2];
-	}
-
-	new_map->Edge = Edge;
-	new_map->Action = action;
-	new_map->Param = parameter;
-	new_map->next = NULL;
-
-	new_map->DeckNo = deckno;
-	new_map->debounce = 0;
-
-	printf("Adding Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->Type, new_map->port, new_map->Pin, new_map->Pullup, new_map->Edge, new_map->MidiBytes[0], new_map->MidiBytes[1], new_map->MidiBytes[2], new_map->DeckNo, new_map->Action, new_map->Param);
-
-	if (*maps == NULL)
-	{
-		*maps = new_map;
-	}
-	else
-	{
-		struct mapping *last_map = *maps;
-
-		while (last_map->next != NULL)
-		{
-			last_map = last_map->next;
-		}
-
-		last_map->next = new_map;
-	}
-}
-
 // Find a mapping from a MIDI event
-struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], char edge )
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EdgeType edge )
 {
 
 	struct mapping *last_map = maps;
@@ -377,9 +264,9 @@ struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], c
 	{
 
 		if (
-			last_map->Type == MAP_MIDI && last_map->Edge == edge &&
-			((((last_map->MidiBytes[0] & 0xF0) == 0xE0) && last_map->MidiBytes[0] == buf[0]) || //Pitch bend messages only match on first byte
-			 (last_map->MidiBytes[0] == buf[0] && last_map->MidiBytes[1] == buf[1]))			//Everything else matches on first two bytes
+              last_map->type == MIDI && last_map->edge_type == edge &&
+              ((((last_map->midi_command_bytes[0] & 0xF0) == 0xE0) && last_map->midi_command_bytes[0] == buf[0]) || //Pitch bend messages only match on first byte
+			 (last_map->midi_command_bytes[0] == buf[0] && last_map->midi_command_bytes[1] == buf[1]))			//Everything else matches on first two bytes
 		)
 		{
 			return last_map;
@@ -391,7 +278,7 @@ struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], c
 }
 
 // Find a mapping from a GPIO event
-struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, char edge )
+struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EdgeType edge )
 {
 
 	struct mapping *last_mapping = mappings;
@@ -399,7 +286,7 @@ struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, u
 	while ( last_mapping != NULL)
 	{
 
-		if ( last_mapping->Type == MAP_IO && last_mapping->Pin == pin && last_mapping->Edge == edge && last_mapping->port == port)
+		if ( last_mapping->type == IO && last_mapping->pin == pin && last_mapping->edge_type == edge && last_mapping->gpio_port == port)
 		{
 			return last_mapping;
 		}

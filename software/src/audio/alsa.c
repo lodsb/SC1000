@@ -77,15 +77,15 @@ struct audio_interface
    int device_id;
    int subdevice_id;
 
-   int input_channels;
-   int output_channels;
+   unsigned int input_channels;
+   unsigned int output_channels;
 
    bool is_internal;
    bool supports_48k_samplerate;
    bool supports_16bit_pcm;
 
-   int period_size;
-   int buffer_period_factor;
+   unsigned int period_size;
+   unsigned int buffer_period_factor;
 };
 
 void print_audio_interface_info(struct audio_interface* iface)
@@ -102,11 +102,11 @@ void print_audio_interface_info(struct audio_interface* iface)
 }
 
 static struct audio_interface audio_interfaces[] = {
-        {false, -1, -1, -1, -1, false, false, false, 2},
-        {false, -1, -1, -1, -1, false, false, false, 2}
+        {false, -1, -1, 0, 0, false, false, false, 2, 2},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2}
 };
 
-void create_alsa_device_id_string(char* str, int size, int dev, int subdev, bool is_plughw)
+void create_alsa_device_id_string(char* str, unsigned int size, int dev, int subdev, bool is_plughw)
 {
    if(!is_plughw)
    {
@@ -182,8 +182,8 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                   audio_interfaces[ card_id ].buffer_period_factor = settings->buffer_period_factor;
                }
 
-               int playback_count = 0;
-               int capture_count = 0;
+               unsigned int playback_count = 0;
+               unsigned int capture_count = 0;
 
                int device_id = -1;
 
@@ -303,7 +303,7 @@ static void fill_audio_interface_info(struct sc_settings* settings)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
-                     snd_pcm_stream_t stream, struct audio_interface* audio_interface)
+                     snd_pcm_stream_t stream, struct audio_interface* audio_interface, uint8_t num_channels)
 {
    int err, dir;
 
@@ -350,7 +350,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
 
    alsa->rate = TARGET_SAMPLE_RATE;
 
-   err = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, DEVICE_CHANNELS);
+   err = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, num_channels);
    if (!chk("hw_params_set_channels", err))
    {
       fprintf(stderr, "%d channel audio not available on this device.\n",
@@ -362,7 +362,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
     * likely to be the primary application running, so assume we want
     * the hardware to be giving us immediate wakeups */
 
-   snd_pcm_uframes_t period_size = audio_interface->period_size;
+   snd_pcm_uframes_t period_size = ( snd_pcm_uframes_t ) audio_interface->period_size;
    err = snd_pcm_hw_params_set_period_size_near(alsa->pcm, hw_params, &period_size, &dir);
    if (!chk("snd_pcm_hw_params_set_period_size_near", err))
    {
@@ -379,7 +379,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
    alsa->period_size = period_size;
 
    printf("Period size: %lu frames\n", period_size);
-   int buffer_size = period_size * audio_interface->buffer_period_factor;
+   int buffer_size = ( int ) (period_size * ( snd_pcm_uframes_t ) audio_interface->buffer_period_factor);
 
    switch (stream) {
       case SND_PCM_STREAM_CAPTURE:
@@ -421,24 +421,25 @@ static void pcm_close( struct alsa_pcm* alsa )
 static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
                             size_t z )
 {
-   int r, count;
+   int r;
 
-   count = snd_pcm_poll_descriptors_count(alsa->pcm);
+   int count = snd_pcm_poll_descriptors_count(alsa->pcm);
+   unsigned int ucount = (unsigned int) count;
 
    printf("poll %d ", count);
 
-   if ( count > z )
+   if ( ucount > z )
    {
       return -1;
    }
 
-   if ( count == 0 )
+   if ( ucount == 0 )
    {
       alsa->pe = NULL;
    }
    else
    {
-      r = snd_pcm_poll_descriptors(alsa->pcm, pe, count);
+      r = snd_pcm_poll_descriptors(alsa->pcm, pe, ucount);
       if ( r < 0 )
       {
          alsa_error("poll_descriptors", r);
@@ -447,7 +448,7 @@ static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
       alsa->pe = pe;
    }
 
-   alsa->pe_count = count;
+   alsa->pe_count = ucount;
    return count;
 }
 
@@ -556,7 +557,7 @@ static int playback( struct sc1000* engine)
       }
 
 
-      snd_pcm_sframes_t period_size = alsa->playback.period_size;
+      snd_pcm_sframes_t period_size = ( snd_pcm_sframes_t ) alsa->playback.period_size;
 
       if(avail >= period_size)
       {
@@ -568,7 +569,7 @@ static int playback( struct sc1000* engine)
 
          while(size > 0)
          {
-            frames = size;
+            frames = ( snd_pcm_uframes_t ) size;
 
             err = snd_pcm_mmap_begin(alsa->playback.pcm, &areas, &offset, &frames);
             if ( err < 0 )
@@ -588,13 +589,13 @@ static int playback( struct sc1000* engine)
             sc1000_audio_engine_process(engine, pcm, frames);
 
             commit_res = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
-            if ( commit_res < 0 || commit_res != frames)
+            if ( commit_res < 0 || ( snd_pcm_uframes_t ) commit_res != frames)
             {
                fprintf(stderr, "Error writing pcm data %d\n", err);
                return commit_res >= 0 ? -EPIPE : commit_res;
             }
 
-            size -= frames;
+            size -= ( snd_pcm_sframes_t ) frames;
          }
       }
 
@@ -705,7 +706,7 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
    create_alsa_device_id_string(device_name, sizeof(device_name), audio_interface->device_id, audio_interface->subdevice_id, needs_plughw);
    printf("Opening device %s with period size %i...", device_name, audio_interface->period_size);
 
-   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, audio_interface) < 0 )
+   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, audio_interface, DEVICE_CHANNELS) < 0 )
    {
       fputs("Failed to open device for playback.\n", stderr);
       printf(" failed!\n");

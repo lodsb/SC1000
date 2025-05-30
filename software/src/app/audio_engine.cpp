@@ -211,14 +211,18 @@ inline void setup_player_for_block( struct player* pl, unsigned long samples, co
 {
    double target_pitch, diff;
 
+   auto samples_i = 1.0 / static_cast<double>(samples);
+
    //pl->target_position = (sin(((double) pl->samplesSoFar) / 20000) + 1); // Sine wave to simulate scratching, used for debugging
 
    // figure out motor speed
-   if (pl->stopped)
+   if ( pl->stopped )
    {
       // Simulate braking
-      if (pl->motor_speed > 0.1)
-         pl->motor_speed = pl->motor_speed - (double)samples / (settings->brake_speed * 10);
+      if ( pl->motor_speed > 0.1 )
+      {
+         pl->motor_speed = pl->motor_speed - samples_i * (settings->brake_speed * 10);
+      }
       else
       {
          pl->motor_speed = 0.0;
@@ -233,19 +237,28 @@ inline void setup_player_for_block( struct player* pl, unsigned long samples, co
    // deal with case where we've released the platter
    if ( pl->just_play == 1 || // platter is always released on beat deck
         (
-                pl->cap_touch == 0 && pl->cap_touch_old == 0 // don't do it on the first iteration so we pick up backspins
+                pl->cap_touch == 0 &&
+                pl->cap_touch_old == 0 // don't do it on the first iteration so we pick up backspins
         )
            )
    {
-      if (pl->pitch > 20.0) pl->pitch = 20.0;
-      if (pl->pitch < -20.0) pl->pitch = -20.0;
+      if ( pl->pitch > 20.0 )
+      { pl->pitch = 20.0; }
+      if ( pl->pitch < -20.0 )
+      { pl->pitch = -20.0; }
       // Simulate slipmat for lasers/phasers
-      if (pl->pitch < pl->motor_speed - 0.1)
-         target_pitch = pl->pitch + (double)samples / settings->slippiness;
-      else if (pl->pitch > pl->motor_speed + 0.1)
-         target_pitch = pl->pitch - (double)samples / settings->slippiness;
+      if ( pl->pitch < pl->motor_speed - 0.1 )
+      {
+         target_pitch = pl->pitch + samples_i * settings->slippiness;
+      }
+      else if ( pl->pitch > pl->motor_speed + 0.1 )
+      {
+         target_pitch = pl->pitch - samples_i * settings->slippiness;
+      }
       else
+      {
          target_pitch = pl->motor_speed;
+      }
    }
    else
    {
@@ -257,19 +270,28 @@ inline void setup_player_for_block( struct player* pl, unsigned long samples, co
 
    (*filtered_pitch) = (0.1 * target_pitch) + (0.9 * pl->pitch);
 
-   double vol_decay_amount = (DECAYSAMPLES) / (double)samples;
+   double vol_decay_amount = samples_i * (DECAYSAMPLES);
 
-   if ( nearly_equal(pl->fader_target, pl->fader_volume, vol_decay_amount)) // Make sure to set directly when we're nearly there to avoid oscilation
+   if ( nearly_equal(pl->fader_target, pl->fader_volume,
+                     vol_decay_amount) )
+   { // Make sure to set directly when we're nearly there to avoid oscillation
       pl->fader_volume = pl->fader_target;
-   else if ( pl->fader_target > pl->fader_volume)
+   }
+   else if ( pl->fader_target > pl->fader_volume )
+   {
       pl->fader_volume += vol_decay_amount;
+   }
    else
+   {
       pl->fader_volume -= vol_decay_amount;
+   }
 
    (*target_volume) = std::fabs(pl->pitch) * VOLUME * pl->fader_volume;
 
-   if ( (*target_volume) > 1.0)
+   if ( (*target_volume) > 1.0 )
+   {
       (*target_volume) = 1.0;
+   }
 }
 
 static inline void process_add_players( signed short *pcm, unsigned samples,

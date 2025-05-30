@@ -27,7 +27,7 @@ void sc1000_setup(struct sc1000* engine,
    engine->settings = settings;
    engine->mappings = NULL;
 
-   settings_load_user_configuration(engine->settings, &engine->mappings);
+   sc_settings_load_user_configuration(engine->settings, &engine->mappings);
 
    alsa_init(engine, settings);
 

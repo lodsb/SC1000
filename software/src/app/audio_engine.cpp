@@ -401,7 +401,7 @@ void player_collect_add( struct player *pl1, struct player *pl2,
    pl2->volume = target_volume_2;
 }
 
-void audio_engine_process( struct sc1000* engine, signed short* pcm, unsigned long frames )
+void audio_engine_process( sc1000* engine, signed short* pcm, unsigned long frames )
 {
    player_collect_add(&(engine->beat_deck.player), &(engine->scratch_deck.player), pcm, frames, engine->settings);
 }

@@ -14,24 +14,24 @@
 struct sc_file * get_file_at_index( unsigned int index, struct sc_folder *first_folder )
 {
 
-	struct sc_folder *CurrFolder = first_folder;
-	struct sc_file *CurrFile = first_folder->first_file;
+	struct sc_folder *current_folder = first_folder;
+	struct sc_file *current_file = first_folder->first_file;
 
 	bool FoundIt = false;
 
 	while (!FoundIt) {
-		if (CurrFile->Index == index) {
-			return CurrFile;
+		if (current_file->index == index) {
+			return current_file;
 		}
 
 		else {
-			CurrFile = CurrFile->next;
-			if (CurrFile == NULL) {
-				CurrFolder = CurrFolder->next;
-				if (CurrFolder == NULL)
+			current_file = current_file->next;
+			if (current_file == NULL) {
+				current_folder = current_folder->next;
+				if (current_folder == NULL)
 					return NULL;
 
-				CurrFile = CurrFolder->first_file;
+				current_file = current_folder->first_file;
 			}
 		}
 	}
@@ -81,7 +81,7 @@ struct sc_folder * load_file_structure( char *base_folder_path,
 					snprintf(new_file->full_path, 256, "%s/%s", tempName,
                         fileList[p]->d_name);
 
-					new_file->Index = FilesCount++;
+					new_file->index = FilesCount++;
 
 					// set up prev connection
 					new_file->prev = prevFile;

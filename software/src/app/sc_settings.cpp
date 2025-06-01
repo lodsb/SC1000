@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <iostream>
+
+#include <fstream>
+#include <json.hpp>
 
 #include "sc_control_mapping.h"
 #include "sc_settings.h"
@@ -27,7 +31,7 @@ unsigned int count_chars( char* string, char c )
    return count;
 }
 
-void add_mapping_to_list( struct mapping **maps, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EdgeType edge_type, ActionType action, unsigned char parameter )
+void add_mapping_to_list( struct mapping **maps, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter )
 {
    struct mapping *new_map = (struct mapping *)malloc(sizeof(struct mapping));
 
@@ -78,16 +82,8 @@ void add_mapping_to_list( struct mapping **maps, IOType type, unsigned char deck
    }
 }
 
-// Add a mapping from an action string and other params
-void add_config_mapping_to_list( struct mapping **maps, IOType type, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EdgeType edge_type, char *actions )
+void get_deck_action_parameter(unsigned char& deck_no, ActionType& action, unsigned char& parameter, char* actions)
 {
-   unsigned char deck_no;
-   ActionType action;
-
-   unsigned char parameter = 0;
-
-   printf("config mapping\n");
-
    // Extract deck no from action (CHx)
    if (actions[2] == '0')
       deck_no = 0;
@@ -144,11 +140,226 @@ void add_config_mapping_to_list( struct mapping **maps, IOType type, unsigned ch
       action = NOTE;
       parameter = atoi(actions + 8);
    }
-
-   add_mapping_to_list(maps, type, deck_no, buf, port, pin, pullup, edge_type, action, parameter);
 }
 
-void sc_settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings )
+NLOHMANN_JSON_SERIALIZE_ENUM( EventType, {
+    {EventType::BUTTON_HOLDING, "button_holding"},
+    {EventType::BUTTON_HOLDING_SHIFTED, "button_holding_shifted"},
+    {EventType::BUTTON_PRESSED, "button_pressed"},
+    {EventType::BUTTON_PRESSED_SHIFTED, "button_pressed_shifted"},
+    {EventType::BUTTON_RELEASED, "button_released"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM( MIDIStatusType, {
+    {MIDIStatusType::MIDI_NOTE_ON, "midi_note_on"},
+    {MIDIStatusType::MIDI_NOTE_OFF, "midi_note_off"},
+    {MIDIStatusType::MIDI_CC, "midi_cc"},
+    {MIDIStatusType::MIDI_PB, "midi_pb"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM( ActionType, {
+   {ActionType::CUE, "cue"},
+   {ActionType::SHIFTON, "shift_on"},
+   {ActionType::SHIFTOFF, "shift_off"},
+   {ActionType::STARTSTOP, "start_stop"},
+   {ActionType::START, "start"},
+   {ActionType::STOP, "stop"},
+   {ActionType::PITCH, "pitch"},
+   {ActionType::NOTE, "note"},
+   {ActionType::GND, "gnd"},
+   {ActionType::VOLUME, "volume"},
+   {ActionType::NEXTFILE, "next_file"},
+   {ActionType::PREVFILE, "prev_file"},
+   {ActionType::RANDOMFILE, "random_file"},
+   {ActionType::NEXTFOLDER, "next_folder"},
+   {ActionType::PREVFOLDER, "prev_folder"},
+   {ActionType::RECORD, "record"},
+   {ActionType::VOLUP, "volume_up"},
+   {ActionType::VOLDOWN, "volume_down"},
+   {ActionType::JOGPIT, "jog_pit"},
+   {ActionType::DELETECUE, "delete_cue"},
+   {ActionType::SC500, "sc500"},
+   {ActionType::VOLUHOLD, "volume_up_hold"},
+   {ActionType::VOLDHOLD, "volume_down_hold"},
+   {ActionType::JOGPSTOP, "jog_pstop"},
+   {ActionType::JOGREVERSE, "jog_reverse"},
+   {ActionType::BEND, "bend"},
+   {ActionType::NOTHING, "nothing"},
+})
+
+nlohmann::json settings_to_json(sc_settings* settings)
+{
+   nlohmann::json json;
+
+   json["period_size"]=settings->period_size;
+   json["buffer_period_factor"]=settings->buffer_period_factor;
+   json["sample_rate"]=settings->sample_rate;
+   json["single_vca"]=settings->single_vca;
+   json["double_cut"]=settings->double_cut;
+   json["hamster"]=settings->hamster;
+   json["fader_open_point"]=settings->fader_open_point;
+   json["fader_close_point"]=settings->fader_close_point;
+   json["update_rate"]=settings->update_rate;
+   json["platter_enabled"]=settings->platter_enabled;
+   json["platter_speed"]=settings->platter_speed;
+   json["debounce_time"]=settings->debounce_time;
+   json["hold_time"]=settings->hold_time;
+   json["slippiness"]=settings->slippiness;
+   json["brake_speed"]=settings->brake_speed;
+   json["pitch_range"]=settings->pitch_range;
+   json["midi_init_delay"]=settings->midi_init_delay;
+   json["audio_init_delay"]=settings->audio_init_delay;
+   json["disable_volume_adc"]=settings->disable_volume_adc;
+   json["disable_pic_buttons"]=settings->disable_pic_buttons;
+   json["volume_amount"]=settings->volume_amount;
+   json["volume_amount_held"]=settings->volume_amount_held;
+   json["jog_reverse"]=settings->jog_reverse;
+   json["cut_beats"]=settings->cut_beats;
+
+   return json;
+}
+
+void settings_from_json(sc_settings* settings, nlohmann::json& json)
+{
+
+   // set defaults
+   settings->period_size = 256;
+   settings->buffer_period_factor = 4;
+   settings->fader_close_point = 2;
+   settings->fader_open_point = 10;
+   settings->platter_enabled = 1;
+   settings->platter_speed = 2275;
+   settings->sample_rate = 48000;
+   settings->update_rate = 2000;
+   settings->debounce_time = 5;
+   settings->hold_time = 100;
+   settings->slippiness = 200;
+   settings->brake_speed = 3000;
+   settings->pitch_range = 50;
+   settings->midi_init_delay = 5;
+   settings->audio_init_delay = 2;
+   settings->volume_amount = 0.03;
+   settings->volume_amount_held = 0.001;
+   settings->initial_volume = 0.125;
+   settings->midi_remapped = 0;
+   settings->io_remapped = 0;
+   settings->jog_reverse = 0;
+   settings->cut_beats = 0;
+   settings->importer = DEFAULT_IMPORTER;
+
+   settings->period_size = json["period_size"].template get<unsigned int>();
+   settings->buffer_period_factor = json["buffer_period_factor"].template get<unsigned int>();
+   settings->sample_rate = json["sample_rate"].template get<int>();
+   settings->single_vca = json["single_vca"].template get<char>();
+   settings->double_cut = json["double_cut"].template get<char>();
+   settings->hamster = json["hamster"].template get<char>();
+   settings->fader_open_point = json["fader_open_point"].template get<int>();
+   settings->fader_close_point = json["fader_close_point"].template get<int>();
+   settings->update_rate = json["update_rate"].template get<int>();
+   settings->platter_enabled = json["platter_enabled"].template get<int>();
+   settings->platter_speed = json["platter_speed"].template get<int>();
+   settings->debounce_time = json["debounce_time"].template get<int>();
+   settings->hold_time = json["hold_time"].template get<int>();
+   settings->slippiness = json["slippiness"].template get<int>();
+   settings->brake_speed = json["brake_speed"].template get<int>();
+   settings->pitch_range = json["pitch_range"].template get<int>();
+   settings->midi_init_delay = json["midi_init_delay"].template get<unsigned int>();
+   settings->audio_init_delay = json["audio_init_delay"].template get<unsigned int>();
+   settings->disable_volume_adc = json["disable_volume_adc"].template get<int>();
+   settings->disable_pic_buttons = json["disable_pic_buttons"].template get<int>();
+   settings->volume_amount = json["volume_amount"].template get<double>();
+   settings->volume_amount_held = json["volume_amount_held"].template get<double>();
+   settings->jog_reverse = json["jog_reverse"].template get<int>();
+   settings->cut_beats = json["cut_beats"].template get<int>();
+
+}
+
+nlohmann::json midi_command_to_json(MIDIStatusType midi_status, EventType event, unsigned char channel, unsigned char parameter1, unsigned char parameter2, unsigned char deck, ActionType action)
+{
+   nlohmann::json json;
+
+   json["type"]=midi_status;
+   json["shifted"]= event==EventType::BUTTON_PRESSED_SHIFTED;
+   json["channel"]=channel;
+   json["parameter1"]=parameter1;
+   json["parameter2"]=parameter2;
+   json["deck"]= deck == 0 ? "beats" : "scratch";
+   json["action"]=action;
+
+   return json;
+}
+
+void add_midi_mapping_from_json(mapping** mappings, const nlohmann::json& json)
+{
+   const MIDIStatusType midi_status = json["type"].template get<MIDIStatusType>();
+   const EventType event = json["shifted"].template get<bool>() ? EventType::BUTTON_PRESSED_SHIFTED : EventType::BUTTON_PRESSED;
+   const unsigned char channel = json["channel"].template get<unsigned char>();
+   const unsigned char parameter1 = json["parameter1"].template get<unsigned char>();
+   const unsigned char parameter2 = json["parameter2"].template get<unsigned char>();
+   const auto deck_string = json["deck"].template get<std::string>();
+   const unsigned char deck_no = deck_string == "beats" ? 0 : 1;
+   const ActionType action = json["action"].template get<ActionType>();
+
+   unsigned char midi_command[3];
+
+   const auto control_type_byte = static_cast<unsigned char>(midi_status);
+
+   if (midi_status == MIDI_NOTE_ON && parameter1 == 255) // all note ons
+   {
+      for (unsigned char note_number = 0; note_number < 128; note_number++)
+      {
+         midi_command[ 0 ] = static_cast<unsigned char>((control_type_byte << 4) | channel);
+         midi_command[ 1 ] = note_number;
+         midi_command[ 2 ] = 0;
+
+         if (action == ActionType::NOTE)
+         {
+            add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, note_number);
+         }
+         else
+         {
+            add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, 0);
+         }
+      }
+   }
+   else
+   {
+      midi_command[ 0 ] = static_cast<unsigned char>((control_type_byte << 4) | channel);
+      midi_command[ 1 ] = parameter1;
+      midi_command[ 2 ] = 0;
+
+      add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, parameter2);
+   }
+}
+
+nlohmann::json gpio_command_to_json(EventType event, unsigned char port, unsigned char pin, bool pull_up, unsigned char deck, ActionType action)
+{
+   nlohmann::json json;
+
+   json["event"]=event;
+   json["port"]=port;
+   json["pin"]=pin;
+   json["pull_up"]=pull_up;
+   json["deck"]= deck == 0 ? "beats" : "scratch";
+   json["action"]=action;
+
+   return json;
+}
+
+void add_gpio_mapping_from_json(mapping** mappings, const nlohmann::json& json)
+{
+   const EventType event = json["event"].template get<EventType>();
+   const unsigned char port = json["port"].template get<unsigned char>();
+   const unsigned char pin = json["pin"].template get<unsigned char>();
+   const bool pull_up = json["pull_up"].template get<bool>();
+   const auto deck_string = json["deck"].template get<std::string>();
+   const unsigned char deck_no = deck_string == "beats" ? 0 : 1;
+   ActionType action = json["action"].template get<ActionType>();
+
+   add_mapping_to_list(mappings, IOType::IO, deck_no, nullptr, port, pin, pull_up, event, action, 0);
+}
+
+void sc_settings_old_format( sc_settings* settings, mapping** mappings )
 {
    FILE* fp;
    char* line = NULL;
@@ -158,7 +369,7 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
    char* value;
    unsigned char channel = 0, notenum = 0, control_type = 0, pin = 0, port = 0;
    bool pullup = false;
-   EdgeType edge;
+   EventType edge;
    char delim[] = "=";
    char delimc[] = ",";
    unsigned char midi_command[3];
@@ -195,12 +406,26 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
 
    // Load any settings from config file
    fp = fopen("/media/sda/scsettings.txt", "r");
-   if ( fp == NULL )
+   if ( fp == nullptr )
    {
       // load internal copy instead
       fp = fopen("/var/scsettings.txt", "r");
+
+      // try loading
+      if (fp == nullptr)
+      {
+         // probably started from the build-directory
+         fp = fopen("../scsettings.txt", "r");
+      }
    }
 
+   unsigned char deck_no;
+   ActionType action;
+
+   unsigned char parameter = 0;
+
+   auto gpios = nlohmann::json::array();
+   auto midis = nlohmann::json::array();
 
    if ( fp != nullptr )
    {
@@ -285,8 +510,10 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
                control_type = atoi(strtok_r(value, delimc, &valuetok));
                channel = atoi(strtok_r(NULL, delimc, &valuetok));
                notenum = atoi(strtok_r(NULL, delimc, &valuetok));
-               edge = static_cast<EdgeType>(atoi(strtok_r(NULL, delimc, &valuetok)));
+               edge = static_cast<EventType>(atoi(strtok_r(NULL, delimc, &valuetok)));
                actions = strtok_r(NULL, delimc, &valuetok);
+
+               std::cout << "midi orig" << std::endl;
 
                //255 means bind to all notes
                if ( notenum == 255 )
@@ -301,16 +528,21 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
                   for ( midi_command[ 1 ] = 0; midi_command[ 1 ] < 128; midi_command[ 1 ]++ )
                   {
                      sprintf(tempact, "%s%u", actions, midi_command[ 1 ]);
-                     add_config_mapping_to_list(
-                             mappings,
-                             IOType::MIDI,
-                             midi_command,
-                             0,
-                             0,
-                             false,
-                             edge,
-                             tempact);
+
+                     // FIXME!!!
+                     get_deck_action_parameter(deck_no, action, parameter, tempact);
+                     add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, edge, action, parameter);
                   }
+
+                  midis.push_back(midi_command_to_json(
+                     static_cast<MIDIStatusType>(control_type),
+                     edge,
+                     channel,
+                     notenum,
+                     parameter,
+                     deck_no,
+                     action
+                  ));
                }
                   // otherwise just bind to one note
                else
@@ -319,18 +551,24 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
                   midi_command[ 0 ] = static_cast<unsigned char>((control_type << 4) | channel);
                   midi_command[ 1 ] = notenum;
                   midi_command[ 2 ] = 0;
-                  add_config_mapping_to_list(
-                          mappings,
-                          IOType::MIDI,
-                          midi_command,
-                          0,
-                          0,
-                          false,
-                          edge,
-                          actions);
+
+                  get_deck_action_parameter(deck_no, action, parameter, actions);
+                  add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, edge, action, parameter);
+
+                  midis.push_back(midi_command_to_json(
+                     static_cast<MIDIStatusType>(control_type),
+                     edge,
+                     channel,
+                     notenum,
+                     parameter,
+                     deck_no,
+                     action
+                  ));
                }
+               std::cout << "midi json" << std::endl;
+               add_midi_mapping_from_json(mappings, midis.back());
             }
-            else if ( strstr(param, "io") != NULL )
+            else if ( strstr(param, "gpio") != NULL )
             {
                settings->io_remapped = 1;
                unsigned int commaCount = count_chars(value, ',');
@@ -346,20 +584,27 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
                   pin = atoi(strtok_r(value, delimc, &valuetok));
                }
                pullup = atoi(strtok_r(NULL, delimc, &valuetok));
-               edge = static_cast<EdgeType>(atoi(strtok_r(NULL, delimc, &valuetok)));
+               edge = static_cast<EventType>(atoi(strtok_r(NULL, delimc, &valuetok)));
                actions = strtok_r(NULL, delimc, &valuetok);
 
-               printf("IO\n");
+               get_deck_action_parameter(deck_no, action, parameter, actions);
 
-               add_config_mapping_to_list(
-                       mappings,
-                       IOType::IO,
-                       nullptr,
-                       port,
-                       pin,
-                       pullup,
-                       edge,
-                       actions);
+               std::cout << "io orig" << parameter << std::endl;
+
+               add_mapping_to_list(mappings, IOType::IO, deck_no, nullptr, port, pin, pullup, edge, action, parameter);
+
+               gpios.push_back(gpio_command_to_json(
+                     edge,
+                     port,
+                     pin,
+                     pullup,
+                     deck_no,
+                     action
+                  ));
+
+               std::cout << "io json" << parameter << std::endl;
+
+               add_gpio_mapping_from_json(mappings, gpios.back());
             }
             else if ( strcmp(param, "midi_init_delay") == 0 )
             {// Literally just a sleep to allow USB devices longer to initialize
@@ -378,6 +623,18 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
          }
       }
    }
+   else
+   {
+      std::cerr << "Could not open any settings file, exiting" << std::endl;
+      exit(-1);
+   }
+
+   nlohmann::json json_main;
+   nlohmann::json json_settings = settings_to_json(settings);
+   json_main["sc1000"] = json_settings;
+   json_main["gpio_mapping"] = gpios;
+   json_main["midi_mapping"] = midis;
+   std::cout << "json settings: " << std::setw(4) << json_main << std::endl;
 
    printf("ps %d, bpf %d, fcp %d, fop %d, pe %d, ps %d, sr %d, ur %d\n",
           settings->period_size,
@@ -397,4 +654,51 @@ void sc_settings_load_user_configuration( struct sc_settings* settings, struct m
    {
       free(line);
    }
+}
+
+void sc_settings_load_json_format( sc_settings* settings, mapping** mappings )
+{
+   std::ifstream f;
+   f.open("/media/sda/sc_settings.json", std::ios::in);
+
+   if ( f.fail() )
+   {
+      f.open("/var/sc_settings.json", std::ios::in);
+      if (f.fail() )
+      {
+         // probably started native from the build dir
+         f.open("../sc_settings.json", std::ios::in);
+      }
+   }
+
+   if (f.fail())
+   {
+      std::cerr << "Could not open any settings file, exiting" << std::endl;
+      exit(-1);
+   }
+   else
+   {
+      auto json_main = nlohmann::json::parse(f);
+      auto json_settings = json_main["sc1000"];
+      auto json_gpio_mappings = json_main["gpio_mapping"];
+      auto json_midi_mapping = json_main["midi_mapping"];
+
+      settings_from_json(settings, json_settings);
+
+      for (const auto mapping: json_gpio_mappings)
+      {
+         add_gpio_mapping_from_json(mappings, mapping);
+      }
+
+      for (const auto mapping: json_midi_mapping)
+      {
+         add_midi_mapping_from_json(mappings, mapping);
+      }
+   }
+}
+
+void sc_settings_load_user_configuration( sc_settings* settings, mapping** mappings )
+{
+   //sc_settings_old_format(settings, mappings);
+   sc_settings_load_json_format(settings, mappings);
 }

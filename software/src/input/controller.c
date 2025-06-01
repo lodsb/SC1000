@@ -21,8 +21,9 @@
 
 #include "../util/debug.h"
 
+#include "../player/deck.h"
+
 #include "controller.h"
-#include "deck.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*x))
 

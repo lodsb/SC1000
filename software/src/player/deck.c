@@ -19,12 +19,13 @@
 
 #include <assert.h>
 
-#include "app/global.h"
+#include "../app/global.h"
 
-#include "util/status.h"
-#include "thread/rig.h"
+#include "../util/status.h"
+#include "../thread/rig.h"
 
-#include "controller.h"
+#include "../input/controller.h"
+
 #include "cues.h"
 #include "deck.h"
 #include "playlist.h"
@@ -191,12 +192,12 @@ void deck_punch_out(struct deck *d )
 	d->punch = NO_PUNCH;
 }
 
-void deck_load_folder( struct deck *d, char *FolderName )
+void deck_load_folder( struct deck *d, char *folder_name )
 {
 	// Build index of all audio files on the USB stick
-	if ( (d->first_folder = load_file_structure(FolderName, &d->num_files)) != NULL && d->num_files > 0)
+	if ( (d->first_folder = load_file_structure(folder_name, &d->num_files)) != NULL && d->num_files > 0)
 	{
-		printf("Folder '%s' Indexed with %d files: \n", FolderName, d->num_files);
+		printf("Folder '%s' Indexed with %d files: \n", folder_name, d->num_files);
 		d->files_present = 1;
 	}
 	if (d->files_present)

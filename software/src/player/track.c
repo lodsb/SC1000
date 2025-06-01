@@ -76,7 +76,7 @@ void track_use_mlock( void )
 /*
  * Allocate more memory
  *
- * Return: -1 if memory could not be allocated, otherwize 0
+ * Return: -1 if memory could not be allocated, otherwise 0
  */
 
 static int more_space( struct track* tr )

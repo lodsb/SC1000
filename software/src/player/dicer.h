@@ -37,8 +37,8 @@ struct dicer
 	bool shifted;
 	
 	bool parsing;
-	unsigned char ParsedBytes;
-	unsigned char MidiBuffer[3];
+	unsigned char parsed_bytes;
+	unsigned char midi_buffer[3];
 
     char PortName[32];
 };

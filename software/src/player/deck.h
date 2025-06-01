@@ -81,7 +81,7 @@ void deck_punch_in( struct deck* d, unsigned int label );
 
 void deck_punch_out( struct deck* d );
 
-void deck_load_folder( struct deck* d, char* FolderName );
+void deck_load_folder( struct deck* d, char* folder_name );
 
 void deck_next_file( struct deck* d, struct sc_settings* settings );
 

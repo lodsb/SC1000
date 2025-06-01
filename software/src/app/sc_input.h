@@ -16,13 +16,21 @@ enum IOType
    IO
 };
 
-enum EdgeType
+enum EventType
 {
-   RELEASED = 0,
-   PRESSED = 1,
-   HOLDING = 2,
-   PRESSED_SHIFT = 3,
-   HOLDING_SHIFT = 4,
+   BUTTON_RELEASED = 0,
+   BUTTON_PRESSED = 1,
+   BUTTON_HOLDING = 2,
+   BUTTON_PRESSED_SHIFTED = 3,
+   BUTTON_HOLDING_SHIFTED = 4,
+};
+
+enum MIDIStatusType
+{
+   MIDI_NOTE_OFF = 8,
+   MIDI_NOTE_ON = 9,
+   MIDI_CC = 11,
+   MIDI_PB = 14,
 };
 
 enum ActionType
@@ -64,7 +72,7 @@ struct mapping {
    // IO event info
    unsigned char pin;               // IO Pin Number
    bool pullup;                     // Whether or not to pull the pin up
-   enum EdgeType edge_type;         // Edge (1 for unpressed-to-pressed)
+   enum EventType edge_type;         // Edge (1 for unpressed-to-pressed)
 
    // GPIO event info
    unsigned char gpio_port;         // GPIO port number

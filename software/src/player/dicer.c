@@ -19,13 +19,13 @@
 
 #include <stdlib.h>
 
-#include "util/debug.h"
+#include "../util/debug.h"
 
-#include "input/midi.h"
-#include "app/sc_control_mapping.h"
-#include "app/global.h"
+#include "../input/midi.h"
+#include "../input/controller.h"
+#include "../app/sc_control_mapping.h"
+#include "../app/global.h"
 
-#include "controller.h"
 #include "deck.h"
 #include "dicer.h"
 
@@ -62,9 +62,9 @@ extern bool shifted;
  * Return: -1 if the deck could not be added, otherwise zero
  */
 
-static int add_deck(struct controller *c, struct deck *k )
+static int add_deck(struct controller* c, struct deck* k)
 {
-	struct dicer *d = c->local;
+	struct dicer* d = c->local;
 	int i;
 
 	debug("%p add deck %p", d, k);
@@ -84,71 +84,71 @@ static int add_deck(struct controller *c, struct deck *k )
 /*
  * Process an event from the device, given the MIDI control codes
  */
- 
- // This is so dumb
 
-static void event(struct dicer *d)
+// This is so dumb
+
+static void event(struct dicer* d)
 {
-	printf("%x %x %x\n",d->MidiBuffer[0], d->MidiBuffer[1], d->MidiBuffer[2]);
-		
+	printf("%x %x %x\n", d->midi_buffer[0], d->midi_buffer[1], d->midi_buffer[2]);
+
 	// This is so dumb, there should be a proper event buffer, but oh well
-	queued_midi_command = find_midi_mapping(g_sc1000_engine.mappings, d->MidiBuffer, shifted ? 3 : 1);
-   queued_midi_buffer[0] = d->MidiBuffer[0];
-   queued_midi_buffer[1] = d->MidiBuffer[1];
-   queued_midi_buffer[2] = d->MidiBuffer[2];
+	queued_midi_command = find_midi_mapping(g_sc1000_engine.mappings, d->midi_buffer, shifted ? 3 : 1);
+	queued_midi_buffer[0] = d->midi_buffer[0];
+	queued_midi_buffer[1] = d->midi_buffer[1];
+	queued_midi_buffer[2] = d->midi_buffer[2];
 
 
-/*
-	if (map != NULL)
-	{
-		//		printf("Map notnull %d %d %d\n", map->DeckNo, map->Action, map->Param);
+	/*
+		if (map != NULL)
+		{
+			//		printf("Map notnull %d %d %d\n", map->DeckNo, map->Action, map->Param);
 
-		if (map->Action == ACTION_CUE)
-		{
-			if (d->shifted)
-				deck_unset_cue(d->decks[map->DeckNo], map->MidiBytes[1]);
-			else
-				deck_cue(d->decks[map->DeckNo], map->MidiBytes[1]);
-		}
-		else if (map->Action == ACTION_NOTE)
-		{
-			d->decks[map->DeckNo]->player.nominal_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C); // equal temperament
-		}
-		else if (map->Action == ACTION_STARTSTOP)
-		{
-			d->decks[map->DeckNo]->player.stopped = !d->decks[map->DeckNo]->player.stopped;
-		}
-		else if (map->Action == ACTION_SHIFTON)
-		{
-			d->shifted = 1;
-		}
-		else if (map->Action == ACTION_SHIFTOFF)
-		{
-			d->shifted = 0;
-		}
-		else if (map->Action == ACTION_PITCH)
-		{
-			double pitch = 0.0;
-			// If this came from a pitch bend message, use 14 bit accuracy
-			if ((d->MidiBuffer[0] & 0xF0) == 0xE0)
+			if (map->Action == ACTION_CUE)
 			{
-				pval = (((unsigned int)d->MidiBuffer[2]) << 7) | ((unsigned int)d->MidiBuffer[1]);
-				pitch = (((double)pval - 8192.0) * ((double)scsettings.pitch_range / 819200.0)) + 1;
+				if (d->shifted)
+					deck_unset_cue(d->decks[map->DeckNo], map->MidiBytes[1]);
+				else
+					deck_cue(d->decks[map->DeckNo], map->MidiBytes[1]);
 			}
-			// Otherwise 7bit (boo)
-			else
+			else if (map->Action == ACTION_NOTE)
 			{
-				pitch = (((double)d->MidiBuffer[2] - 64.0) * ((double)scsettings.pitch_range / 6400.0) + 1);
+				d->decks[map->DeckNo]->player.nominal_pitch = pow(pow(2, (double)1 / 12), map->Param - 0x3C); // equal temperament
 			}
+			else if (map->Action == ACTION_STARTSTOP)
+			{
+				d->decks[map->DeckNo]->player.stopped = !d->decks[map->DeckNo]->player.stopped;
+			}
+			else if (map->Action == ACTION_SHIFTON)
+			{
+				d->shifted = 1;
+			}
+			else if (map->Action == ACTION_SHIFTOFF)
+			{
+				d->shifted = 0;
+			}
+			else if (map->Action == ACTION_PITCH)
+			{
+				double pitch = 0.0;
+				// If this came from a pitch bend message, use 14 bit accuracy
+				if ((d->MidiBuffer[0] & 0xF0) == 0xE0)
+				{
+					pval = (((unsigned int)d->MidiBuffer[2]) << 7) | ((unsigned int)d->MidiBuffer[1]);
+					pitch = (((double)pval - 8192.0) * ((double)scsettings.pitch_range / 819200.0)) + 1;
+				}
+				// Otherwise 7bit (boo)
+				else
+				{
+					pitch = (((double)d->MidiBuffer[2] - 64.0) * ((double)scsettings.pitch_range / 6400.0) + 1);
+				}
 
-			d->decks[map->DeckNo]->player.nominal_pitch = pitch;
-		}
-	}*/
+				d->decks[map->DeckNo]->player.nominal_pitch = pitch;
+			}
+		}*/
 }
 
-static ssize_t pollfds(struct controller *c, struct pollfd *pe, size_t z)
+static ssize_t pollfds(struct controller* c, struct pollfd* pe, size_t z)
 {
-	struct dicer *d = c->local;
+	struct dicer* d = c->local;
 
 	return midi_pollfds(&d->midi, pe, z);
 }
@@ -159,9 +159,9 @@ static ssize_t pollfds(struct controller *c, struct pollfd *pe, size_t z)
  * Modified MIDI parser to be re-entrant
  */
 
-static int realtime(struct controller *c)
+static int realtime(struct controller* c)
 {
-	struct dicer *d = c->local;
+	struct dicer* d = c->local;
 	for (;;)
 	{
 		unsigned char buf;
@@ -181,7 +181,7 @@ static int realtime(struct controller *c)
 			if (command == 0x80 || command == 0x90 || command == 0xB0 || command == 0xE0)
 			{
 				d->parsing = 1;
-				d->MidiBuffer[0] = buf;
+				d->midi_buffer[0] = buf;
 			}
 			else
 				d->parsing = 0;
@@ -193,13 +193,13 @@ static int realtime(struct controller *c)
 			// If we're currently in a MIDI message, add to buffer
 			if (d->parsing)
 			{
-				d->MidiBuffer[++(d->ParsedBytes)] = buf;
+				d->midi_buffer[++(d->parsed_bytes)] = buf;
 
 				// If we've reached the second byte, process
-				if (d->ParsedBytes == 2)
+				if (d->parsed_bytes == 2)
 				{
 					d->parsing = 0;
-					d->ParsedBytes = 0;
+					d->parsed_bytes = 0;
 					event(d);
 				}
 			}
@@ -211,9 +211,9 @@ static int realtime(struct controller *c)
 	return 0;
 }
 
-static void clear(struct controller *c)
+static void clear(struct controller* c)
 {
-	struct dicer *d = c->local;
+	struct dicer* d = c->local;
 
 	debug("%p", d);
 
@@ -228,9 +228,9 @@ static struct controller_ops dicer_ops = {
 	.clear = clear,
 };
 
-int dicer_init(struct controller *c, struct rt *rt, const char *hw)
+int dicer_init(struct controller* c, struct rt* rt, const char* hw)
 {
-	struct dicer *d;
+	struct dicer* d;
 	int i;
 
 	printf("init %p from %s\n", c, hw);
@@ -259,7 +259,7 @@ int dicer_init(struct controller *c, struct rt *rt, const char *hw)
 
 	d->shifted = 0;
 	d->parsing = 0;
-	d->ParsedBytes = 0;
+	d->parsed_bytes = 0;
 
 	return 0;
 

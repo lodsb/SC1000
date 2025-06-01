@@ -11,7 +11,7 @@ struct sc_folder {
 // Struct to hold file (beat or sample)
 struct sc_file {
 	char full_path[256];
-	unsigned int Index;
+	unsigned int index;
 	struct sc_file* next;
 	struct sc_file* prev;
 };

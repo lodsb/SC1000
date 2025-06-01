@@ -27,7 +27,8 @@
 extern struct mapping *queued_midi_command;
 extern unsigned char queued_midi_buffer[3];
 
-struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EdgeType edge );
-struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EdgeType edge );
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EventType edge );
+struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EventType edge );
+
 void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000* sc1000_engine, struct sc_settings* settings );
 

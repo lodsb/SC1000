@@ -26,7 +26,7 @@
 #include <math.h>
 #include <stdint-gcc.h>
 
-#include "app/global.h"
+#include "../app/global.h"
 
 #include "alsa.h"
 
@@ -478,6 +478,15 @@ static void start( struct sc1000* dv )
    //   abort();
 }
 
+static void stop( struct sc1000* dv )
+{
+
+   //struct alsa *alsa = (struct alsa*)dv->local;
+
+   //if (snd_pcm_start(alsa->capture.pcm) < 0)
+   //   abort();
+}
+
 /* Register this device's interest in a set of pollfd file
  * descriptors */
 
@@ -684,6 +693,7 @@ static struct sc1000_ops alsa_ops = {
         .handle = handle,
         .sample_rate = sample_rate,
         .start = start,
+        .stop = stop,
         .clear = clear
 };
 
@@ -714,6 +724,15 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
    }
 
    sc1000_engine->local = alsa;
+
+   // make sure this is really initialized
+   alsa_ops.clear       = clear;
+   alsa_ops.pollfds     = pollfds;
+   alsa_ops.handle      = handle;
+   alsa_ops.sample_rate = sample_rate;
+   alsa_ops.start       = start;
+   alsa_ops.stop        = stop;
+
    sc1000_audio_engine_init(sc1000_engine, &alsa_ops);
 
    printf(" success!\n");

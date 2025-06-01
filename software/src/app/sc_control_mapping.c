@@ -122,12 +122,12 @@ void perform_action_for_deck( struct deck* deck, struct mapping* map, const unsi
    }
    else if ( map->action_type == SHIFTON)
    {
-      printf("Shifton\n");
+      printf("Shift on\n");
       shifted = 1;
    }
    else if ( map->action_type == SHIFTOFF)
    {
-      printf("Shiftoff\n");
+      printf("Shift off\n");
       shifted = 0;
    }
    else if ( map->action_type == NEXTFILE)
@@ -250,7 +250,7 @@ void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000*
 }
 
 // Find a mapping from a MIDI event
-struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EdgeType edge )
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EventType edge )
 {
 
 	struct mapping *last_map = maps;
@@ -278,7 +278,7 @@ struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], e
 }
 
 // Find a mapping from a GPIO event
-struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EdgeType edge )
+struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EventType edge )
 {
 
 	struct mapping *last_mapping = mappings;

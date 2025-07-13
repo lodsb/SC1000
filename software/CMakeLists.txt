@@ -31,8 +31,7 @@ target_sources(sc1000
         src/input/midi.c
         src/audio/alsa.c
         src/app/sc_settings.cpp
-        src/app/sc_input.c
-        src/app/sc_control_mapping.c
+        src/app/sc_input.cpp
         src/app/global.c
         src/app/global.h
         src/app/audio_engine.cpp

@@ -90,7 +90,7 @@ void dump_maps()
     }
 }
 
-int setup_i2c(char* path, unsigned char address)
+int setup_i2c(const char* path, unsigned char address)
 {
     int file = 0;
 
@@ -174,7 +174,7 @@ void init_io(struct sc1000* sc1000_engine)
         // For each pin
         for (i = 0; i < 16; i++)
         {
-            map = find_io_mapping(sc1000_engine->mappings, 0, i, 1);
+            map = find_io_mapping(sc1000_engine->mappings, 0, i, EventType::BUTTON_PRESSED);
             // If pin is marked as ground
             if (map != NULL && map->action_type == GND)
             {
@@ -248,7 +248,7 @@ void init_io(struct sc1000* sc1000_engine)
             // For each pin (max number of pins on each port is 28)
             for (i = 0; i < 28; i++)
             {
-                map = find_io_mapping(sc1000_engine->mappings, j, i, 1);
+                map = find_io_mapping(sc1000_engine->mappings, j, i, EventType::BUTTON_PRESSED);
 
                 if (map != NULL)
                 {
@@ -272,8 +272,8 @@ void init_io(struct sc1000* sc1000_engine)
                         // how many bits to shift the pull register
                         uint32_t pullShift = (i % 16) * 2;
 
-                        volatile uint32_t* PortConfigRegister = gpio_addr + (j * 0x24) + (configregister * 0x04);
-                        volatile uint32_t* PortPullRegister = gpio_addr + (j * 0x24) + 0x1C + (pullregister * 0x04);
+                        volatile uint32_t* PortConfigRegister = static_cast<volatile uint32_t*>(gpio_addr + j * 0x24 + configregister * 0x04);
+                        volatile uint32_t* PortPullRegister   = static_cast<volatile uint32_t*>(gpio_addr + j * 0x24 + 0x1C + pullregister * 0x04);
                         uint32_t portConfig = *PortConfigRegister;
                         uint32_t portPull = *PortPullRegister;
 
@@ -333,7 +333,7 @@ void process_io(struct sc1000* sc1000_engine)
             }
             else if (mmappresent) // Ports 1-6, olimex GPIO
             {
-                volatile uint32_t* port_data_reg = gpio_addr + (last_map->gpio_port * 0x24) + 0x10;
+                volatile uint32_t* port_data_reg = static_cast<volatile uint32_t*>(gpio_addr + last_map->gpio_port * 0x24 + 0x10);
                 uint32_t port_data = *port_data_reg;
                 port_data ^= 0xffffffff;
                 pin_value = (bool)((port_data >> last_map->pin) & 0x01);
@@ -879,7 +879,7 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
 
     if (mmappresent)
     {
-        volatile uint32_t* port_data_reg = gpio_addr + (6 * 0x24) + 0x10;
+        volatile uint32_t* port_data_reg = static_cast<volatile uint32_t*>(gpio_addr + 6 * 0x24 + 0x10);
         uint32_t port_data = *port_data_reg;
         port_data ^= 0xffffffff;
         if ((port_data >> 11) & 0x01)
@@ -996,6 +996,235 @@ void* sc_input_thread(void* ptr)
     return run_sc_input_thread(&g_sc1000_engine);
 }
 
+/*
+ * Process an IO event
+ */
+extern bool shifted;
+extern int pitch_mode;
+
+// Queued command from the realtime thread
+// this is so dumb
+
+struct mapping *queued_midi_command = NULL;
+unsigned char queued_midi_buffer[3];
+
+void perform_action_for_deck( struct deck* deck, struct mapping* map, const unsigned char midi_buffer[3], struct sc_settings* settings )
+{
+   //printf("Map notnull type:%d deck:%d po:%d edge:%d pin:%d action:%d param:%d\n", map->Type, map->DeckNo, map->port, map->Edge, map->Pin, map->Action, map->Param);
+   //dump_maps();
+   if ( map->action_type == CUE)
+   {
+      unsigned int cuenum = 0;
+      if ( map->type == MIDI)
+         cuenum = map->midi_command_bytes[1];
+      else
+         cuenum = (map->gpio_port * 32) + map->pin + 128;
+
+      /*if (shifted)
+         deck_unset_cue(&deck[map->DeckNo], cuenum);
+      else*/
+      deck_cue(deck, cuenum);
+   }
+   else if ( map->action_type == DELETECUE)
+   {
+      unsigned int cuenum = 0;
+      if ( map->type == MIDI)
+         cuenum = map->midi_command_bytes[1];
+      else
+         cuenum = (map->gpio_port * 32) + map->pin + 128;
+
+      //if (shifted)
+      deck_unset_cue(deck, cuenum);
+      /*else
+         deck_cue(&deck[map->DeckNo], cuenum);*/
+   }
+   else if ( map->action_type == NOTE)
+   {
+      deck->player.note_pitch = pow(pow(2, (double)1 / 12), map->parameter - 0x3C); // equal temperament
+   }
+   else if ( map->action_type == STARTSTOP)
+   {
+      deck->player.stopped = !deck->player.stopped;
+   }
+   else if ( map->action_type == SHIFTON)
+   {
+      printf("Shift on\n");
+      shifted = 1;
+   }
+   else if ( map->action_type == SHIFTOFF)
+   {
+      printf("Shift off\n");
+      shifted = 0;
+   }
+   else if ( map->action_type == NEXTFILE)
+   {
+      deck_next_file(deck, settings);
+   }
+   else if ( map->action_type == PREVFILE)
+   {
+      deck_prev_file(deck, settings);
+   }
+   else if ( map->action_type == RANDOMFILE)
+   {
+      deck_random_file(deck, settings);
+   }
+   else if ( map->action_type == NEXTFOLDER)
+   {
+      deck_next_folder(deck, settings);
+   }
+   else if ( map->action_type == PREVFOLDER)
+   {
+      deck_prev_folder(deck, settings);
+   }
+   else if ( map->action_type == VOLUME)
+   {
+      deck->player.set_volume = (double)midi_buffer[2] / 128.0;
+   }
+   else if ( map->action_type == PITCH)
+   {
+      if ( map->type == MIDI)
+      {
+         double pitch = 0.0;
+         // If this came from a pitch bend message, use 14 bit accuracy
+         if ( (midi_buffer[0] & 0xF0) == 0xE0)
+         {
+            unsigned int pval = (((unsigned int)midi_buffer[2]) << 7) | ((unsigned int)midi_buffer[1]);
+            pitch = (((double)pval - 8192.0) * ((double)settings->pitch_range / 819200.0)) + 1;
+         }
+            // Otherwise 7bit (boo)
+         else
+         {
+            pitch = (((double)midi_buffer[2] - 64.0) * ((double)settings->pitch_range / 6400.0) + 1);
+         }
+
+         deck->player.fader_pitch = pitch;
+      }
+   }
+   else if ( map->action_type == JOGPIT)
+   {
+      pitch_mode = map->deck_no + 1;
+      printf("Set Pitch Mode %d\n", pitch_mode);
+   }
+   else if ( map->action_type == JOGPSTOP)
+   {
+      pitch_mode = 0;
+   }
+   else if ( map->action_type == SC500)
+   {
+      printf("SC500 detected\n");
+   }
+   else if ( map->action_type == VOLUP)
+   {
+      deck->player.set_volume += settings->volume_amount;
+      if ( deck->player.set_volume > 1.0)
+         deck->player.set_volume = 1.0;
+   }
+   else if ( map->action_type == VOLDOWN)
+   {
+      deck->player.set_volume -= settings->volume_amount;
+      if ( deck->player.set_volume < 0.0)
+         deck->player.set_volume = 0.0;
+   }
+   else if ( map->action_type == VOLUHOLD)
+   {
+      deck->player.set_volume += settings->volume_amount_held;
+      if ( deck->player.set_volume > 1.0)
+         deck->player.set_volume = 1.0;
+   }
+   else if ( map->action_type == VOLDHOLD)
+   {
+      deck->player.set_volume -= settings->volume_amount_held;
+      if ( deck->player.set_volume < 0.0)
+         deck->player.set_volume = 0.0;
+   }
+   else if ( map->action_type == JOGREVERSE)
+   {
+      printf("Reversed Jog Wheel - %d", settings->jog_reverse);
+      settings->jog_reverse = !settings->jog_reverse;
+      printf(",%d", settings->jog_reverse);
+   }
+   else if ( map->action_type == BEND) // temporary bend of pitch that goes on top of the other pitch values
+   {
+      deck->player.bend_pitch = pow(pow(2, (double)1 / 12), map->parameter - 0x3C);
+   }
+}
+
+void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000* sc1000_engine, struct sc_settings* settings )
+{
+	if (map != NULL)
+	{
+      if ( map->action_type == RECORD)
+      {
+         if (sc1000_engine->scratch_deck.files_present)
+         {
+            // TODO fix me
+            deck_record(&sc1000_engine->beat_deck); // Always record on deck 0
+         }
+      }
+      else
+      {
+         if ( map->deck_no == 0 )
+         {
+            perform_action_for_deck(&sc1000_engine->beat_deck, map, midi_buffer, settings);
+         }
+         else
+         {
+            perform_action_for_deck(&sc1000_engine->scratch_deck, map, midi_buffer, settings);
+         }
+      }
+	}
+}
+
+// Find a mapping from a MIDI event
+struct mapping *find_midi_mapping( struct mapping *maps, unsigned char buf[3], enum EventType edge )
+{
+
+	struct mapping *last_map = maps;
+	// Interpret zero-velocity notes as note-off commands
+	if (((buf[0] & 0xF0) == 0x90) && (buf[2] == 0x00))
+	{
+		buf[0] = 0x80 | (buf[0] & 0x0F);
+	}
+
+	while (last_map != NULL)
+	{
+
+		if (
+              last_map->type == MIDI && last_map->edge_type == edge &&
+              ((((last_map->midi_command_bytes[0] & 0xF0) == 0xE0) && last_map->midi_command_bytes[0] == buf[0]) || //Pitch bend messages only match on first byte
+			 (last_map->midi_command_bytes[0] == buf[0] && last_map->midi_command_bytes[1] == buf[1]))			//Everything else matches on first two bytes
+		)
+		{
+			return last_map;
+		}
+
+		last_map = last_map->next;
+	}
+	return NULL;
+}
+
+// Find a mapping from a GPIO event
+struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EventType edge )
+{
+
+	struct mapping *last_mapping = mappings;
+
+	while ( last_mapping != NULL)
+	{
+
+		if ( last_mapping->type == IO && last_mapping->pin == pin && last_mapping->edge_type == edge && last_mapping->gpio_port == port)
+		{
+			return last_mapping;
+		}
+
+      last_mapping = last_mapping->next;
+	}
+	return NULL;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Start the input thread
 void start_sc_input_thread()
 {

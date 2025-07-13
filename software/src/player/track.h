@@ -17,8 +17,7 @@
  *
  */
 
-#ifndef TRACK_H
-#define TRACK_H
+#pragma once
 
 #include <stdbool.h>
 #include <sys/poll.h>
@@ -62,19 +61,26 @@ struct track {
    bool finished;
 };
 
-void track_use_mlock(void);
+
+#ifdef __cplusplus
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
+#endif
+
+EXTERNC void track_use_mlock(void);
 
 /* Tracks are dynamically allocated and reference counted */
 
-struct track* track_acquire_by_import(const char *importer, const char *path);
-struct track* track_acquire_empty(void);
-void track_acquire(struct track *t);
-void track_release(struct track *t);
+EXTERNC struct track* track_acquire_by_import(const char *importer, const char *path);
+EXTERNC struct track* track_acquire_empty(void);
+EXTERNC void track_acquire(struct track *t);
+EXTERNC void track_release(struct track *t);
 
 /* Functions used by the rig and main thread */
 
-void track_pollfd(struct track *tr, struct pollfd *pe);
-void track_handle(struct track *tr);
+EXTERNC void track_pollfd(struct track *tr, struct pollfd *pe);
+EXTERNC void track_handle(struct track *tr);
 
 /* Return true if the track importer is running, otherwise false */
 
@@ -92,5 +98,5 @@ static inline signed short* track_get_sample(struct track *tr, int s)
     return &b->pcm[(s % TRACK_BLOCK_SAMPLES) * TRACK_CHANNELS];
 }
 
-#endif
+#undef EXTERNC
 

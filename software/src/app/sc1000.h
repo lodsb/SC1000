@@ -16,8 +16,9 @@ struct sc1000
    struct mapping*     mappings;
 
    /////////////////////////
+   /// audio callback related stuff
    bool fault;
-   void *local;
+   void *audio_hw_context;
    struct sc1000_ops *ops;
 };
 

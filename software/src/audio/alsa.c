@@ -494,7 +494,7 @@ static ssize_t pollfds( struct sc1000* engine, struct pollfd* pe, size_t z )
 {
    int r;
    int total = 0;
-   struct alsa* alsa = ( struct alsa* ) engine->local;
+   struct alsa* alsa = ( struct alsa* ) engine->audio_hw_context;
 
    /*
    r = pcm_pollfds(&alsa->capture, pe, z);
@@ -538,7 +538,7 @@ static int playback( struct sc1000* engine)
 
    {
       int err;
-      struct alsa* alsa = ( struct alsa* ) engine->local;
+      struct alsa* alsa = ( struct alsa* ) engine->audio_hw_context;
 
       snd_pcm_sframes_t avail = snd_pcm_avail_update(alsa->playback.pcm);
       if (avail < 0)
@@ -627,7 +627,7 @@ static int handle( struct sc1000* engine )
 {
    int r;
    unsigned short revents;
-   struct alsa* alsa = ( struct alsa* ) engine->local;
+   struct alsa* alsa = ( struct alsa* ) engine->audio_hw_context;
 
    /* Check the output buffer for playback */
 
@@ -672,7 +672,7 @@ static int handle( struct sc1000* engine )
 
 static unsigned int sample_rate( struct sc1000* engine )
 {
-   struct alsa* alsa = ( struct alsa* ) engine->local;
+   struct alsa* alsa = ( struct alsa* ) engine->audio_hw_context;
 
    return alsa->playback.rate;
 }
@@ -681,11 +681,11 @@ static unsigned int sample_rate( struct sc1000* engine )
 
 static void clear(struct sc1000* engine )
 {
-   struct alsa* alsa = ( struct alsa* ) engine->local;
+   struct alsa* alsa = ( struct alsa* ) engine->audio_hw_context;
 
    pcm_close(&alsa->capture);
    pcm_close(&alsa->playback);
-   free(engine->local);
+   free(engine->audio_hw_context);
 }
 
 static struct sc1000_ops alsa_ops = {
@@ -723,7 +723,7 @@ int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* aud
       goto fail_capture;
    }
 
-   sc1000_engine->local = alsa;
+   sc1000_engine->audio_hw_context = alsa;
 
    // make sure this is really initialized
    alsa_ops.clear       = clear;

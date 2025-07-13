@@ -90,4 +90,16 @@ struct mapping {
    struct mapping *next;
 };
 
-void start_sc_input_thread();
+#ifdef __cplusplus
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
+#endif
+EXTERNC void start_sc_input_thread();
+
+EXTERNC struct mapping *find_midi_mapping( struct mapping *mappings, unsigned char buf[3], enum EventType edge );
+EXTERNC struct mapping *find_io_mapping( struct mapping *mappings, unsigned char port, unsigned char pin, enum EventType edge );
+
+EXTERNC void io_event( struct mapping *map, unsigned char midi_buffer[3], struct sc1000* sc1000_engine, struct sc_settings* settings );
+
+#undef EXTERNC

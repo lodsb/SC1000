@@ -112,7 +112,7 @@ int main( int argc, char* argv[] )
 
    // Main loop
 
-   fprintf(stderr, "WIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIP\n\n");
+   fprintf(stderr, "In main loop\n\n");
 
    if ( rig_main() == -1 )
    {

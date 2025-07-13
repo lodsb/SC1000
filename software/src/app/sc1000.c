@@ -29,19 +29,15 @@ void sc1000_setup(struct sc1000* engine,
 
    sc_settings_load_user_configuration(engine->settings, &engine->mappings);
 
-   alsa_init(engine, settings);
-
    // Create two decks, both pointed at the same audio device
    deck_init(&engine->scratch_deck, settings);
    deck_init(&engine->beat_deck, settings);
 
-   rt_set_sc1000(rt, engine);
-
-   // point deck1's output at deck0, it will be summed in
-   //engine->scratch_deck.device.beat_player = engine->beat_deck.device.scratch_player;
-
    // Tell deck0 to just play without considering inputs
    engine->beat_deck.player.just_play = 1;
+
+   alsa_init(engine, settings);
+   rt_set_sc1000(rt, engine);
 
    alsa_clear_config_cache();
 }

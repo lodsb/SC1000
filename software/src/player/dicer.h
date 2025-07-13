@@ -17,8 +17,7 @@
  *
  */
 
-#ifndef DICER_H
-#define DICER_H
+#pragma once
 
 #include "../input/midi.h"
 
@@ -43,6 +42,11 @@ struct dicer
     char PortName[32];
 };
 
-int dicer_init(struct controller *c, struct rt *rt, const char *hw);
-
+#ifdef __cplusplus
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
 #endif
+EXTERNC int dicer_init(struct controller *c, struct rt *rt, const char *hw);
+
+#undef EXTERNC

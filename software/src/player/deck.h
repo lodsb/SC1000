@@ -17,8 +17,7 @@
  *
  */
 
-#ifndef DECK_H
-#define DECK_H
+#pragma once
 
 #include <math.h>
 
@@ -62,37 +61,46 @@ struct deck
    int encoder_angle, new_encoder_angle;
 };
 
-int deck_init( struct deck* deck,
+
+#ifdef __cplusplus
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
+#endif
+
+EXTERNC int deck_init( struct deck* deck,
                struct sc_settings* settings);
 
-void deck_clear( struct deck* deck );
+EXTERNC void deck_clear( struct deck* deck );
 
-bool deck_is_locked( const struct deck* deck );
+EXTERNC bool deck_is_locked( const struct deck* deck );
 
-void deck_recue( struct deck* deck );
+EXTERNC void deck_recue( struct deck* deck );
 
-void deck_clone( struct deck* deck, const struct deck* from );
+EXTERNC void deck_clone( struct deck* deck, const struct deck* from );
 
-void deck_unset_cue( struct deck* deck, unsigned int label );
+EXTERNC void deck_unset_cue( struct deck* deck, unsigned int label );
 
-void deck_cue( struct deck* deck, unsigned int label );
+EXTERNC void deck_cue( struct deck* deck, unsigned int label );
 
-void deck_punch_in( struct deck* d, unsigned int label );
+EXTERNC void deck_punch_in( struct deck* d, unsigned int label );
 
-void deck_punch_out( struct deck* d );
+EXTERNC void deck_punch_out( struct deck* d );
 
-void deck_load_folder( struct deck* d, char* folder_name );
+EXTERNC void deck_load_folder( struct deck* d, char* folder_name );
 
-void deck_next_file( struct deck* d, struct sc_settings* settings );
+EXTERNC void deck_next_file( struct deck* d, struct sc_settings* settings );
 
-void deck_prev_file( struct deck* d, struct sc_settings* settings );
+EXTERNC void deck_prev_file( struct deck* d, struct sc_settings* settings );
 
-void deck_next_folder( struct deck* d, struct sc_settings* settings );
+EXTERNC void deck_next_folder( struct deck* d, struct sc_settings* settings );
 
-void deck_prev_folder( struct deck* d, struct sc_settings* settings );
+EXTERNC void deck_prev_folder( struct deck* d, struct sc_settings* settings );
 
-void deck_random_file( struct deck* d, struct sc_settings* settings );
+EXTERNC void deck_random_file( struct deck* d, struct sc_settings* settings );
 
-void deck_record( struct deck* d );
+EXTERNC void deck_record( struct deck* d );
 
-#endif
+
+#undef EXTERNC
+

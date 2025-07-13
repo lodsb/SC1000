@@ -17,9 +17,7 @@
  *
  */
 
-#ifndef CONTROLLER_H
-#define CONTROLLER_H
-
+#pragma once
 #include <stdbool.h>
 #include <stdlib.h>
 #include <sys/poll.h>
@@ -52,12 +50,16 @@ struct controller_ops {
     void (*clear)(struct controller *c);
 };
 
-int controller_init(struct controller *c, struct controller_ops *t,
-                    void *local, struct rt *rt);
-void controller_clear(struct controller *c);
 
-void controller_add_deck(struct controller *c, struct deck *d );
-ssize_t controller_pollfds(struct controller *c, struct pollfd *pe, size_t z);
-void controller_handle(struct controller *c);
-
+#ifdef __cplusplus
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
 #endif
+EXTERNC int     controller_init(struct controller *c, struct controller_ops *t, void *local, struct rt *rt);
+EXTERNC void    controller_clear(struct controller *c);
+
+EXTERNC void    controller_add_deck(struct controller *c, struct deck *d );
+EXTERNC ssize_t controller_pollfds(struct controller *c, struct pollfd *pe, size_t z);
+EXTERNC void    controller_handle(struct controller *c);
+#undef EXTERNC

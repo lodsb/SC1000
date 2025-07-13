@@ -699,6 +699,5 @@ void sc_settings_load_json_format( sc_settings* settings, mapping** mappings )
 
 void sc_settings_load_user_configuration( sc_settings* settings, mapping** mappings )
 {
-   //sc_settings_old_format(settings, mappings);
    sc_settings_load_json_format(settings, mappings);
 }

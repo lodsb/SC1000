@@ -90,17 +90,11 @@ EXTERNC void player_init( struct player* pl, unsigned int sample_rate,
 
 EXTERNC void player_clear( struct player* pl );
 
-EXTERNC void player_set_internal_playback( struct player* pl );
-
 EXTERNC void player_set_track( struct player* pl, struct track* track );
 
 EXTERNC void player_clone( struct player* pl, const struct player* from );
 
-EXTERNC double player_get_position( struct player* pl );
-
 EXTERNC double player_get_elapsed( struct player* pl );
-
-EXTERNC double player_get_remain( struct player* pl );
 
 EXTERNC bool player_is_active( const struct player* pl );
 

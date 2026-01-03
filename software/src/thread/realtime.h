@@ -25,6 +25,16 @@
 #include <semaphore.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+class Controller;
+#else
+typedef struct Controller Controller;
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * State data for the realtime thread, maintained during rt_start and
  * rt_stop
@@ -39,22 +49,26 @@ struct rt {
     struct sc1000 *engine;
 
     size_t nctl;
-    struct controller *ctl[3];
+    Controller *ctl[3];
 
     size_t npt;
     struct pollfd pt[32];
 };
 
-int rt_global_init();
-void rt_not_allowed();
+int rt_global_init(void);
+void rt_not_allowed(void);
 
 void rt_init(struct rt *rt);
 void rt_clear(struct rt *rt);
 
 int rt_set_sc1000(struct rt *rt, struct sc1000 *engine);
-int rt_add_controller(struct rt *rt, struct controller *c);
+int rt_add_controller(struct rt *rt, Controller *c);
 
 int rt_start(struct rt *rt, int priority);
 void rt_stop(struct rt *rt);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

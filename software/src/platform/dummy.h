@@ -17,27 +17,16 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#ifndef DUMMY_H
+#define DUMMY_H
 
-#include "../player/track.h"
+#include "../core/sc1000.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int rig_init();
-void rig_clear();
-
-int rig_main();
-
-int rig_quit();
-
-void rig_lock();
-void rig_unlock();
-
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
+void dummy_init(struct sc1000 *d);
 
 #ifdef __cplusplus
 }

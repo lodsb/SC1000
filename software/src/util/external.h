@@ -27,6 +27,10 @@
 #include <stdarg.h>
 #include <unistd.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * A handy read buffer; an equivalent of fread() but for
  * non-blocking file descriptors
@@ -42,5 +46,9 @@ pid_t fork_pipe_nb(int *fd, const char *path, char *arg, ...);
 
 void rb_reset(struct rb *rb);
 ssize_t get_line(int fd, struct rb *rb, char **string);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

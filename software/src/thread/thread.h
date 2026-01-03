@@ -24,9 +24,17 @@
 #ifndef THREAD_H
 #define THREAD_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int thread_global_init(void);
 void thread_global_clear(void);
 void thread_to_realtime(void);
-void rt_not_allowed();
+void rt_not_allowed(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -18,48 +18,85 @@
  */
 
 #pragma once
-#include <stdbool.h>
-#include <stdlib.h>
+
+#ifdef __cplusplus
+#include <cstddef>
+#else
+#include <stddef.h>
+#endif
+
 #include <sys/poll.h>
 #include <sys/types.h>
 
 struct deck;
 struct rt;
 
-/*
- * Base state of a 'controller', which is a MIDI controller or HID
- * device used to control the program
- */
-
-struct controller {
-    bool fault;
-    void *local;
-    struct controller_ops *ops;
-};
+#ifdef __cplusplus
 
 /*
- * Functions which must be implemented for a controller
+ * Controller - abstract base class for input controllers
+ *
+ * A controller is a MIDI controller or HID device used to control the program.
+ * Derived classes implement the virtual methods for their specific hardware.
  */
+class Controller {
+public:
+    Controller() = default;
+    virtual ~Controller() = default;
 
-struct controller_ops {
-    int (*add_deck)(struct controller *c, struct deck *deck );
+    // Non-copyable (controllers own hardware resources)
+    Controller(const Controller&) = delete;
+    Controller& operator=(const Controller&) = delete;
 
-    ssize_t (*pollfds)(struct controller *c, struct pollfd *pe, size_t z);
-    int (*realtime)(struct controller *c);
+    // Movable
+    Controller(Controller&&) = default;
+    Controller& operator=(Controller&&) = default;
 
-    void (*clear)(struct controller *c);
+    /*
+     * Add a deck to this controller
+     * Return: 0 on success, -1 if deck could not be added
+     */
+    virtual int add_deck(struct deck* d) = 0;
+
+    /*
+     * Get file descriptors for poll()
+     * Return: number of pollfd entries filled, or -1 on error
+     */
+    virtual ssize_t pollfds(struct pollfd* pe, size_t z) = 0;
+
+    /*
+     * Handle realtime events (called from realtime thread)
+     * Return: 0 on success, -1 on error
+     */
+    virtual int realtime() = 0;
+
+    /*
+     * Clean up resources
+     */
+    virtual void clear() = 0;
+
+    // Fault state
+    bool has_fault() const { return fault_; }
+    void set_fault() { fault_ = true; }
+
+protected:
+    bool fault_ = false;
 };
 
+// Helper functions that work with Controller*
+void controller_add_deck(Controller* c, struct deck* d);
+ssize_t controller_pollfds(Controller* c, struct pollfd* pe, size_t z);
+void controller_handle(Controller* c);
+void controller_clear(Controller* c);
+
+extern "C" {
+#endif
+
+// C-compatible opaque type (for C code that just passes pointers around)
+#ifndef __cplusplus
+typedef struct Controller Controller;
+#endif
 
 #ifdef __cplusplus
-#define EXTERNC extern "C"
-#else
-#define EXTERNC
+}
 #endif
-EXTERNC int     controller_init(struct controller *c, struct controller_ops *t, void *local, struct rt *rt);
-EXTERNC void    controller_clear(struct controller *c);
-
-EXTERNC void    controller_add_deck(struct controller *c, struct deck *d );
-EXTERNC ssize_t controller_pollfds(struct controller *c, struct pollfd *pe, size_t z);
-EXTERNC void    controller_handle(struct controller *c);
-#undef EXTERNC

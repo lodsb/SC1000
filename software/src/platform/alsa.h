@@ -17,30 +17,13 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#ifndef ALSA_H
+#define ALSA_H
 
-#include "../player/track.h"
+#include "../core/sc1000.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings);
 
-int rig_init();
-void rig_clear();
-
-int rig_main();
-
-int rig_quit();
-
-void rig_lock();
-void rig_unlock();
-
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
-
-#ifdef __cplusplus
-}
-#endif
+void alsa_clear_config_cache(void);
 
 #endif

@@ -17,30 +17,23 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#include "dummy.h"
 
-#include "../player/track.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int rig_init();
-void rig_clear();
-
-int rig_main();
-
-int rig_quit();
-
-void rig_lock();
-void rig_unlock();
-
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
-
-#ifdef __cplusplus
+static unsigned int sample_rate(struct sc1000* /*d*/)
+{
+    return 48000;
 }
-#endif
 
-#endif
+static struct sc1000_ops dummy_ops = {
+    .pollfds = nullptr,
+    .handle = nullptr,
+    .sample_rate = sample_rate,
+    .start = nullptr,
+    .stop = nullptr,
+    .clear = nullptr,
+};
+
+void dummy_init(struct sc1000* d)
+{
+    sc1000_audio_engine_init(d, &dummy_ops);
+}

@@ -10,32 +10,34 @@ option(NATIVE "NATIVE" OFF)
 include(ExternalProject)
 include(FindALSA)
 
-add_executable(sc1000)
+add_executable(sc1000
+        src/app/sc1000_ops.h)
 
 target_sources(sc1000
         PRIVATE
-        src/main.c
-        src/util/external.c
+        src/main.cpp
+        src/util/external.cpp
         src/util/debug.h
-        src/util/status.c
-        src/thread/realtime.c
-        src/thread/rig.c
-        src/thread/thread.c
-        src/player/cues.c
-        src/player/deck.c
-        src/player/dicer.c
-        src/player/player.c
-        src/player/playlist.c
-        src/player/track.c
-        src/input/controller.c
-        src/input/midi.c
-        src/audio/alsa.c
+        src/util/status.cpp
+        src/thread/realtime.cpp
+        src/thread/rig.cpp
+        src/thread/thread.cpp
+        src/player/cues.cpp
+        src/player/deck.cpp
+        src/input/midi_controller.cpp
+        src/player/player.cpp
+        src/player/playlist.cpp
+        src/player/track.cpp
+        src/input/controller.cpp
+        src/input/midi.cpp
+        src/input/midi_event.cpp
+        src/audio/alsa.cpp
         src/app/sc_settings.cpp
         src/app/sc_input.cpp
-        src/app/global.c
+        src/app/global.cpp
         src/app/global.h
         src/app/audio_engine.cpp
-        src/app/sc1000.c
+        src/app/sc1000.cpp
 )
 
 if(${NATIVE})

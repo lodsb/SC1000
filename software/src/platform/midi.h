@@ -17,30 +17,30 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#pragma once
 
-#include "../player/track.h"
+#include <alsa/asoundlib.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/*
+ * State information for an open, non-blocking MIDI device
+ */
 
-int rig_init();
-void rig_clear();
-
-int rig_main();
-
-int rig_quit();
-
-void rig_lock();
-void rig_unlock();
-
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
+struct midi {
+    snd_rawmidi_t *in, *out;
+};
 
 #ifdef __cplusplus
-}
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
 #endif
 
-#endif
+EXTERNC int midi_open(struct midi *m, const char *name);
+EXTERNC void midi_close(struct midi *m);
+
+EXTERNC ssize_t midi_pollfds(struct midi *m, struct pollfd *pe, size_t len);
+EXTERNC ssize_t midi_read(struct midi *m, void *buf, size_t len);
+EXTERNC ssize_t midi_write(struct midi *m, const void *buf, size_t len);
+EXTERNC int listdev(const char *devname, char names[64][64]);
+
+#undef EXTERNC

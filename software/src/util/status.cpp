@@ -17,30 +17,57 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#include <cstdio>
+#include <cstdarg>
 
-#include "../player/track.h"
+#include "status.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+static const char *message = "";
+static int level = 0;
 
-int rig_init();
-void rig_clear();
+/*
+ * Return: current status string
+ */
 
-int rig_main();
-
-int rig_quit();
-
-void rig_lock();
-void rig_unlock();
-
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
-
-#ifdef __cplusplus
+const char* status(void)
+{
+    return message;
 }
-#endif
 
-#endif
+int status_level(void)
+{
+    return level;
+}
+
+/*
+ * Set status to reference a static string
+ *
+ * Post: reference on s is held
+ */
+
+void status_set(int l, const char *s)
+{
+    message = s;
+    level = l;
+
+    if (l >= STATUS_INFO) {
+        fputs(s, stderr);
+        fputc('\n', stderr);
+    }
+}
+
+/*
+ * Set status to a formatted string
+ */
+
+void status_printf(int lvl, const char *t, ...)
+{
+    static char buf[256];
+    va_list l;
+
+    va_start(l, t);
+    vsnprintf(buf, sizeof buf, t, l);
+    va_end(l);
+
+    status_set(lvl, buf);
+}

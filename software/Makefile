@@ -32,7 +32,7 @@ find_includes_in_dir = $(shell find $(1) -name "*.h" | sed 's|/[^/]*$$||' | sort
 # Toolchain Configuration
 # ---------------------------------------------------------------------
 C_STANDARD              := -std=gnu11
-CXX_STANDARD            := -std=gnu++11
+CXX_STANDARD            := -std=gnu++17
 
 # -----------------------------------------------------------------------------------------------------------------
 # Defined Symbols
@@ -47,6 +47,7 @@ TOOLCHAIN_SETTINGS      := -fmessage-length=0
 
 # C Compiler -- Warnings
 CFLAGS                  += $(TOOLCHAIN_SETTINGS) $(DEFS) $(addprefix -I, $(INC_DIRS))
+CFLAGS                  += -Ideps
 CFLAGS                  += -Wall
 CFLAGS                  += -Wextra
 CFLAGS                  += -Wfatal-errors

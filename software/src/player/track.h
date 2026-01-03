@@ -23,8 +23,6 @@
 #include <sys/poll.h>
 #include <sys/types.h>
 
-#include "../util/list.h"
-
 #define TRACK_CHANNELS 2
 
 #define TRACK_MAX_BLOCKS 64
@@ -37,7 +35,6 @@ struct track_block {
 };
 
 struct track {
-    struct list tracks;
     unsigned int refcount;
     int rate;
 
@@ -52,7 +49,6 @@ struct track {
 
     /* State of audio import */
 
-    struct list rig;
     pid_t pid;
     int fd;
     struct pollfd *pe;

@@ -19,5 +19,5 @@
 
 #pragma once
 
-#include "app/sc1000.h"
+#include "core/sc1000.h"
 

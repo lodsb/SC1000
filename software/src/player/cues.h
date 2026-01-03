@@ -44,11 +44,8 @@ EXTERNC void cues_reset(struct cues *q);
 EXTERNC void cues_unset(struct cues *q, unsigned int label);
 EXTERNC void cues_set(struct cues *q, unsigned int label, double position);
 EXTERNC double cues_get(const struct cues *q, unsigned int label);
-EXTERNC double cues_prev(const struct cues *q, double current);
-EXTERNC double cues_next(const struct cues *q, double current);
 
 EXTERNC void cues_load_from_file(struct cues *q, char const* pathname);
 EXTERNC void cues_save_to_file(struct cues *q, char const* pathname);
-EXTERNC char* replace_path_ext(char const* pathname);
 
 #undef EXTERNC

@@ -24,9 +24,18 @@
 #include "cues.h"
 #include "player.h"
 
-struct sc_folder;
-struct sc_file;
-struct controller;
+#ifdef __cplusplus
+class Playlist;
+#else
+struct Playlist;  // Forward declare as struct for C
+typedef struct Playlist Playlist;
+#endif
+
+#ifdef __cplusplus
+class Controller;
+#else
+typedef struct Controller Controller;
+#endif
 struct sc_settings;
 
 
@@ -47,14 +56,15 @@ struct deck
    /* A controller adds itself here */
 
    size_t ncontrol;
-   struct controller* control[4];
+   Controller* control[4];
 
    // If a shift modifier has been pressed recently
    bool shifted;
 
-   struct sc_folder* first_folder, * current_folder;
-   struct sc_file* current_file;
-   unsigned int num_files;
+   // Playlist navigation (index-based for O(1) access)
+   Playlist* playlist;
+   size_t current_folder_idx;
+   size_t current_file_idx;
    bool files_present;
 
    int32_t angle_offset; // Offset between encoder angle and track position, reset every time the platter is touched

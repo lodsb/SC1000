@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2018 Andrew Tait <rasteri@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -17,30 +17,8 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#pragma once
+#include "sc_input.h"
+#include "sc1000.h"
 
-#include "../player/track.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int rig_init();
-void rig_clear();
-
-int rig_main();
-
-int rig_quit();
-
-void rig_lock();
-void rig_unlock();
-
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+// MIDI events are now communicated via lock-free queue in midi_event.h

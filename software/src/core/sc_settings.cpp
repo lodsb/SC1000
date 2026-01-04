@@ -69,16 +69,12 @@ NLOHMANN_JSON_SERIALIZE_ENUM( audio_interface_type, {
 
 NLOHMANN_JSON_SERIALIZE_ENUM( output_channel_type, {
    {OUT_NONE, "none"},
-   {OUT_SCRATCH_LEFT, "scratch_left"},
-   {OUT_SCRATCH_RIGHT, "scratch_right"},
-   {OUT_BEAT_LEFT, "beat_left"},
-   {OUT_BEAT_RIGHT, "beat_right"},
-   {OUT_CV1, "cv1"},
-   {OUT_CV2, "cv2"},
-   {OUT_CV3, "cv3"},
-   {OUT_CV4, "cv4"},
-   {OUT_GATE1, "gate1"},
-   {OUT_GATE2, "gate2"},
+   {OUT_AUDIO, "audio"},
+   {OUT_CV_PLATTER_SPEED, "cv_platter_speed"},
+   {OUT_CV_SAMPLE_POSITION, "cv_sample_position"},
+   {OUT_CV_CROSSFADER, "cv_crossfader"},
+   {OUT_CV_GATE_A, "cv_gate_a"},
+   {OUT_CV_GATE_B, "cv_gate_b"},
 })
 
 namespace sc {
@@ -757,9 +753,6 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                iface.buffer_period_factor = dev.value("buffer_period_factor",
                                                        static_cast<int>(settings->buffer_period_factor));
 
-               // Enabled
-               iface.enabled = dev.value("enabled", true);
-
                // Capabilities
                iface.supports_cv = dev.value("supports_cv", false);
                iface.supports_recording = dev.value("supports_recording", false);
@@ -770,7 +763,7 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                }
                iface.num_mapped_outputs = 0;
 
-               // Parse output_map if present: { "scratch_left": 0, "cv1": 4, ... }
+               // Parse output_map if present: { "audio": 0, "cv_platter_speed": 2, ... }
                if (dev.contains("output_map") && dev["output_map"].is_object())
                {
                   for (auto& [key, val] : dev["output_map"].items())
@@ -780,42 +773,61 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                      {
                         // Parse the logical channel type from the key
                         output_channel_type logical = OUT_NONE;
-                        if (key == "scratch_left") logical = OUT_SCRATCH_LEFT;
-                        else if (key == "scratch_right") logical = OUT_SCRATCH_RIGHT;
-                        else if (key == "beat_left") logical = OUT_BEAT_LEFT;
-                        else if (key == "beat_right") logical = OUT_BEAT_RIGHT;
-                        else if (key == "cv1") logical = OUT_CV1;
-                        else if (key == "cv2") logical = OUT_CV2;
-                        else if (key == "cv3") logical = OUT_CV3;
-                        else if (key == "cv4") logical = OUT_CV4;
-                        else if (key == "gate1") logical = OUT_GATE1;
-                        else if (key == "gate2") logical = OUT_GATE2;
+                        if (key == "audio") logical = OUT_AUDIO;
+                        else if (key == "cv_platter_speed") logical = OUT_CV_PLATTER_SPEED;
+                        else if (key == "cv_sample_position") logical = OUT_CV_SAMPLE_POSITION;
+                        else if (key == "cv_crossfader") logical = OUT_CV_CROSSFADER;
+                        else if (key == "cv_gate_a") logical = OUT_CV_GATE_A;
+                        else if (key == "cv_gate_b") logical = OUT_CV_GATE_B;
 
                         if (logical != OUT_NONE)
                         {
                            iface.output_map[hw_channel] = logical;
                            iface.num_mapped_outputs++;
+
+                           // Audio is stereo, takes 2 channels
+                           if (logical == OUT_AUDIO && hw_channel + 1 < MAX_OUTPUT_CHANNELS)
+                           {
+                              iface.num_mapped_outputs++;
+                           }
                         }
                      }
                   }
                }
-               else if (iface.type == AUDIO_TYPE_MAIN && iface.channels >= 2)
+               else if (iface.channels >= 2)
                {
-                  // Default mapping for main stereo: channels 0,1 = scratch L/R
-                  iface.output_map[0] = OUT_SCRATCH_LEFT;
-                  iface.output_map[1] = OUT_SCRATCH_RIGHT;
+                  // Default mapping: stereo audio on channels 0,1
+                  iface.output_map[0] = OUT_AUDIO;
                   iface.num_mapped_outputs = 2;
                }
 
                settings->num_audio_interfaces++;
 
-               std::cout << "Audio device: " << iface.name
+               std::cout << "Audio config: " << iface.name
                          << " (" << iface.device << ")"
-                         << " type=" << static_cast<int>(iface.type)
                          << " ch=" << iface.channels
                          << " cv=" << iface.supports_cv
-                         << " mapped=" << iface.num_mapped_outputs
-                         << " enabled=" << iface.enabled << std::endl;
+                         << " mapped=" << iface.num_mapped_outputs << std::endl;
+
+               // Debug: print output map
+               for (int ch = 0; ch < iface.channels && ch < MAX_OUTPUT_CHANNELS; ch++)
+               {
+                  if (iface.output_map[ch] != OUT_NONE)
+                  {
+                     const char* type_name = "unknown";
+                     switch (iface.output_map[ch])
+                     {
+                        case OUT_AUDIO: type_name = "audio"; break;
+                        case OUT_CV_PLATTER_SPEED: type_name = "cv_platter_speed"; break;
+                        case OUT_CV_SAMPLE_POSITION: type_name = "cv_sample_position"; break;
+                        case OUT_CV_CROSSFADER: type_name = "cv_crossfader"; break;
+                        case OUT_CV_GATE_A: type_name = "cv_gate_a"; break;
+                        case OUT_CV_GATE_B: type_name = "cv_gate_b"; break;
+                        default: break;
+                     }
+                     std::cout << "  ch" << ch << " -> " << type_name << std::endl;
+                  }
+               }
 
             } catch (const nlohmann::json::exception& e) {
                std::cerr << "Warning: Invalid audio device entry: " << e.what() << std::endl;
@@ -856,7 +868,7 @@ audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_i
 {
    for (int i = 0; i < settings->num_audio_interfaces; i++)
    {
-      if (settings->audio_interfaces[i].type == type && settings->audio_interfaces[i].enabled)
+      if (settings->audio_interfaces[i].type == type)
       {
          return &settings->audio_interfaces[i];
       }
@@ -876,7 +888,6 @@ void sc_settings_init_default_audio( sc_settings* settings )
    iface.sample_rate = settings->sample_rate;
    iface.period_size = static_cast<int>(settings->period_size);
    iface.buffer_period_factor = static_cast<int>(settings->buffer_period_factor);
-   iface.enabled = true;
    iface.supports_cv = false;
    iface.supports_recording = false;
 
@@ -884,9 +895,8 @@ void sc_settings_init_default_audio( sc_settings* settings )
    for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++) {
       iface.output_map[i] = OUT_NONE;
    }
-   iface.output_map[0] = OUT_SCRATCH_LEFT;
-   iface.output_map[1] = OUT_SCRATCH_RIGHT;
-   iface.num_mapped_outputs = 2;
+   iface.output_map[0] = OUT_AUDIO;
+   iface.num_mapped_outputs = 2;  // Audio is stereo
 }
 
 int sc_settings_get_output_channel( audio_interface* iface, output_channel_type logical )
@@ -907,7 +917,7 @@ audio_interface* sc_settings_find_cv_interface( sc_settings* settings )
 {
    for (int i = 0; i < settings->num_audio_interfaces; i++)
    {
-      if (settings->audio_interfaces[i].enabled && settings->audio_interfaces[i].supports_cv)
+      if (settings->audio_interfaces[i].supports_cv)
       {
          return &settings->audio_interfaces[i];
       }

@@ -19,19 +19,20 @@ enum audio_interface_type {
 // Logical output channel types
 enum output_channel_type {
    OUT_NONE = 0,            // Unmapped/unused
-   OUT_SCRATCH_LEFT,        // Scratch deck left
-   OUT_SCRATCH_RIGHT,       // Scratch deck right
-   OUT_BEAT_LEFT,           // Beat deck left
-   OUT_BEAT_RIGHT,          // Beat deck right
-   OUT_CV1,                 // CV output 1
-   OUT_CV2,                 // CV output 2
-   OUT_CV3,                 // CV output 3
-   OUT_CV4,                 // CV output 4
-   OUT_GATE1,               // Gate output 1
-   OUT_GATE2,               // Gate output 2
+
+   // Audio outputs (stereo pair starting at mapped channel)
+   OUT_AUDIO,               // Main stereo mix (scratch + beat)
+
+   // CV sources (mono, calculated only if mapped)
+   OUT_CV_PLATTER_SPEED,    // Bipolar: platter rotation speed (-1 to +1)
+   OUT_CV_SAMPLE_POSITION,  // Unipolar: relative position in sample (0 to 1)
+   OUT_CV_CROSSFADER,       // Crossfader position
+   OUT_CV_GATE_A,           // Gate: high when fader at A end (scratch open)
+   OUT_CV_GATE_B,           // Gate: high when fader at B end (beat open)
 };
 
 // Audio interface configuration
+// Devices are listed in priority order - first available match is used
 struct audio_interface {
    char name[64];                 // Human-readable name, e.g., "Bitwig Connect"
    char device[64];               // ALSA device name, e.g., "hw:0", "plughw:1"
@@ -40,7 +41,6 @@ struct audio_interface {
    int sample_rate;               // Sample rate (48000 default)
    int period_size;               // Period size (256 default)
    int buffer_period_factor;      // Buffer = period * factor (4 default)
-   bool enabled;                  // Whether this interface is active
    bool supports_cv;              // Whether this device can output CV
    bool supports_recording;       // Whether this device can record
 

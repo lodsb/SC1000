@@ -864,32 +864,24 @@
   },
   "audio_devices": [
     {
+      "name": "Bitwig Connect",
+      "device": "hw:1",
+      "type": "usb",
+      "channels": 6,
+      "supports_cv": true,
+      "output_map": {
+        "audio": 0,
+        "cv_platter_speed": 2,
+        "cv_crossfader": 3,
+        "cv_gate_a": 4,
+        "cv_gate_b": 5
+      }
+    },
+    {
       "name": "Internal Codec",
       "device": "hw:0",
       "type": "main",
-      "channels": 2,
-      "enabled": true,
-      "supports_cv": false,
-      "supports_recording": false
-    },
-    {
-      "name": "USB Audio (example)",
-      "device": "hw:1",
-      "type": "usb",
-      "channels": 8,
-      "enabled": false,
-      "supports_cv": true,
-      "supports_recording": true,
-      "output_map": {
-        "scratch_left": 0,
-        "scratch_right": 1,
-        "beat_left": 2,
-        "beat_right": 3,
-        "cv1": 4,
-        "cv2": 5,
-        "cv3": 6,
-        "cv4": 7
-      }
+      "channels": 2
     }
   ]
 }

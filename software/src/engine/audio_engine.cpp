@@ -2,8 +2,10 @@
 #include <cmath>
 #include <climits>
 #include <ctime>
+#include <cstring>
 
 #include "audio_engine.h"
+#include "loop_buffer.h"
 #include "../core/sc_settings.h"
 #include "../core/sc1000.h"
 #include "../platform/alsa.h"
@@ -490,6 +492,7 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
 }
 
 void collect_and_mix_players( struct sc1000* engine,
+                              struct audio_capture* capture,
                               signed short *pcm, unsigned long samples, struct sc_settings* settings )
 {
    struct player* pl1 = &engine->beat_deck.player;
@@ -528,19 +531,62 @@ void collect_and_mix_players( struct sc1000* engine,
 
    pl2->position += r2;
    pl2->volume = target_volume_2;
+
+   // Handle capture: loop recording and monitoring
+   if (capture && capture->buffer)
+   {
+      // Write to loop buffer if recording
+      int deck = capture->recording_deck;
+      if (deck >= 0 && deck < 2 && capture->loop[deck])
+      {
+         loop_buffer_write(capture->loop[deck], capture->buffer,
+                           static_cast<unsigned int>(samples),
+                           capture->channels, capture->left_channel, capture->right_channel);
+      }
+
+      // Add monitoring: mix capture input into output
+      // Only monitor when actively recording
+      if (deck >= 0 && capture->monitoring_volume > 0.0f)
+      {
+         float vol = capture->monitoring_volume;
+         for (unsigned long i = 0; i < samples; i++)
+         {
+            // Extract stereo from capture buffer using channel mapping
+            int16_t cap_l = capture->buffer[i * capture->channels + capture->left_channel];
+            int16_t cap_r = capture->buffer[i * capture->channels + capture->right_channel];
+
+            // Mix into output with volume and clamp
+            float out_l = static_cast<float>(pcm[i * 2 + 0]) + static_cast<float>(cap_l) * vol;
+            float out_r = static_cast<float>(pcm[i * 2 + 1]) + static_cast<float>(cap_r) * vol;
+
+            out_l = clamp_scalar(out_l, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
+            out_r = clamp_scalar(out_r, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
+
+            pcm[i * 2 + 0] = static_cast<int16_t>(out_l);
+            pcm[i * 2 + 1] = static_cast<int16_t>(out_r);
+         }
+      }
+   }
 }
 
 } // namespace audio
 } // namespace sc
 
 // C API - extern "C" functions
-void audio_engine_process( struct sc1000* engine, signed short* pcm, unsigned long frames )
+void audio_engine_process(
+    struct sc1000* engine,
+    struct audio_capture* capture,
+    int16_t* playback,
+    int playback_channels,
+    unsigned long frames)
 {
    using namespace sc::audio;
 
+   (void)playback_channels;  // Currently assumes stereo (2 channels)
+
    double start_time = get_time_us();
 
-   collect_and_mix_players(engine, pcm, frames, engine->settings);
+   collect_and_mix_players(engine, capture, playback, frames, engine->settings);
 
    double end_time = get_time_us();
    double process_time = end_time - start_time;

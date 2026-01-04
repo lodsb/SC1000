@@ -199,11 +199,9 @@ static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int 
     }
 }
 
-void sc1000_audio_engine_process(struct sc1000* engine, signed short* pcm, unsigned long frames)
+void sc1000_handle_deck_recording(struct sc1000* engine)
 {
     // Handle loop buffer recording for both decks (memory-based, for immediate scratching)
     handle_deck_recording(engine, &engine->beat_deck, 0);     // Beat deck = 0
     handle_deck_recording(engine, &engine->scratch_deck, 1);  // Scratch deck = 1
-
-    audio_engine_process(engine, pcm, frames);
 }

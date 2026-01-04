@@ -28,7 +28,9 @@
 
 #include "../util/log.h"
 #include "../core/global.h"
+#include "../core/sc1000.h"
 #include "../core/sc_settings.h"
+#include "../engine/audio_engine.h"
 #include "../engine/cv_engine.h"
 #include "../engine/loop_buffer.h"
 #include "../player/player.h"
@@ -526,31 +528,16 @@ static void stop( struct sc1000* dv )
 
 static ssize_t pollfds( struct sc1000* engine, struct pollfd* pe, size_t z )
 {
-   ssize_t r;
-   ssize_t total = 0;
    auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
 
-   // Add capture poll descriptors if capture is enabled
-   if (alsa->capture_enabled)
-   {
-      r = pcm_pollfds(&alsa->capture, pe, z);
-      if (r < 0)
-         return -1;
-
-      pe += r;
-      z -= static_cast<size_t>(r);
-      total += r;
-   }
-
-   r = pcm_pollfds(&alsa->playback, pe, z);
+   /* Only poll playback - capture is handled opportunistically in process_audio() */
+   ssize_t r = pcm_pollfds(&alsa->playback, pe, z);
    if ( r < 0 )
    {
       return -1;
    }
 
-   total += r;
-
-   return total;
+   return r;
 }
 
 /* Access the interleaved area presented by the ALSA library.  The
@@ -572,18 +559,24 @@ static signed short* buffer(const snd_pcm_channel_area_t *area,
 }
 
 
-/* Collect audio from the player and push it into the device's buffer,
- * for playback using MMAP for lowest latency */
+/* Combined capture and playback processing using MMAP for lowest latency.
+ * Gets both capture and playback mmap buffers, calls audio_engine with both,
+ * then commits both. This enables zero-latency monitoring during recording. */
 
-static int playback( struct sc1000* engine)
+static int process_audio( struct sc1000* engine)
 {
    auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   const snd_pcm_channel_area_t *areas;
-   snd_pcm_uframes_t offset, frames;
+   const snd_pcm_channel_area_t *playback_areas;
+   const snd_pcm_channel_area_t *capture_areas = nullptr;
+   snd_pcm_uframes_t playback_offset, playback_frames;
+   snd_pcm_uframes_t capture_offset = 0, capture_frames = 0;
    snd_pcm_sframes_t commitres, avail;
    int err;
 
-   /* Check how many frames are available */
+   /* Handle recording start/stop state changes for both decks */
+   sc1000_handle_deck_recording(engine);
+
+   /* Check how many playback frames are available */
    avail = snd_pcm_avail_update(alsa->playback.pcm);
    if (avail < 0)
       return static_cast<int>(avail);
@@ -591,39 +584,78 @@ static int playback( struct sc1000* engine)
    if (static_cast<snd_pcm_uframes_t>(avail) < alsa->playback.period_size)
       return 0;  /* Not enough space yet */
 
-   frames = alsa->playback.period_size;
+   playback_frames = alsa->playback.period_size;
 
-   err = snd_pcm_mmap_begin(alsa->playback.pcm, &areas, &offset, &frames);
+   /* Get playback mmap buffer */
+   err = snd_pcm_mmap_begin(alsa->playback.pcm, &playback_areas, &playback_offset, &playback_frames);
    if (err < 0)
       return err;
 
-   /* Get pointer to the MMAP buffer */
-   signed short* pcm = buffer(&areas[0], offset, alsa->num_channels);
+   signed short* playback_pcm = buffer(&playback_areas[0], playback_offset, alsa->num_channels);
 
    /* For multi-channel: clear entire buffer first (zeros for unused channels) */
    if (alsa->num_channels > 2)
    {
-      memset(pcm, 0, frames * alsa->num_channels * sizeof(signed short));
+      memset(playback_pcm, 0, playback_frames * alsa->num_channels * sizeof(signed short));
    }
 
-   /* Generate stereo audio - audio_engine writes to channels 0-1 */
-   /* For multi-channel, we need to interleave properly */
+   /* Get capture mmap buffer if capture is enabled and has data */
+   const signed short* capture_pcm = nullptr;
+   bool capture_valid = false;
+
+   if (alsa->capture_enabled)
+   {
+      snd_pcm_sframes_t capture_avail = snd_pcm_avail_update(alsa->capture.pcm);
+      if (capture_avail >= static_cast<snd_pcm_sframes_t>(alsa->capture.period_size))
+      {
+         capture_frames = alsa->capture.period_size;
+         err = snd_pcm_mmap_begin(alsa->capture.pcm, &capture_areas, &capture_offset, &capture_frames);
+         if (err >= 0)
+         {
+            capture_pcm = buffer(&capture_areas[0], capture_offset, alsa->capture_channels);
+            capture_valid = true;
+         }
+      }
+      else if (capture_avail < 0 && capture_avail == -EPIPE)
+      {
+         // Capture overrun - recover
+         snd_pcm_prepare(alsa->capture.pcm);
+         snd_pcm_start(alsa->capture.pcm);
+      }
+   }
+
+   /* Build capture info struct for audio_engine */
+   struct audio_capture capture_info = {};
+   if (capture_valid && capture_pcm)
+   {
+      capture_info.buffer = capture_pcm;
+      capture_info.channels = alsa->capture_channels;
+      capture_info.left_channel = alsa->capture_left;
+      capture_info.right_channel = alsa->capture_right;
+      capture_info.loop[0] = &alsa->loop[0];
+      capture_info.loop[1] = &alsa->loop[1];
+      capture_info.recording_deck = alsa->active_recording_deck;
+      // TODO: Get monitoring volume from settings or deck volume
+      capture_info.monitoring_volume = (alsa->active_recording_deck >= 0) ? 1.0f : 0.0f;
+   }
+
+   /* Process audio - stereo output to playback buffer */
    if (alsa->num_channels == 2)
    {
       /* Simple stereo case - write directly */
-      sc1000_audio_engine_process(engine, pcm, frames);
+      audio_engine_process(engine, capture_valid ? &capture_info : nullptr, playback_pcm, 2, playback_frames);
    }
    else
    {
       /* Multi-channel: use temporary stereo buffer, then copy to channels 0-1 */
       static signed short stereo_buf[1024 * 2];  /* Max period size * 2 channels */
-      sc1000_audio_engine_process(engine, stereo_buf, frames);
+      audio_engine_process(engine, capture_valid ? &capture_info : nullptr, stereo_buf, 2, playback_frames);
 
       /* Copy stereo to first 2 channels of multi-channel buffer */
-      for (unsigned long i = 0; i < frames; i++)
+      for (unsigned long i = 0; i < playback_frames; i++)
       {
-         pcm[i * alsa->num_channels + 0] = stereo_buf[i * 2 + 0];  /* Left */
-         pcm[i * alsa->num_channels + 1] = stereo_buf[i * 2 + 1];  /* Right */
+         playback_pcm[i * alsa->num_channels + 0] = stereo_buf[i * 2 + 0];  /* Left */
+         playback_pcm[i * alsa->num_channels + 1] = stereo_buf[i * 2 + 1];  /* Right */
       }
 
       /* Process CV outputs if configured */
@@ -642,12 +674,28 @@ static int playback( struct sc1000* engine)
          };
 
          cv_engine_update(&alsa->cv, &cv_input);
-         cv_engine_process(&alsa->cv, pcm, alsa->num_channels, frames);
+         cv_engine_process(&alsa->cv, playback_pcm, alsa->num_channels, playback_frames);
       }
    }
 
-   commitres = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
-   if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != frames)
+   /* Commit capture buffer first (if we got one) */
+   if (capture_valid)
+   {
+      commitres = snd_pcm_mmap_commit(alsa->capture.pcm, capture_offset, capture_frames);
+      if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != capture_frames)
+      {
+         if (commitres == -EPIPE)
+         {
+            snd_pcm_prepare(alsa->capture.pcm);
+            snd_pcm_start(alsa->capture.pcm);
+         }
+         // Don't return error, continue with playback commit
+      }
+   }
+
+   /* Commit playback buffer */
+   commitres = snd_pcm_mmap_commit(alsa->playback.pcm, playback_offset, playback_frames);
+   if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != playback_frames)
       return commitres < 0 ? static_cast<int>(commitres) : -EPIPE;
 
    /* Start PCM on first write */
@@ -661,64 +709,8 @@ static int playback( struct sc1000* engine)
    return 0;
 }
 
-/* Read audio from capture device and feed to loop buffer */
-
-static int capture( struct sc1000* engine )
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   const snd_pcm_channel_area_t *areas;
-   snd_pcm_uframes_t offset, frames;
-   snd_pcm_sframes_t avail;
-   int err;
-
-   /* Check how many frames are available */
-   avail = snd_pcm_avail_update(alsa->capture.pcm);
-   if (avail < 0)
-   {
-      if (avail == -EPIPE)
-      {
-         // Capture overrun - just recover
-         snd_pcm_prepare(alsa->capture.pcm);
-         snd_pcm_start(alsa->capture.pcm);
-         return 0;
-      }
-      return static_cast<int>(avail);
-   }
-
-   if (static_cast<snd_pcm_uframes_t>(avail) < alsa->capture.period_size)
-      return 0;  /* Not enough data yet */
-
-   frames = alsa->capture.period_size;
-
-   err = snd_pcm_mmap_begin(alsa->capture.pcm, &areas, &offset, &frames);
-   if (err < 0)
-      return err;
-
-   /* Get pointer to the MMAP buffer */
-   const signed short* pcm = buffer(&areas[0], offset, alsa->capture_channels);
-
-   /* Feed to active deck's loop buffer if recording */
-   int deck = alsa->active_recording_deck;
-   if (deck >= 0 && deck < 2 && loop_buffer_is_recording(&alsa->loop[deck]))
-   {
-      loop_buffer_write(&alsa->loop[deck], pcm, static_cast<unsigned int>(frames),
-                        alsa->capture_channels, alsa->capture_left, alsa->capture_right);
-   }
-
-   snd_pcm_sframes_t commitres = snd_pcm_mmap_commit(alsa->capture.pcm, offset, frames);
-   if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != frames)
-   {
-      if (commitres == -EPIPE)
-      {
-         snd_pcm_prepare(alsa->capture.pcm);
-         snd_pcm_start(alsa->capture.pcm);
-         return 0;
-      }
-      return commitres < 0 ? static_cast<int>(commitres) : -EPIPE;
-   }
-
-   return 0;
-}
+/* Note: capture is now handled inside process_audio() together with playback
+ * to enable zero-latency monitoring during recording. */
 
 /* After poll() has returned, instruct a device to do all it can at
  * the present time. Return zero if success, otherwise -1 */
@@ -729,28 +721,7 @@ static int handle( struct sc1000* engine )
    unsigned short revents;
    auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
 
-   /* Check the capture buffer */
-   if (alsa->capture_enabled)
-   {
-      r = pcm_revents(&alsa->capture, &revents);
-      if ( r < 0 )
-      {
-         return -1;
-      }
-
-      if ( revents & POLLIN )
-      {
-         r = capture(engine);
-         if ( r < 0 && r != -EPIPE )
-         {
-            alsa_error("capture", r);
-            // Don't return error - continue with playback
-         }
-      }
-   }
-
-   /* Check the output buffer for playback */
-
+   /* Check the output buffer for playback - combined processing handles capture too */
    r = pcm_revents(&alsa->playback, &revents);
    if ( r < 0 )
    {
@@ -759,7 +730,7 @@ static int handle( struct sc1000* engine )
 
    if ( revents & POLLOUT )
    {
-      r = playback(engine);
+      r = process_audio(engine);
 
       if ( r < 0 )
       {

@@ -867,21 +867,19 @@
       "name": "Bitwig Connect",
       "device": "hw:1",
       "type": "usb",
-      "channels": 6,
       "supports_cv": true,
       "output_map": {
         "audio": 0,
-        "cv_platter_speed": 2,
-        "cv_crossfader": 3,
-        "cv_gate_a": 4,
-        "cv_gate_b": 5
+        "cv_platter_speed": 8,
+        "cv_crossfader": 9,
+        "cv_gate_a": 10,
+        "cv_gate_b": 11
       }
     },
     {
       "name": "Internal Codec",
       "device": "hw:0",
-      "type": "main",
-      "channels": 2
+      "type": "main"
     }
   ]
 }

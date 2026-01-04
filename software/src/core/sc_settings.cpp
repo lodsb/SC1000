@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 
 #include <json.hpp>
 
@@ -75,6 +76,9 @@ NLOHMANN_JSON_SERIALIZE_ENUM( output_channel_type, {
    {OUT_CV_CROSSFADER, "cv_crossfader"},
    {OUT_CV_GATE_A, "cv_gate_a"},
    {OUT_CV_GATE_B, "cv_gate_b"},
+   {OUT_CV_PLATTER_ANGLE, "cv_platter_angle"},
+   {OUT_CV_PLATTER_ACCEL, "cv_platter_accel"},
+   {OUT_CV_DIRECTION_PULSE, "cv_direction_pulse"},
 })
 
 namespace sc {
@@ -764,6 +768,9 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                iface.num_mapped_outputs = 0;
 
                // Parse output_map if present: { "audio": 0, "cv_platter_speed": 2, ... }
+               // Auto-detect required channels from mapping
+               int max_channel_needed = 0;
+
                if (dev.contains("output_map") && dev["output_map"].is_object())
                {
                   for (auto& [key, val] : dev["output_map"].items())
@@ -779,6 +786,9 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                         else if (key == "cv_crossfader") logical = OUT_CV_CROSSFADER;
                         else if (key == "cv_gate_a") logical = OUT_CV_GATE_A;
                         else if (key == "cv_gate_b") logical = OUT_CV_GATE_B;
+                        else if (key == "cv_platter_angle") logical = OUT_CV_PLATTER_ANGLE;
+                        else if (key == "cv_platter_accel") logical = OUT_CV_PLATTER_ACCEL;
+                        else if (key == "cv_direction_pulse") logical = OUT_CV_DIRECTION_PULSE;
 
                         if (logical != OUT_NONE)
                         {
@@ -786,19 +796,35 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                            iface.num_mapped_outputs++;
 
                            // Audio is stereo, takes 2 channels
-                           if (logical == OUT_AUDIO && hw_channel + 1 < MAX_OUTPUT_CHANNELS)
+                           if (logical == OUT_AUDIO)
                            {
+                              max_channel_needed = std::max(max_channel_needed, hw_channel + 2);
                               iface.num_mapped_outputs++;
+                           }
+                           else
+                           {
+                              // CV sources are mono
+                              max_channel_needed = std::max(max_channel_needed, hw_channel + 1);
                            }
                         }
                      }
                   }
+
+                  // Auto-set channels from mapping (override config if mapping requires more)
+                  if (max_channel_needed > iface.channels)
+                  {
+                     iface.channels = max_channel_needed;
+                  }
                }
-               else if (iface.channels >= 2)
+               else
                {
-                  // Default mapping: stereo audio on channels 0,1
+                  // No output_map - default stereo audio on channels 0,1
                   iface.output_map[0] = OUT_AUDIO;
                   iface.num_mapped_outputs = 2;
+                  if (iface.channels < 2)
+                  {
+                     iface.channels = 2;
+                  }
                }
 
                settings->num_audio_interfaces++;
@@ -823,6 +849,9 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                         case OUT_CV_CROSSFADER: type_name = "cv_crossfader"; break;
                         case OUT_CV_GATE_A: type_name = "cv_gate_a"; break;
                         case OUT_CV_GATE_B: type_name = "cv_gate_b"; break;
+                        case OUT_CV_PLATTER_ANGLE: type_name = "cv_platter_angle"; break;
+                        case OUT_CV_PLATTER_ACCEL: type_name = "cv_platter_accel"; break;
+                        case OUT_CV_DIRECTION_PULSE: type_name = "cv_direction_pulse"; break;
                         default: break;
                      }
                      std::cout << "  ch" << ch << " -> " << type_name << std::endl;

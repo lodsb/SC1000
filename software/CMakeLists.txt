@@ -21,6 +21,7 @@ set(CONTROL_SOURCES
 
 set(ENGINE_SOURCES
         src/engine/audio_engine.cpp
+        src/engine/cv_engine.cpp
 )
 
 set(PLATFORM_SOURCES

@@ -27,6 +27,10 @@
 #include <alsa/asoundlib.h>
 
 #include "../core/global.h"
+#include "../core/sc_settings.h"
+#include "../engine/cv_engine.h"
+#include "../player/player.h"
+#include "../player/track.h"
 
 #include "alsa.h"
 
@@ -51,6 +55,9 @@ struct alsa
 {
    struct alsa_pcm capture, playback;
    bool started;
+   int num_channels;                    // Number of output channels (2 for stereo, 12 for Bitwig Connect, etc.)
+   struct audio_interface* config;      // Pointer to the matched config (for output_map)
+   struct cv_state cv;                  // CV engine state
 };
 
 static void alsa_error( const char* msg, int r )
@@ -356,7 +363,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
    if (!chk("hw_params_set_channels", err))
    {
       fprintf(stderr, "%d channel audio not available on this device.\n",
-              DEVICE_CHANNELS);
+              num_channels);
       return -1;
    }
 
@@ -529,10 +536,13 @@ static ssize_t pollfds( struct sc1000* engine, struct pollfd* pe, size_t z )
  * and therefore is "signed short" */
 
 static signed short* buffer(const snd_pcm_channel_area_t *area,
-                            snd_pcm_uframes_t offset)
+                            snd_pcm_uframes_t offset,
+                            int num_channels)
 {
    assert(area->first % 8 == 0);
-   assert(area->step == 32);  /* 2 channel 16-bit interleaved */
+   // step = num_channels * 16 bits per sample
+   unsigned int expected_step = num_channels * 16;
+   assert(area->step == expected_step);
 
    /* Calculate byte offset, then cast to short* */
    unsigned int bitofs = area->first + area->step * offset;
@@ -566,10 +576,53 @@ static int playback( struct sc1000* engine)
       return err;
 
    /* Get pointer to the MMAP buffer */
-   signed short* pcm = buffer(&areas[0], offset);
+   signed short* pcm = buffer(&areas[0], offset, alsa->num_channels);
 
-   /* Generate audio directly into MMAP buffer */
-   sc1000_audio_engine_process(engine, pcm, frames);
+   /* For multi-channel: clear entire buffer first (zeros for unused channels) */
+   if (alsa->num_channels > 2)
+   {
+      memset(pcm, 0, frames * alsa->num_channels * sizeof(signed short));
+   }
+
+   /* Generate stereo audio - audio_engine writes to channels 0-1 */
+   /* For multi-channel, we need to interleave properly */
+   if (alsa->num_channels == 2)
+   {
+      /* Simple stereo case - write directly */
+      sc1000_audio_engine_process(engine, pcm, frames);
+   }
+   else
+   {
+      /* Multi-channel: use temporary stereo buffer, then copy to channels 0-1 */
+      static signed short stereo_buf[1024 * 2];  /* Max period size * 2 channels */
+      sc1000_audio_engine_process(engine, stereo_buf, frames);
+
+      /* Copy stereo to first 2 channels of multi-channel buffer */
+      for (unsigned long i = 0; i < frames; i++)
+      {
+         pcm[i * alsa->num_channels + 0] = stereo_buf[i * 2 + 0];  /* Left */
+         pcm[i * alsa->num_channels + 1] = stereo_buf[i * 2 + 1];  /* Right */
+      }
+
+      /* Process CV outputs if configured */
+      if (alsa->config && alsa->config->supports_cv)
+      {
+         struct player* pl = &engine->scratch_deck.player;
+
+         /* Gather raw controller state - cv_engine handles all processing */
+         struct cv_controller_input cv_input = {
+            .pitch = pl->pitch,
+            .encoder_angle = engine->scratch_deck.encoder_angle,
+            .sample_position = pl->position,
+            .sample_length = pl->track ? pl->track->length : 0,
+            .fader_volume = pl->fader_volume,
+            .fader_target = pl->fader_target
+         };
+
+         cv_engine_update(&alsa->cv, &cv_input);
+         cv_engine_process(&alsa->cv, pcm, alsa->num_channels, frames);
+      }
+   }
 
    commitres = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
    if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != frames)
@@ -663,7 +716,8 @@ static struct sc1000_ops alsa_ops = {
         .clear = clear
 };
 
-static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_info* device_info)
+static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_info* device_info,
+                               struct audio_interface* config, int num_channels)
 {
    struct alsa* alsa;
 
@@ -680,9 +734,9 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
 
    char device_name[64];
    create_alsa_device_id_string(device_name, sizeof(device_name), device_info->device_id, device_info->subdevice_id, needs_plughw);
-   printf("Opening device %s with period size %i...", device_name, device_info->period_size);
+   printf("Opening device %s with %d channels, period size %i...\n", device_name, num_channels, device_info->period_size);
 
-   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, device_info, DEVICE_CHANNELS) < 0 )
+   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, device_info, num_channels) < 0 )
    {
       fputs("Failed to open device for playback.\n", stderr);
       printf(" failed!\n");
@@ -691,6 +745,16 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
 
    sc1000_engine->audio_hw_context = alsa;
    alsa->started = false;
+   alsa->num_channels = num_channels;
+   alsa->config = config;
+
+   // Initialize CV engine if CV is supported
+   if (config && config->supports_cv)
+   {
+      cv_engine_init(&alsa->cv, TARGET_SAMPLE_RATE);
+      cv_engine_set_mapping(&alsa->cv, config);
+      printf("CV engine initialized for %s\n", config->name);
+   }
 
    // make sure this is really initialized
    alsa_ops.clear       = clear;
@@ -711,6 +775,23 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
    return -1;
 }
 
+// Match a config entry to a detected ALSA device
+static struct alsa_device_info* find_matching_device(struct audio_interface* config)
+{
+   // Parse the device string to get card number
+   // Config device is like "hw:0" or "hw:1" or "plughw:1"
+   int card_num = -1;
+   if (sscanf(config->device, "hw:%d", &card_num) == 1 ||
+       sscanf(config->device, "plughw:%d", &card_num) == 1)
+   {
+      if (card_num >= 0 && card_num < 2 && alsa_devices[card_num].is_present)
+      {
+         return &alsa_devices[card_num];
+      }
+   }
+   return nullptr;
+}
+
 int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
 {
    printf("alsa_init\n");
@@ -719,19 +800,36 @@ int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
 
    fill_audio_interface_info(settings);
 
-   if(!alsa_devices[0].is_internal && alsa_devices[0].is_present)
+   // Try to match config entries with detected devices (in priority order)
+   for (int i = 0; i < settings->num_audio_interfaces; i++)
    {
-      return setup_alsa_device(sc1000_engine, &alsa_devices[0]);
+      struct audio_interface* config = &settings->audio_interfaces[i];
+      struct alsa_device_info* device = find_matching_device(config);
+
+      if (device)
+      {
+         printf("Matched config '%s' to device %s\n", config->name, config->device);
+         return setup_alsa_device(sc1000_engine, device, config, config->channels);
+      }
+      else
+      {
+         printf("Config '%s' (%s) - device not found\n", config->name, config->device);
+      }
    }
-   else if(!alsa_devices[1].is_internal && alsa_devices[1].is_present)
+
+   // Fallback: use first available device with stereo
+   printf("No config match, using fallback\n");
+   if (alsa_devices[0].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &alsa_devices[1]);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[0], nullptr, DEVICE_CHANNELS);
    }
-   else
+   else if (alsa_devices[1].is_present)
    {
-      // must be internal
-      return setup_alsa_device(sc1000_engine, &alsa_devices[0]);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[1], nullptr, DEVICE_CHANNELS);
    }
+
+   fprintf(stderr, "No audio device found!\n");
+   return -1;
 }
 
 /* ALSA caches information when devices are open. Provide a call

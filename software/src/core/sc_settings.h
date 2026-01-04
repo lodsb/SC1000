@@ -7,7 +7,7 @@ struct mapping;
 
 // Maximum number of audio interfaces and output channels
 #define MAX_AUDIO_INTERFACES 4
-#define MAX_OUTPUT_CHANNELS 8
+#define MAX_OUTPUT_CHANNELS 16
 
 // Audio interface types
 enum audio_interface_type {
@@ -29,6 +29,9 @@ enum output_channel_type {
    OUT_CV_CROSSFADER,       // Crossfader position
    OUT_CV_GATE_A,           // Gate: high when fader at A end (scratch open)
    OUT_CV_GATE_B,           // Gate: high when fader at B end (beat open)
+   OUT_CV_PLATTER_ANGLE,    // Unipolar: absolute platter angle (0 to 1, saw LFO)
+   OUT_CV_PLATTER_ACCEL,    // Bipolar: platter acceleration
+   OUT_CV_DIRECTION_PULSE,  // Trigger: pulse on platter direction change
 };
 
 // Audio interface configuration

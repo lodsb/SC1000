@@ -8,6 +8,7 @@
 #include "../player/deck.h"
 #include "../core/sc1000.h"
 #include "../core/sc_settings.h"
+#include "../platform/alsa.h"
 
 namespace sc {
 namespace control {
@@ -135,15 +136,32 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
 {
     if (map == nullptr) return;
 
+    // Determine target deck from mapping (0=beat, 1=scratch)
+    struct deck* target = (map->deck_no == 0)
+        ? &engine->beat_deck
+        : &engine->scratch_deck;
+
     if (map->action_type == RECORD) {
-        if (engine->scratch_deck.files_present) {
-            deck_record(&engine->beat_deck);
+        // Toggle loop recording for the target deck
+        deck_record(target);
+    }
+    else if (map->action_type == LOOPERASE) {
+        // Long-hold RECORD (3 sec) erases the loop, allowing fresh recording
+        printf("Loop erase triggered on deck %d\n", map->deck_no);
+        alsa_reset_loop(engine, map->deck_no);
+        target->player.use_loop = false;  // Switch back to file track
+        target->player.playing_beep = BEEP_RECORDINGERROR;  // Use error beep as "erased" feedback
+    }
+    else if (map->action_type == LOOPRECALL) {
+        // Recall the last recorded loop
+        printf("Loop recall triggered on deck %d\n", map->deck_no);
+        if (deck_recall_loop(target, settings)) {
+            target->player.playing_beep = BEEP_RECORDINGSTART;  // Success feedback
+        } else {
+            target->player.playing_beep = BEEP_RECORDINGERROR;  // No loop to recall
         }
     }
     else {
-        struct deck* target = (map->deck_no == 0)
-            ? &engine->beat_deck
-            : &engine->scratch_deck;
         perform_action_for_deck(target, map, midi_buffer, settings);
     }
 }

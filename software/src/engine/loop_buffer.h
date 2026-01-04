@@ -16,8 +16,10 @@ struct loop_buffer {
     struct track* track;          // Underlying track with block storage
     unsigned int write_pos;       // Current write position (samples)
     unsigned int max_samples;     // Maximum recording length (samples)
+    unsigned int loop_length;     // Defined loop length (set after first recording)
     int sample_rate;              // Sample rate (48000)
     bool recording;               // Currently recording?
+    bool length_locked;           // Loop length defined (first recording complete)?
     bool max_reached;             // Hit max length during recording?
 };
 
@@ -56,7 +58,13 @@ EXTERNC struct track* loop_buffer_get_track(struct loop_buffer* lb);
 // Check if recording is active
 EXTERNC bool loop_buffer_is_recording(struct loop_buffer* lb);
 
+// Check if loop length is defined (first recording complete)
+EXTERNC bool loop_buffer_has_loop(struct loop_buffer* lb);
+
 // Get current recording length in samples
 EXTERNC unsigned int loop_buffer_get_length(struct loop_buffer* lb);
+
+// Reset/erase the loop (clears track and unlocks length for fresh recording)
+EXTERNC void loop_buffer_reset(struct loop_buffer* lb);
 
 #undef EXTERNC

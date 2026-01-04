@@ -51,6 +51,8 @@ enum ActionType
    NEXTFOLDER,
    PREVFOLDER,
    RECORD,
+   LOOPERASE,    // Long-hold to erase loop recording
+   LOOPRECALL,   // Recall last loop recording
    VOLUP,
    VOLDOWN,
    JOGPIT,

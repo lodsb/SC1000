@@ -159,58 +159,50 @@ void sc1000_audio_engine_handle(struct sc1000* engine)
     }
 }
 
+// Helper to handle recording for a single deck
+static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int deck_no)
+{
+    struct player* pl = &deck->player;
+
+    // Start recording if requested
+    if (pl->recording_started && !pl->recording) {
+        if (alsa_start_recording(engine, deck_no)) {
+            pl->recording = true;
+            pl->playing_beep = BEEP_RECORDINGSTART;
+        } else {
+            // Failed to start recording
+            pl->recording_started = false;
+            pl->playing_beep = BEEP_RECORDINGERROR;
+        }
+    }
+
+    // Stop recording if requested
+    if (!pl->recording_started && pl->recording) {
+        // Check if this was a first recording (will define loop) or punch-in
+        bool was_first_recording = !alsa_has_loop(engine, deck_no);
+
+        // Stop recording
+        alsa_stop_recording(engine, deck_no);
+
+        // Switch player to use loop track (RT-safe: just a bool flag)
+        // Audio engine will read from loop buffer instead of player->track
+        pl->use_loop = true;  // Always switch to loop after recording
+        if (was_first_recording) {
+            pl->position = 0;
+            pl->target_position = 0;
+            pl->offset = 0;
+        }
+
+        pl->recording = false;
+        pl->playing_beep = BEEP_RECORDINGSTOP;
+    }
+}
+
 void sc1000_audio_engine_process(struct sc1000* engine, signed short* pcm, unsigned long frames)
 {
-    static int16_t next_recording_number = 0;
-
-    if (engine->scratch_deck.player.recording_started && !engine->scratch_deck.player.recording) {
-        next_recording_number = 0;
-        while (true) {
-            sprintf(engine->scratch_deck.player.recording_file_name, "/media/sda/sc%06d.raw", next_recording_number);
-            if (access(engine->scratch_deck.player.recording_file_name, F_OK) != -1) {
-                // file exists
-                next_recording_number++;
-
-                // If we've reached max files then abort (very unlikely, heh)
-                if (next_recording_number == INT16_MAX) {
-                    printf("Too many recordings\n");
-                    next_recording_number = -1;
-                    engine->scratch_deck.player.playing_beep = BEEP_RECORDINGERROR;
-                    engine->scratch_deck.player.recording_started = false;
-                    break;
-                }
-            } else {
-                // file doesn't exist
-                break;
-            }
-        }
-
-        if (next_recording_number != -1) {
-            printf("Opening file %s for recording\n", engine->scratch_deck.player.recording_file_name);
-            engine->scratch_deck.player.recording_file = fopen(engine->scratch_deck.player.recording_file_name, "w");
-
-            // On error, don't start
-            if (engine->scratch_deck.player.recording_file == nullptr) {
-                printf("Failed to open recording file\n");
-                engine->scratch_deck.player.recording_started = false;
-                engine->scratch_deck.player.playing_beep = BEEP_RECORDINGERROR;
-            } else {
-                engine->scratch_deck.player.recording = true;
-                engine->scratch_deck.player.playing_beep = BEEP_RECORDINGSTART;
-            }
-        }
-    }
+    // Handle loop buffer recording for both decks (memory-based, for immediate scratching)
+    handle_deck_recording(engine, &engine->beat_deck, 0);     // Beat deck = 0
+    handle_deck_recording(engine, &engine->scratch_deck, 1);  // Scratch deck = 1
 
     audio_engine_process(engine, pcm, frames);
-
-    if (!engine->scratch_deck.player.recording_started && engine->scratch_deck.player.recording) {
-        static char sync_command_line[300];
-
-        fflush(engine->scratch_deck.player.recording_file);
-        fclose(engine->scratch_deck.player.recording_file);
-        sprintf(sync_command_line, "/bin/sync %s", engine->scratch_deck.player.recording_file_name);
-        (void)system(sync_command_line);
-        engine->scratch_deck.player.recording = false;
-        engine->scratch_deck.player.playing_beep = BEEP_RECORDINGSTOP;
-    }
 }

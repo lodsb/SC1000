@@ -31,6 +31,7 @@
 #include "cues.h"
 #include "deck.h"
 #include "playlist.h"
+#include "track.h"
 
 /*
  * An empty record, is used briefly until a record is loaded
@@ -67,6 +68,8 @@ int deck_init(struct deck *d, struct sc_settings* settings)
 	d->encoder_angle = 0xffff;
 	d->new_encoder_angle = 0xffff;
 
+	d->loop_track = nullptr;
+
 	return 0;
 }
 
@@ -75,6 +78,12 @@ void deck_clear(struct deck *d)
 	player_clear(&d->player);
 	delete d->playlist;
 	d->playlist = nullptr;
+
+	if (d->loop_track)
+	{
+		track_release(d->loop_track);
+		d->loop_track = nullptr;
+	}
 }
 
 bool deck_is_locked(const struct deck *d)
@@ -201,6 +210,7 @@ static void load_track(struct deck *d, struct track *track, struct sc_settings* 
 	pl->target_position = 0;
 	pl->position = 0;
 	pl->offset = 0;
+	pl->use_loop = false;  // Switch back to file track (loop is preserved for recall)
 	cues_load_from_file(&d->cues, pl->track->path);
 	pl->fader_pitch = 1.0;
 	pl->bend_pitch = 1.0;
@@ -280,4 +290,38 @@ void deck_random_file(struct deck *d, struct sc_settings* settings)
 void deck_record(struct deck *d)
 {
 	d->player.recording_started = !d->player.recording_started;
+}
+
+bool deck_recall_loop(struct deck *d, struct sc_settings* settings)
+{
+	if (!d->loop_track || d->loop_track->length == 0)
+	{
+		return false;
+	}
+
+	// Load the loop track onto the player
+	track_acquire(d->loop_track);
+	player_set_track(&d->player, d->loop_track);
+
+	// Reset position to start
+	d->player.position = 0;
+	d->player.target_position = 0;
+	d->player.offset = 0;
+
+	// Reset platter angle offset if platter is enabled
+	if (settings->platter_enabled)
+	{
+		d->angle_offset = 0 - d->encoder_angle;
+	}
+	else
+	{
+		d->angle_offset = static_cast<int32_t>(d->player.position * settings->platter_speed) - d->encoder_angle;
+	}
+
+	return true;
+}
+
+bool deck_has_loop(const struct deck *d)
+{
+	return d->loop_track != nullptr && d->loop_track->length > 0;
 }

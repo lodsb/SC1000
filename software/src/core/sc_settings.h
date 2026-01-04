@@ -45,7 +45,11 @@ struct audio_interface {
    int period_size;               // Period size (256 default)
    int buffer_period_factor;      // Buffer = period * factor (4 default)
    bool supports_cv;              // Whether this device can output CV
-   bool supports_recording;       // Whether this device can record
+
+   // Input channel configuration (for recording)
+   int input_channels;            // Number of capture channels (0 = no capture)
+   int input_left;                // Which capture channel is left (default 0)
+   int input_right;               // Which capture channel is right (default 1)
 
    // Output channel mapping: output_map[hw_channel] = logical_type
    // e.g., output_map[4] = OUT_CV1 means hardware channel 4 outputs CV1
@@ -130,6 +134,9 @@ struct sc_settings
    // Audio interfaces
    struct audio_interface audio_interfaces[MAX_AUDIO_INTERFACES];
    int num_audio_interfaces;
+
+   // Loop recording settings
+   int loop_max_seconds;        // Maximum loop recording duration (default 60)
 };
 
 #ifdef __cplusplus

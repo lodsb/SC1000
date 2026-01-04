@@ -29,6 +29,7 @@
 #include "../core/global.h"
 #include "../core/sc_settings.h"
 #include "../engine/cv_engine.h"
+#include "../engine/loop_buffer.h"
 #include "../player/player.h"
 #include "../player/track.h"
 
@@ -55,9 +56,15 @@ struct alsa
 {
    struct alsa_pcm capture, playback;
    bool started;
+   bool capture_enabled;                // Whether capture device is open
    int num_channels;                    // Number of output channels (2 for stereo, 12 for Bitwig Connect, etc.)
+   int capture_channels;                // Number of input channels
+   int capture_left;                    // Which capture channel is left (default 0)
+   int capture_right;                   // Which capture channel is right (default 1)
    struct audio_interface* config;      // Pointer to the matched config (for output_map)
    struct cv_state cv;                  // CV engine state
+   struct loop_buffer loop[2];          // Loop buffer per deck (0=beat, 1=scratch)
+   int active_recording_deck;           // Which deck is currently recording (-1 = none)
 };
 
 static void alsa_error( const char* msg, int r )
@@ -511,15 +518,18 @@ static ssize_t pollfds( struct sc1000* engine, struct pollfd* pe, size_t z )
    ssize_t total = 0;
    auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
 
-   /*
-   r = pcm_pollfds(&alsa->capture, pe, z);
-   if (r < 0)
-       return -1;
+   // Add capture poll descriptors if capture is enabled
+   if (alsa->capture_enabled)
+   {
+      r = pcm_pollfds(&alsa->capture, pe, z);
+      if (r < 0)
+         return -1;
 
-   pe += r;
-   z -= r;
-   total += r;
- */
+      pe += r;
+      z -= static_cast<size_t>(r);
+      total += r;
+   }
+
    r = pcm_pollfds(&alsa->playback, pe, z);
    if ( r < 0 )
    {
@@ -639,6 +649,65 @@ static int playback( struct sc1000* engine)
    return 0;
 }
 
+/* Read audio from capture device and feed to loop buffer */
+
+static int capture( struct sc1000* engine )
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   const snd_pcm_channel_area_t *areas;
+   snd_pcm_uframes_t offset, frames;
+   snd_pcm_sframes_t avail;
+   int err;
+
+   /* Check how many frames are available */
+   avail = snd_pcm_avail_update(alsa->capture.pcm);
+   if (avail < 0)
+   {
+      if (avail == -EPIPE)
+      {
+         // Capture overrun - just recover
+         snd_pcm_prepare(alsa->capture.pcm);
+         snd_pcm_start(alsa->capture.pcm);
+         return 0;
+      }
+      return static_cast<int>(avail);
+   }
+
+   if (static_cast<snd_pcm_uframes_t>(avail) < alsa->capture.period_size)
+      return 0;  /* Not enough data yet */
+
+   frames = alsa->capture.period_size;
+
+   err = snd_pcm_mmap_begin(alsa->capture.pcm, &areas, &offset, &frames);
+   if (err < 0)
+      return err;
+
+   /* Get pointer to the MMAP buffer */
+   const signed short* pcm = buffer(&areas[0], offset, alsa->capture_channels);
+
+   /* Feed to active deck's loop buffer if recording */
+   int deck = alsa->active_recording_deck;
+   if (deck >= 0 && deck < 2 && loop_buffer_is_recording(&alsa->loop[deck]))
+   {
+      loop_buffer_write(&alsa->loop[deck], pcm, static_cast<unsigned int>(frames),
+                        alsa->capture_channels, alsa->capture_left, alsa->capture_right);
+   }
+
+   snd_pcm_sframes_t commitres = snd_pcm_mmap_commit(alsa->capture.pcm, offset, frames);
+   if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != frames)
+   {
+      if (commitres == -EPIPE)
+      {
+         snd_pcm_prepare(alsa->capture.pcm);
+         snd_pcm_start(alsa->capture.pcm);
+         return 0;
+      }
+      return commitres < 0 ? static_cast<int>(commitres) : -EPIPE;
+   }
+
+   return 0;
+}
+
 /* After poll() has returned, instruct a device to do all it can at
  * the present time. Return zero if success, otherwise -1 */
 
@@ -647,6 +716,26 @@ static int handle( struct sc1000* engine )
    int r;
    unsigned short revents;
    auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+
+   /* Check the capture buffer */
+   if (alsa->capture_enabled)
+   {
+      r = pcm_revents(&alsa->capture, &revents);
+      if ( r < 0 )
+      {
+         return -1;
+      }
+
+      if ( revents & POLLIN )
+      {
+         r = capture(engine);
+         if ( r < 0 && r != -EPIPE )
+         {
+            alsa_error("capture", r);
+            // Don't return error - continue with playback
+         }
+      }
+   }
 
    /* Check the output buffer for playback */
 
@@ -702,7 +791,12 @@ static void clear(struct sc1000* engine )
 {
    auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
 
-   pcm_close(&alsa->capture);
+   loop_buffer_clear(&alsa->loop[0]);
+   loop_buffer_clear(&alsa->loop[1]);
+   if (alsa->capture_enabled)
+   {
+      pcm_close(&alsa->capture);
+   }
    pcm_close(&alsa->playback);
    free(engine->audio_hw_context);
 }
@@ -717,7 +811,8 @@ static struct sc1000_ops alsa_ops = {
 };
 
 static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_info* device_info,
-                               struct audio_interface* config, int num_channels)
+                               struct audio_interface* config, int num_channels,
+                               struct sc_settings* settings)
 {
    struct alsa* alsa;
 
@@ -740,13 +835,60 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
    {
       fputs("Failed to open device for playback.\n", stderr);
       printf(" failed!\n");
-      goto fail_capture;
+      free(alsa);
+      return -1;
    }
 
    sc1000_engine->audio_hw_context = alsa;
    alsa->started = false;
    alsa->num_channels = num_channels;
    alsa->config = config;
+
+   // Initialize capture if device has input channels
+   alsa->capture_enabled = false;
+   alsa->capture_channels = 0;
+   // Get input channel mapping from config (user settings), with defaults
+   alsa->capture_left = config ? config->input_left : 0;
+   alsa->capture_right = config ? config->input_right : 1;
+
+   // Use config->input_channels if specified, otherwise detect from hardware
+   int available_inputs = config && config->input_channels > 0
+                          ? config->input_channels
+                          : static_cast<int>(device_info->input_channels);
+
+   if (available_inputs >= 2)
+   {
+      printf("Opening capture with %d channels (left=%d, right=%d)...\n",
+             available_inputs, alsa->capture_left, alsa->capture_right);
+
+      if ( pcm_open(&alsa->capture, device_name, SND_PCM_STREAM_CAPTURE, device_info,
+                    static_cast<uint8_t>(available_inputs)) >= 0 )
+      {
+         alsa->capture_enabled = true;
+         alsa->capture_channels = available_inputs;
+         printf("Capture device opened successfully\n");
+
+         // Start capture immediately
+         if (snd_pcm_start(alsa->capture.pcm) < 0)
+         {
+            fprintf(stderr, "Warning: failed to start capture PCM\n");
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Warning: failed to open capture device, recording disabled\n");
+      }
+   }
+   else
+   {
+      printf("No input channels available, recording disabled\n");
+   }
+
+   // Initialize loop buffers for both decks
+   int loop_max = settings ? settings->loop_max_seconds : 60;
+   loop_buffer_init(&alsa->loop[0], TARGET_SAMPLE_RATE, loop_max);  // Beat deck
+   loop_buffer_init(&alsa->loop[1], TARGET_SAMPLE_RATE, loop_max);  // Scratch deck
+   alsa->active_recording_deck = -1;  // No recording active
 
    // Initialize CV engine if CV is supported
    if (config && config->supports_cv)
@@ -769,10 +911,6 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
    printf(" success!\n");
 
    return 0;
-
-   fail_capture:
-   pcm_close(&alsa->capture);
-   return -1;
 }
 
 // Match a config entry to a detected ALSA device
@@ -809,7 +947,7 @@ int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
       if (device)
       {
          printf("Matched config '%s' to device %s\n", config->name, config->device);
-         return setup_alsa_device(sc1000_engine, device, config, config->channels);
+         return setup_alsa_device(sc1000_engine, device, config, config->channels, settings);
       }
       else
       {
@@ -821,11 +959,11 @@ int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
    printf("No config match, using fallback\n");
    if (alsa_devices[0].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &alsa_devices[0], nullptr, DEVICE_CHANNELS);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[0], nullptr, DEVICE_CHANNELS, settings);
    }
    else if (alsa_devices[1].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &alsa_devices[1], nullptr, DEVICE_CHANNELS);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[1], nullptr, DEVICE_CHANNELS, settings);
    }
 
    fprintf(stderr, "No audio device found!\n");
@@ -843,5 +981,100 @@ void alsa_clear_config_cache( void )
    if ( r < 0 )
    {
       alsa_error("config_update_free_global", r);
+   }
+}
+
+//
+// Loop recording control functions
+//
+
+bool alsa_start_recording(struct sc1000* engine, int deck_no)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+
+   if (!alsa->capture_enabled)
+   {
+      fprintf(stderr, "Recording not available: no capture device\n");
+      return false;
+   }
+
+   if (deck_no < 0 || deck_no > 1)
+   {
+      fprintf(stderr, "Invalid deck number: %d\n", deck_no);
+      return false;
+   }
+
+   // Only one deck can record at a time
+   if (alsa->active_recording_deck >= 0 && alsa->active_recording_deck != deck_no)
+   {
+      fprintf(stderr, "Deck %d already recording\n", alsa->active_recording_deck);
+      return false;
+   }
+
+   if (loop_buffer_start(&alsa->loop[deck_no]))
+   {
+      alsa->active_recording_deck = deck_no;
+      printf("Started recording on deck %d\n", deck_no);
+      return true;
+   }
+   return false;
+}
+
+void alsa_stop_recording(struct sc1000* engine, int deck_no)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   if (deck_no >= 0 && deck_no <= 1)
+   {
+      loop_buffer_stop(&alsa->loop[deck_no]);
+      if (alsa->active_recording_deck == deck_no)
+      {
+         alsa->active_recording_deck = -1;
+      }
+      printf("Stopped recording on deck %d\n", deck_no);
+   }
+}
+
+bool alsa_is_recording(struct sc1000* engine, int deck_no)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   if (deck_no < 0 || deck_no > 1) return false;
+   return loop_buffer_is_recording(&alsa->loop[deck_no]);
+}
+
+struct track* alsa_get_loop_track(struct sc1000* engine, int deck_no)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   if (deck_no < 0 || deck_no > 1) return nullptr;
+   return loop_buffer_get_track(&alsa->loop[deck_no]);
+}
+
+struct track* alsa_peek_loop_track(struct sc1000* engine, int deck_no)
+{
+   // RT-safe: just returns the pointer, no ref count change
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   if (deck_no < 0 || deck_no > 1) return nullptr;
+   return alsa->loop[deck_no].track;
+}
+
+bool alsa_has_capture(struct sc1000* engine)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   return alsa->capture_enabled;
+}
+
+bool alsa_has_loop(struct sc1000* engine, int deck_no)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   if (deck_no < 0 || deck_no > 1) return false;
+   return loop_buffer_has_loop(&alsa->loop[deck_no]);
+}
+
+void alsa_reset_loop(struct sc1000* engine, int deck_no)
+{
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   if (deck_no >= 0 && deck_no <= 1)
+   {
+      loop_buffer_reset(&alsa->loop[deck_no]);
+      printf("Reset loop on deck %d\n", deck_no);
    }
 }

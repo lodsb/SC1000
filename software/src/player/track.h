@@ -70,8 +70,13 @@ EXTERNC void track_use_mlock(void);
 
 EXTERNC struct track* track_acquire_by_import(const char *importer, const char *path);
 EXTERNC struct track* track_acquire_empty(void);
+EXTERNC struct track* track_acquire_for_recording(int sample_rate);
 EXTERNC void track_acquire(struct track *t);
 EXTERNC void track_release(struct track *t);
+
+/* Functions for direct writing (used by loop buffer) */
+EXTERNC int track_ensure_space(struct track *tr, unsigned int samples);
+EXTERNC void track_set_length(struct track *tr, unsigned int samples);
 
 /* Functions used by the rig and main thread */
 

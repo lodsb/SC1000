@@ -326,6 +326,69 @@ struct track* track_acquire_empty(void)
 	return &empty;
 }
 
+/*
+ * Create a new track for recording audio directly into memory
+ *
+ * Unlike track_acquire_by_import(), this creates an empty track
+ * that can be written to using track_get_sample() and track_set_length().
+ *
+ * Return: pointer to track, or NULL on failure
+ */
+struct track* track_acquire_for_recording(int sample_rate)
+{
+	struct track* t = static_cast<struct track*>(malloc(sizeof *t));
+	if (t == nullptr)
+	{
+		perror("malloc");
+		return nullptr;
+	}
+
+	t->refcount = 1;
+	t->rate = sample_rate;
+	t->importer = nullptr;
+	t->path = nullptr;  // No path for in-memory recordings
+	t->bytes = 0;
+	t->length = 0;
+	t->blocks = 0;
+	t->pid = 0;         // Not importing
+	t->fd = -1;
+	t->pe = nullptr;
+	t->terminated = false;
+	t->finished = true; // Already "finished" (not importing)
+
+	return t;
+}
+
+/*
+ * Ensure track has enough space for the given number of samples
+ *
+ * Return: 0 on success, -1 if allocation failed
+ */
+int track_ensure_space(struct track* tr, unsigned int samples)
+{
+	unsigned int blocks_needed = (samples + TRACK_BLOCK_SAMPLES - 1) / TRACK_BLOCK_SAMPLES;
+
+	while (tr->blocks < blocks_needed)
+	{
+		if (more_space(tr) == -1)
+		{
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Set track length (for direct recording)
+ * Uses atomic increment for thread safety
+ */
+void track_set_length(struct track* tr, unsigned int samples)
+{
+	__sync_lock_test_and_set(&tr->length, samples);
+	tr->bytes = samples * SAMPLE;
+}
+
 void track_acquire(struct track* t)
 {
 	t->refcount++;

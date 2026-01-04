@@ -5,6 +5,8 @@
 
 #include "audio_engine.h"
 #include "../core/sc_settings.h"
+#include "../core/sc1000.h"
+#include "../platform/alsa.h"
 
 #include "../player/track.h"
 #include "../player/deck.h"
@@ -487,9 +489,12 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
    *r2 = (sample_2 / tr_2->rate) - position_2;
 }
 
-void collect_and_mix_players( struct player *pl1, struct player *pl2,
+void collect_and_mix_players( struct sc1000* engine,
                               signed short *pcm, unsigned long samples, struct sc_settings* settings )
 {
+   struct player* pl1 = &engine->beat_deck.player;
+   struct player* pl2 = &engine->scratch_deck.player;
+
    double r1 = 0;
    double r2 = 0;
    double target_volume_1, filtered_pitch_1;
@@ -498,12 +503,17 @@ void collect_and_mix_players( struct player *pl1, struct player *pl2,
    setup_player_for_block(pl1, samples, settings, &target_volume_1, &filtered_pitch_1);
    setup_player_for_block(pl2, samples, settings, &target_volume_2, &filtered_pitch_2);
 
+   // Select track for each player: use loop track if use_loop is set
+   // Deck 0 = beat deck (pl1), Deck 1 = scratch deck (pl2)
+   struct track* tr1 = pl1->use_loop ? alsa_peek_loop_track(engine, 0) : pl1->track;
+   struct track* tr2 = pl2->use_loop ? alsa_peek_loop_track(engine, 1) : pl2->track;
+
    if ( spin_try_lock(&pl1->lock) && spin_try_lock(&pl2->lock) )
    {
       process_add_players(pcm, samples,
-                          pl1->sample_dt, pl1->track, pl1->position - pl1->offset, pl1->pitch, filtered_pitch_1,
+                          pl1->sample_dt, tr1, pl1->position - pl1->offset, pl1->pitch, filtered_pitch_1,
                           pl1->volume, target_volume_1, &r1,
-                          pl2->sample_dt, pl2->track, pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2,
+                          pl2->sample_dt, tr2, pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2,
                           pl2->volume, target_volume_2, &r2);
 
       pl1->pitch = filtered_pitch_1;
@@ -530,10 +540,7 @@ void audio_engine_process( struct sc1000* engine, signed short* pcm, unsigned lo
 
    double start_time = get_time_us();
 
-   collect_and_mix_players(
-      &(engine->beat_deck.player),
-      &(engine->scratch_deck.player),
-      pcm, frames, engine->settings);
+   collect_and_mix_players(engine, pcm, frames, engine->settings);
 
    double end_time = get_time_us();
    double process_time = end_time - start_time;

@@ -41,6 +41,8 @@ struct sc_settings;
 
 #define NO_PUNCH (HUGE_VAL)
 
+struct track;  // Forward declaration
+
 struct deck
 {
    const char* importer;
@@ -69,6 +71,9 @@ struct deck
 
    int32_t angle_offset; // Offset between encoder angle and track position, reset every time the platter is touched
    int encoder_angle, new_encoder_angle;
+
+   // Loop recording - persisted loop track for recall
+   struct track* loop_track;
 };
 
 
@@ -111,6 +116,11 @@ EXTERNC void deck_random_file( struct deck* d, struct sc_settings* settings );
 
 EXTERNC void deck_record( struct deck* d );
 
+// Recall the last recorded loop track
+EXTERNC bool deck_recall_loop( struct deck* d, struct sc_settings* settings );
+
+// Check if a loop track is available
+EXTERNC bool deck_has_loop( const struct deck* d );
 
 #undef EXTERNC
 

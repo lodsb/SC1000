@@ -49,6 +49,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM( ActionType, {
    {ActionType::NEXTFOLDER, "next_folder"},
    {ActionType::PREVFOLDER, "prev_folder"},
    {ActionType::RECORD, "record"},
+   {ActionType::LOOPERASE, "loop_erase"},
+   {ActionType::LOOPRECALL, "loop_recall"},
    {ActionType::VOLUP, "volume_up"},
    {ActionType::VOLDOWN, "volume_down"},
    {ActionType::JOGPIT, "jog_pit"},
@@ -277,6 +279,9 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->jog_reverse = json.value("jog_reverse", 0);
    settings->cut_beats = json.value("cut_beats", 0);
    settings->importer = DEFAULT_IMPORTER_PATH;
+
+   // Loop recording settings
+   settings->loop_max_seconds = json.value("loop_max_seconds", 60);
 }
 
 nlohmann::json midi_command_to_json(MIDIStatusType midi_status, EventType event, unsigned char channel, unsigned char parameter1, unsigned char parameter2, unsigned char deck, ActionType action)
@@ -408,6 +413,9 @@ void sc_settings_old_format( sc_settings* settings, mapping** mappings )
    // later we'll check for sc500 pin and use it to set following settings
    settings->disable_volume_adc = 0;
    settings->disable_pic_buttons = 0;
+
+   // Loop recording defaults
+   settings->loop_max_seconds = 60;
 
    // Load any settings from config file
    fp = fopen("/media/sda/scsettings.txt", "r");
@@ -759,7 +767,11 @@ void load_json_config( sc_settings* settings, mapping** mappings )
 
                // Capabilities
                iface.supports_cv = dev.value("supports_cv", false);
-               iface.supports_recording = dev.value("supports_recording", false);
+
+               // Input channel configuration (for recording)
+               iface.input_channels = dev.value("input_channels", 0);
+               iface.input_left = dev.value("input_left", 0);
+               iface.input_right = dev.value("input_right", 1);
 
                // Initialize output map to none
                for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++) {
@@ -831,7 +843,8 @@ void load_json_config( sc_settings* settings, mapping** mappings )
 
                std::cout << "Audio config: " << iface.name
                          << " (" << iface.device << ")"
-                         << " ch=" << iface.channels
+                         << " out_ch=" << iface.channels
+                         << " in_ch=" << iface.input_channels
                          << " cv=" << iface.supports_cv
                          << " mapped=" << iface.num_mapped_outputs << std::endl;
 
@@ -918,7 +931,9 @@ void sc_settings_init_default_audio( sc_settings* settings )
    iface.period_size = static_cast<int>(settings->period_size);
    iface.buffer_period_factor = static_cast<int>(settings->buffer_period_factor);
    iface.supports_cv = false;
-   iface.supports_recording = false;
+   iface.input_channels = 0;  // Internal codec typically has no inputs
+   iface.input_left = 0;
+   iface.input_right = 1;
 
    // Default stereo mapping
    for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++) {

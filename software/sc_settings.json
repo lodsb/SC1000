@@ -57,6 +57,22 @@
       "pull_up": true
     },
     {
+      "action": "record",
+      "deck": "beats",
+      "event": "button_pressed_shifted",
+      "pin": 13,
+      "port": 2,
+      "pull_up": true
+    },
+    {
+      "action": "loop_erase",
+      "deck": "beats",
+      "event": "button_holding_shifted",
+      "pin": 13,
+      "port": 2,
+      "pull_up": true
+    },
+    {
       "action": "jog_reverse",
       "deck": "scratch",
       "event": "button_pressed_shifted",
@@ -172,6 +188,14 @@
       "action": "record",
       "deck": "scratch",
       "event": "button_pressed_shifted",
+      "pin": 6,
+      "port": 2,
+      "pull_up": true
+    },
+    {
+      "action": "loop_erase",
+      "deck": "scratch",
+      "event": "button_holding_shifted",
       "pin": 6,
       "port": 2,
       "pull_up": true
@@ -847,7 +871,7 @@
     "fader_close_point": 3,
     "fader_open_point": 5,
     "hamster": 0,
-    "hold_time": 100,
+    "hold_time": 1500,
     "initial_volume": 0.125,
     "jog_reverse": 0,
     "midi_init_delay": 5,
@@ -860,7 +884,8 @@
     "slippiness": 200,
     "update_rate": 2000,
     "volume_amount": 0.03,
-    "volume_amount_held": 0.001
+    "volume_amount_held": 0.001,
+    "loop_max_seconds": 60
   },
   "audio_devices": [
     {
@@ -868,6 +893,9 @@
       "device": "hw:1",
       "type": "usb",
       "supports_cv": true,
+      "input_channels": 4,
+      "input_left": 2,
+      "input_right": 3,
       "output_map": {
         "audio": 0,
         "cv_platter_speed": 8,

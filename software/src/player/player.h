@@ -71,6 +71,7 @@ struct player
 
    bool recording;
    bool recording_started;
+   bool use_loop;           // When true, audio reads from deck's loop_track instead
 
    int playing_beep;
    unsigned long beep_pos;

@@ -15,12 +15,6 @@
 #include "sc1000.h"
 #include "sc_settings.h"
 
-static const char* BEEPS[3] = {
-    "----------",          // Start Recording
-    "- - - - - - - - -",   // Stop Recording
-    "--__--__--__--__--__" // Recording error
-};
-
 void sc1000_setup(struct sc1000* engine, struct rt* rt)
 {
     LOG_INFO("SC1000 engine init");

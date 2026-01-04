@@ -30,7 +30,7 @@ typedef pthread_mutex_t mutex;
 
 static inline void mutex_init(mutex *m)
 {
-    if (pthread_mutex_init(m, NULL) != 0)
+    if (pthread_mutex_init(m, nullptr) != 0)
         abort();
 }
 

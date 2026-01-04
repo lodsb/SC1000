@@ -508,19 +508,13 @@ static int pcm_revents( struct alsa_pcm* alsa, unsigned short* revents )
 static void start( struct sc1000* dv )
 {
    (void)dv;
-   //struct alsa *alsa = (struct alsa*)dv->local;
-
-   //if (snd_pcm_start(alsa->capture.pcm) < 0)
-   //   abort();
+   // Currently no-op - PCM is started on first write
 }
 
 static void stop( struct sc1000* dv )
 {
    (void)dv;
-   //struct alsa *alsa = (struct alsa*)dv->local;
-
-   //if (snd_pcm_start(alsa->capture.pcm) < 0)
-   //   abort();
+   // Currently no-op
 }
 
 /* Register this device's interest in a set of pollfd file

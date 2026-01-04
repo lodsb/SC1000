@@ -99,25 +99,6 @@ using v4si = int   __attribute__ ((vector_size (16)));
 using v2sf = float __attribute__ ((vector_size (8)));
 using v2si = int   __attribute__ ((vector_size (8)));
 
-static float dither_f()
-{
-   unsigned int bit, v;
-   static unsigned int x = 0xbeefface;
-
-   /* Maximum length LFSR sequence with 32-bit state */
-
-   bit = (x ^ (x >> 1) ^ (x >> 21) ^ (x >> 31)) & 1;
-   x = x << 1 | bit;
-
-   /* We can adjust the balance between randomness and performance
-    * by our chosen bit permutation; here we use a 12 bit subset
-    * of the state */
-
-   v = (x & 0x0000000f) | ((x & 0x000f0000) >> 12) | ((x & 0x0f000000) >> 16);
-
-   return static_cast<float>(v) / 4096 - 0.5f; /* not quite whole range */
-}
-
 static bool nearly_equal( double val1, double val2, double tolerance )
 {
    return std::fabs(val1 - val2) < tolerance;

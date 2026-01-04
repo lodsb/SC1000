@@ -24,6 +24,7 @@
 #include <algorithm>
 
 #include "cues.h"
+#include "../util/log.h"
 
 /*
  * Replace file extension with ".cue"
@@ -106,7 +107,7 @@ void cues_save_to_file(struct cues *q, char const* pathname)
         return;
     }
 
-    fprintf(stdout, "Saving Loc: %s\n", cuepath.c_str());
+    LOG_DEBUG("Saving cue: %s", cuepath.c_str());
 
     FILE* f = fopen(cuepath.c_str(), "w");
     if (f == nullptr) {

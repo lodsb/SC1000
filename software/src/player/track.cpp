@@ -30,6 +30,7 @@
 #include <unistd.h>
 
 #include "../util/debug.h"
+#include "../util/log.h"
 #include "../util/status.h"
 #include "../util/external.h"
 
@@ -101,7 +102,7 @@ static int more_space(struct track* tr)
 
 	if (tr->blocks >= TRACK_MAX_BLOCKS)
 	{
-		fprintf(stderr, "Maximum track length reached.\n");
+		LOG_WARN("Maximum track length reached");
 		return -1;
 	}
 
@@ -201,7 +202,7 @@ static int track_init(struct track* t, const char* importer, const char* path)
 {
 	pid_t pid;
 
-	fprintf(stderr, "Importing '%s'...\n", path);
+	LOG_INFO("Importing '%s'...", path);
 
 	pid = fork_pipe_nb(&t->fd, importer, "import", path, STR(RATE), nullptr);
 	if (pid == -1)
@@ -523,12 +524,12 @@ static void stop_import(struct track* t)
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS)
 	{
-		fprintf(stderr, "Track import completed\n");
+		LOG_DEBUG("Track import completed");
 		t->finished = true;
 	}
 	else
 	{
-		fprintf(stderr, "Track import completed with status %d\n", status);
+		LOG_WARN("Track import completed with status %d", status);
 		if (!t->terminated)
 		{
 			status_printf(STATUS_ALERT, "Error importing %s", t->path);

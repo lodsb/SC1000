@@ -7,13 +7,14 @@
 #include <dirent.h>
 
 #include "playlist.h"
+#include "../util/log.h"
 
 bool Playlist::load(const char* base_folder_path)
 {
 	struct dirent** dir_list;
 	struct dirent** file_list;
 
-	printf("indexing %s\n", base_folder_path);
+	LOG_DEBUG("indexing %s", base_folder_path);
 
 	int num_dirs = scandir(base_folder_path, &dir_list, nullptr, alphasort);
 	if (num_dirs <= 0) {
@@ -81,7 +82,7 @@ bool Playlist::load(const char* base_folder_path)
 		}
 	}
 
-	printf("Added folder %s : %zu files found\n", base_folder_path, total_files_);
+	LOG_INFO("Added folder %s: %zu files found", base_folder_path, total_files_);
 
 	return total_files_ > 0;
 }
@@ -148,7 +149,7 @@ void Playlist::dump() const
 {
 	for (const auto& folder : folders_) {
 		for (const auto& file : folder.files) {
-			printf("%s - %s\n", folder.full_path, file.full_path);
+			LOG_DEBUG("%s - %s", folder.full_path, file.full_path);
 		}
 	}
 }

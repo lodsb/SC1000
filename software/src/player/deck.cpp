@@ -19,10 +19,10 @@
 
 #include <cassert>
 #include <cstdlib>
-#include <cstdio>
 
 #include "../core/global.h"
 
+#include "../util/log.h"
 #include "../util/status.h"
 #include "../thread/rig.h"
 
@@ -178,18 +178,18 @@ void deck::load_folder(char* folder_name)
 
 	if (playlist->load(folder_name) && playlist->total_files() > 0)
 	{
-		printf("Folder '%s' Indexed with %zu files: \n", folder_name, playlist->total_files());
+		LOG_INFO("Folder '%s' indexed with %zu files", folder_name, playlist->total_files());
 		files_present = true;
 		current_folder_idx = 0;
 		current_file_idx = 0;
 
-		printf("deck_load_folder\n");
+		LOG_DEBUG("deck_load_folder");
 
 		sc_file* file = playlist->get_file(0, 0);
 		player.set_track(track_acquire_by_import(importer, file->full_path));
-		printf("deck_load_folder set track ok\n");
+		LOG_DEBUG("deck_load_folder set track ok");
 		cues_load_from_file(&cues, player.track->path);
-		printf("deck_load_folder set cues_load_from_file ok\n");
+		LOG_DEBUG("deck_load_folder set cues_load_from_file ok");
 	}
 	else
 	{
@@ -201,12 +201,12 @@ void deck::next_file(struct sc_settings* settings)
 {
 	if (files_present && playlist->has_next_file(current_folder_idx, current_file_idx))
 	{
-		printf("files present\n");
+		LOG_DEBUG("files present");
 		current_file_idx++;
 		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
 		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 	} else {
-		printf("file not present\n");
+		LOG_DEBUG("file not present");
 	}
 }
 
@@ -247,7 +247,7 @@ void deck::random_file(struct sc_settings* settings)
 	if (files_present) {
 		unsigned int num_files = static_cast<unsigned int>(playlist->total_files());
 		unsigned int r = static_cast<unsigned int>(rand()) % num_files;
-		printf("Playing file %d/%d\n", r, num_files);
+		LOG_DEBUG("Playing file %d/%d", r, num_files);
 		sc_file* file = playlist->get_file_at_index(r);
 		if (file != nullptr) {
 			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);

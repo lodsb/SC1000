@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "../util/debug.h"
+#include "../util/log.h"
 #include "../player/deck.h"
 #include "../core/global.h"
 #include "../thread/realtime.h"
@@ -32,7 +33,7 @@ MidiController::~MidiController()
 
 int MidiController::init(struct rt* rt, const char* hw)
 {
-    printf("MIDI controller init %p from %s\n", static_cast<void*>(this), hw);
+    LOG_INFO("MIDI controller init %p from %s", static_cast<void*>(this), hw);
 
     strncpy(port_name_, hw, sizeof(port_name_) - 1);
     port_name_[sizeof(port_name_) - 1] = '\0';
@@ -76,11 +77,11 @@ int MidiController::add_deck(struct deck* k)
 
 void MidiController::process_midi_message()
 {
-    printf("%x %x %x\n", midi_buffer_[0], midi_buffer_[1], midi_buffer_[2]);
+    LOG_DEBUG("MIDI: %x %x %x", midi_buffer_[0], midi_buffer_[1], midi_buffer_[2]);
 
     // Push MIDI event to lock-free queue for processing by input thread
     if (!midi_event_queue_push(midi_buffer_, shifted)) {
-        fprintf(stderr, "Warning: MIDI event queue full, dropping event\n");
+        LOG_WARN("MIDI event queue full, dropping event");
     }
 }
 

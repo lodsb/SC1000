@@ -30,6 +30,7 @@
 #include "sc_input.h"
 #include "sc_control_mapping.h"
 #include "../control/actions.h"
+#include "../util/log.h"
 #include "../engine/audio_engine.h"
 
 using namespace sc::platform;
@@ -99,36 +100,12 @@ static InputContext g_input_ctx;
 #define average_speed g_input_ctx.average_speed
 #define num_blips g_input_ctx.num_blips
 
-#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)       \
-	(byte & 0x80 ? '1' : '0'),     \
-		(byte & 0x40 ? '1' : '0'), \
-		(byte & 0x20 ? '1' : '0'), \
-		(byte & 0x10 ? '1' : '0'), \
-		(byte & 0x08 ? '1' : '0'), \
-		(byte & 0x04 ? '1' : '0'), \
-		(byte & 0x02 ? '1' : '0'), \
-		(byte & 0x01 ? '1' : '0')
-
-void dump_maps()
-{
-    struct mapping* new_map = g_sc1000_engine.mappings;
-    while (new_map != NULL)
-    {
-        printf("Dump Mapping - ty:%d po:%d pn%x pl:%x ed%x mid:%x:%x:%x- dn:%d, a:%d, p:%d\n", new_map->type,
-               new_map->gpio_port, new_map->pin, new_map->pullup, new_map->edge_type, new_map->midi_command_bytes[0],
-               new_map->midi_command_bytes[1], new_map->midi_command_bytes[2], new_map->deck_no, new_map->action_type,
-               new_map->parameter);
-        new_map = new_map->next;
-    }
-}
-
-void add_new_midi_devices(struct sc1000* sc1000_engine, char mididevices[64][64], int mididevicenum)
+void add_new_midi_devices(struct sc1000* sc1000_engine, char mididevices[64][64], int midi_device_num)
 {
     auto& controllers = g_input_ctx.midi_controllers;
 
     // Search to see which devices we've already added
-    for (int devc = 0; devc < mididevicenum; devc++)
+    for (int devc = 0; devc < midi_device_num; devc++)
     {
         bool already_added = false;
 
@@ -145,7 +122,7 @@ void add_new_midi_devices(struct sc1000* sc1000_engine, char mididevices[64][64]
             auto controller = create_midi_controller(&g_rt, mididevices[devc]);
             if (controller)
             {
-                printf("Adding MIDI device %zu - %s\n", controllers.size(), mididevices[devc]);
+                LOG_INFO("Adding MIDI device %zu - %s", controllers.size(), mididevices[devc]);
                 controller_add_deck(controller.get(), &sc1000_engine->beat_deck);
                 controller_add_deck(controller.get(), &sc1000_engine->scratch_deck);
                 controllers.push_back(std::move(controller));
@@ -172,7 +149,7 @@ void init_io(struct sc1000* sc1000_engine)
             map = find_io_mapping(sc1000_engine->mappings, 0, i, EventType::BUTTON_PRESSED);
 
             // If pin is marked as ground, set as output
-            if (map != NULL && map->action_type == GND)
+            if (map != nullptr && map->action_type == GND)
             {
                 gpio_mcp23017_set_direction(gpio, i, false);  // output
             }
@@ -182,9 +159,9 @@ void init_io(struct sc1000* sc1000_engine)
             }
 
             // Configure pullup
-            bool pullup = (map == NULL || map->pullup);
+            bool pullup = (map == nullptr || map->pullup);
             gpio_mcp23017_set_pullup(gpio, i, pullup);
-            if (pullup) printf("Pulling up pin %d\n", i);
+            if (pullup) LOG_DEBUG("Pulling up pin %d", i);
         }
     }
 
@@ -200,7 +177,7 @@ void init_io(struct sc1000* sc1000_engine)
             {
                 map = find_io_mapping(sc1000_engine->mappings, j, i, EventType::BUTTON_PRESSED);
 
-                if (map != NULL)
+                if (map != nullptr)
                 {
                     // dirty hack, don't map J7 SCL/SDA pins if MCP is present
                     if (gpio->mcp23017_present && j == 1 && (i == 15 || i == 16))
@@ -231,7 +208,7 @@ void process_io(struct sc1000* sc1000_engine)
 
     struct mapping* last_map = sc1000_engine->mappings;
 
-    while (last_map != NULL)
+    while (last_map != nullptr)
     {
         // Only digital pins
         if (last_map->type == IO && (!(last_map->gpio_port == 0 && !gpio->mcp23017_present)))
@@ -262,7 +239,7 @@ void process_io(struct sc1000* sc1000_engine)
             {
                 if (pin_value)
                 {
-                    printf("Button %d pressed\n", last_map->pin);
+                    LOG_DEBUG("Button %d pressed", last_map->pin);
                     if (first_time && last_map->deck_no == 1 && (last_map->action_type == VOLUP || last_map->action_type
                         == VOLDOWN))
                     {
@@ -297,7 +274,7 @@ void process_io(struct sc1000* sc1000_engine)
                 // check to see if unpressed
                 if (!pin_value)
                 {
-                    printf("Button %d released\n", last_map->pin);
+                    LOG_DEBUG("Button %d released", last_map->pin);
                     if (last_map->edge_type == BUTTON_RELEASED)
                         io_event(last_map, NULL, sc1000_engine, settings);
                     // start the counter
@@ -310,7 +287,7 @@ void process_io(struct sc1000* sc1000_engine)
             // Button has been held for a while
             else if (last_map->debounce == settings->hold_time)
             {
-                printf("Button %d-%d held\n", last_map->gpio_port, last_map->pin);
+                LOG_DEBUG("Button %d-%d held", last_map->gpio_port, last_map->pin);
                 if ((!shifted && last_map->edge_type == BUTTON_HOLDING) || (shifted && last_map->edge_type ==
                     BUTTON_HOLDING_SHIFTED))
                     io_event(last_map, NULL, sc1000_engine, settings);
@@ -333,7 +310,7 @@ void process_io(struct sc1000* sc1000_engine)
                 // check to see if unpressed
                 else
                 {
-                    printf("Button %d released\n", last_map->pin);
+                    LOG_DEBUG("Button %d released", last_map->pin);
                     if (last_map->edge_type == BUTTON_RELEASED)
                         io_event(last_map, NULL, sc1000_engine, settings);
                     // start the counter
@@ -477,7 +454,7 @@ void process_pic(struct sc1000* sc1000_engine)
             {
                 pitch_mode = 0;
                 old_pitch_mode = 0;
-                printf("Pitch mode Disabled\n");
+                LOG_DEBUG("Pitch mode Disabled");
             }
             else if (totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
@@ -500,7 +477,7 @@ void process_pic(struct sc1000* sc1000_engine)
             else if (totalbuttons[0] && totalbuttons[1] && totalbuttons[2] && totalbuttons[3])
                 shift_latched = 1;
             else
-                printf("Sod knows what you were trying to do there\n");
+                LOG_WARN("Unknown action");
 
             buttonState = BUTTONSTATE_WAITING;
 
@@ -524,12 +501,12 @@ void process_pic(struct sc1000* sc1000_engine)
                 deck_random_file(&sc1000_engine->beat_deck, settings);
             else if (buttons[0] && buttons[1] && buttons[2] && buttons[3])
             {
-                printf("All buttons held!\n");
+                LOG_DEBUG("All buttons held!");
                 if (sc1000_engine->scratch_deck.files_present)
                     deck_record(&sc1000_engine->beat_deck);
             }
             else
-                printf("Sod knows what you were trying to do there\n");
+                LOG_WARN("Unknown action");
 
             buttonState = BUTTONSTATE_WAITING;
 
@@ -672,7 +649,7 @@ void process_rot(struct sc1000* sc1000_engine)
                             (sc1000_engine->scratch_deck.player.position * settings->platter_speed) -
                             sc1000_engine->scratch_deck.encoder_angle);
 
-                        printf("touch!\n");
+                        LOG_DEBUG("touch!");
                         sc1000_engine->scratch_deck.player.target_position = sc1000_engine->scratch_deck.player.
                             position;
                         sc1000_engine->scratch_deck.player.cap_touch = 1;
@@ -727,32 +704,32 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
     unsigned char picskip = 0;
 
     char mididevices[64][64];
-    int mididevicenum = 0, oldmididevicenum = 0;
+    int midi_device_num = 0, old_midi_device_num = 0;
 
     // Initialize encoder (rotary sensor on I2C0)
     if (!encoder_init(&hw->encoder))
     {
-        printf("Couldn't init rotary sensor\n");
+        LOG_WARN("Couldn't init rotary sensor");
     }
     else
     {
-        printf("Encoder initialized OK, present=%d\n", hw->encoder.present);
+        LOG_INFO("Encoder initialized OK, present=%d", hw->encoder.present);
     }
 
     // Initialize PIC input processor on I2C2
     if (!pic_init(&hw->pic))
     {
-        printf("Couldn't init input processor\n");
+        LOG_WARN("Couldn't init input processor");
     }
     else
     {
-        printf("PIC initialized OK, present=%d\n", hw->pic.present);
+        LOG_INFO("PIC initialized OK, present=%d", hw->pic.present);
     }
 
     init_io(sc1000_engine);
 
     // Print settings for debugging
-    printf("Settings: platter_enabled=%d, platter_speed=%d, jog_reverse=%d\n",
+    LOG_INFO("Settings: platter_enabled=%d, platter_speed=%d, jog_reverse=%d",
            settings->platter_enabled, settings->platter_speed, settings->jog_reverse);
 
     // Detect SC500 by seeing if G11 is pulled low
@@ -760,7 +737,7 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
     {
         if (gpio_a13_read_pin(&hw->gpio, 6, 11))
         {
-            printf("SC500 detected\n");
+            LOG_INFO("SC500 detected");
             settings->disable_volume_adc = 1;
             settings->disable_pic_buttons = 1;
         }
@@ -769,24 +746,24 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
     srand(time(NULL)); // TODO - need better entropy source, SoC is starting up annoyingly deterministically
 
     struct timeval tv;
-    unsigned long lastTime = 0;
-    unsigned int frameCount = 0;
+    time_t last_time = 0;
+    unsigned int frame_count = 0;
     struct timespec ts;
-    double inputtime = 0, lastinputtime = 0;
+    double input_time = 0, last_input_time = 0;
 
     sleep(2);
 
-    int secondCount = 0;
+    unsigned int second_count = 0;
 
     while (1) // Main input loop
     {
-        frameCount++;
+        frame_count++;
 
         // Update display every second
-        gettimeofday(&tv, NULL);
-        if (tv.tv_sec != lastTime)
+        gettimeofday(&tv, nullptr);
+        if (tv.tv_sec != last_time)
         {
-            lastTime = tv.tv_sec;
+            last_time = tv.tv_sec;
 
             //printf("\033[H\033[J"); // Clear Screen
 
@@ -794,46 +771,40 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
             struct dsp_stats dsp;
             audio_engine_get_stats(&dsp);
 
-            printf(
-                "\nFPS: %06u - ADCS: %04u, %04u, %04u, %04u\n"
-                "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu)\n"
-                "Enc: %04d (new: %04d) Cap: %d CapTouch: %d\n"
-                "Buttons: %01u,%01u,%01u,%01u\n"
-                "TP: %f, P: %f\nVol: %f -- %f\n",
-                frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
+            LOG_STATS(
+                "FPS: %06u - ADCS: %04u, %04u, %04u, %04u | "
+                "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu) | "
+                "Enc: %04d Cap: %d Buttons: %01u,%01u,%01u,%01u",
+                frame_count, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
                 dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
-                sc1000_engine->scratch_deck.encoder_angle, sc1000_engine->scratch_deck.new_encoder_angle,
-                cap_is_touched, sc1000_engine->scratch_deck.player.cap_touch,
-                buttons[0], buttons[1], buttons[2], buttons[3],
-                sc1000_engine->scratch_deck.player.target_position, sc1000_engine->scratch_deck.player.position,
-                sc1000_engine->beat_deck.player.volume, sc1000_engine->scratch_deck.player.volume);
-            //dump_maps();
+                sc1000_engine->scratch_deck.encoder_angle,
+                sc1000_engine->scratch_deck.player.cap_touch,
+                buttons[0], buttons[1], buttons[2], buttons[3]);
 
-            //printf("\nFPS: %06u\n", frameCount);
-            frameCount = 0;
+            frame_count = 0;
 
             // list midi devices
             for (const auto& controller : g_input_ctx.midi_controllers)
             {
-                printf("MIDI : %s\n", controller->port_name());
+                LOG_DEBUG("MIDI : %s", controller->port_name());
             }
 
             // Wait 10 seconds to enumerate MIDI devices
             // Give them a little time to come up properly
-            if (secondCount < settings->midi_init_delay)
-                secondCount++;
-            else if (secondCount == settings->midi_init_delay)
+            if (second_count < settings->midi_init_delay)
+                second_count++;
+            else if (second_count == settings->midi_init_delay)
             {
                 // Check for new midi devices
-                mididevicenum = listdev("rawmidi", mididevices);
+                midi_device_num = listdev("rawmidi", mididevices);
 
                 // If there are more MIDI devices than last time, add them
-                if (mididevicenum > oldmididevicenum)
+                if (midi_device_num > old_midi_device_num)
                 {
-                    add_new_midi_devices(sc1000_engine, mididevices, mididevicenum);
-                    oldmididevicenum = mididevicenum;
+                    add_new_midi_devices(sc1000_engine, mididevices, midi_device_num);
+                    old_midi_device_num = midi_device_num;
                 }
-                secondCount = 999;
+                second_count = 999;
             }
         }
 
@@ -862,14 +833,14 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
             sc1000_engine->beat_deck.player.pitch = 1;
 
             clock_gettime(CLOCK_MONOTONIC, &ts);
-            inputtime = (double)ts.tv_sec + ((double)ts.tv_nsec / 1000000000.0);
+            input_time = (double)ts.tv_sec + ((double)ts.tv_nsec / 1000000000.0);
 
-            if (lastinputtime != 0)
+            if (last_input_time != 0)
             {
-                sc1000_engine->scratch_deck.player.target_position += (inputtime - lastinputtime);
+                sc1000_engine->scratch_deck.player.target_position += (input_time - last_input_time);
             }
 
-            lastinputtime = inputtime;
+            last_input_time = input_time;
         }
 
         //usleep(scsettings.update_rate);
@@ -892,13 +863,13 @@ void start_sc_input_thread()
     pthread_t thread1;
     int iret1;
 
-    printf("Starting GPIO input thread\n");
+    LOG_INFO("Starting GPIO input thread");
 
     iret1 = pthread_create(&thread1, nullptr, sc::input::sc_input_thread, nullptr);
 
     if (iret1)
     {
-        fprintf(stderr, "Error - pthread_create() return code: %d\n", iret1);
+        LOG_ERROR("Error - pthread_create() return code: %d", iret1);
         exit(EXIT_FAILURE);
     }
 }

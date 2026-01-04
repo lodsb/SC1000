@@ -2,13 +2,13 @@
 
 #include "actions.h"
 
-#include <cstdio>
 #include <cmath>
 
 #include "../player/deck.h"
 #include "../core/sc1000.h"
 #include "../core/sc_settings.h"
 #include "../platform/alsa.h"
+#include "../util/log.h"
 
 namespace sc {
 namespace control {
@@ -47,11 +47,11 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
         deck->player.stopped = !deck->player.stopped;
     }
     else if (map->action_type == SHIFTON) {
-        printf("Shift on\n");
+        LOG_DEBUG("Shift on");
         shifted = true;
     }
     else if (map->action_type == SHIFTOFF) {
-        printf("Shift off\n");
+        LOG_DEBUG("Shift off");
         shifted = false;
     }
     else if (map->action_type == NEXTFILE) {
@@ -92,13 +92,13 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
     }
     else if (map->action_type == JOGPIT) {
         pitch_mode = map->deck_no + 1;
-        printf("Set Pitch Mode %d\n", pitch_mode);
+        LOG_DEBUG("Set Pitch Mode %d", pitch_mode);
     }
     else if (map->action_type == JOGPSTOP) {
         pitch_mode = 0;
     }
     else if (map->action_type == SC500) {
-        printf("SC500 detected\n");
+        LOG_DEBUG("SC500 detected");
     }
     else if (map->action_type == VOLUP) {
         deck->player.set_volume += settings->volume_amount;
@@ -121,9 +121,9 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
             deck->player.set_volume = 0.0;
     }
     else if (map->action_type == JOGREVERSE) {
-        printf("Reversed Jog Wheel - %d", settings->jog_reverse);
+        LOG_DEBUG("Reversed Jog Wheel: %d", settings->jog_reverse);
         settings->jog_reverse = !settings->jog_reverse;
-        printf(",%d\n", settings->jog_reverse);
+        LOG_DEBUG(" -> %d", settings->jog_reverse);
     }
     else if (map->action_type == BEND) {
         // Temporary pitch bend on top of other pitch values
@@ -147,14 +147,14 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
     }
     else if (map->action_type == LOOPERASE) {
         // Long-hold RECORD (3 sec) erases the loop, allowing fresh recording
-        printf("Loop erase triggered on deck %d\n", map->deck_no);
+        LOG_DEBUG("Loop erase triggered on deck %d", map->deck_no);
         alsa_reset_loop(engine, map->deck_no);
         target->player.use_loop = false;  // Switch back to file track
         target->player.playing_beep = BEEP_RECORDINGERROR;  // Use error beep as "erased" feedback
     }
     else if (map->action_type == LOOPRECALL) {
         // Recall the last recorded loop
-        printf("Loop recall triggered on deck %d\n", map->deck_no);
+        LOG_DEBUG("Loop recall triggered on deck %d", map->deck_no);
         if (deck_recall_loop(target, settings)) {
             target->player.playing_beep = BEEP_RECORDINGSTART;  // Success feedback
         } else {

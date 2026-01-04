@@ -23,6 +23,7 @@
 #include <pthread.h>
 
 #include "thread.h"
+#include "../util/log.h"
 
 static pthread_key_t key;
 
@@ -75,7 +76,7 @@ void rt_not_allowed(void)
 {
     bool rt = (pthread_getspecific(key) != nullptr);
     if (rt) {
-        fprintf(stderr, "Realtime thread called a blocking function\n");
+        LOG_ERROR("Realtime thread called a blocking function");
         abort();
     }
 }

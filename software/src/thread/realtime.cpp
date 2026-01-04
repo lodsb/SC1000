@@ -22,21 +22,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <linux/i2c-dev.h>
 
 #include "../input/controller.h"
 #include "../core/sc1000.h"
 #include "../util/debug.h"
+#include "../util/log.h"
 
 #include "realtime.h"
 #include "thread.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*x))
-
-static int file_i2c;
-static unsigned char buf[60] = {0};
 
 /*
  * Raise the priority of the current thread
@@ -51,7 +46,7 @@ static int raise_priority(int priority)
     max_pri = sched_get_priority_max(SCHED_FIFO);
 
     if (priority > max_pri) {
-        fprintf(stderr, "Invalid scheduling priority (maximum %d).\n", max_pri);
+        LOG_ERROR("Invalid scheduling priority (maximum %d)", max_pri);
         return -1;
     }
 
@@ -64,7 +59,7 @@ static int raise_priority(int priority)
 
     if (sched_setscheduler(0, SCHED_FIFO, &sp)) {
         perror("sched_setscheduler");
-        fprintf(stderr, "Failed to get realtime priorities\n");
+        LOG_ERROR("Failed to get realtime priorities");
         return -1;
     }
 
@@ -152,7 +147,7 @@ int rt_set_sc1000(struct rt* rt, struct sc1000* engine)
 
     z = sc1000_audio_engine_pollfds(engine, &rt->pt[rt->npt], sizeof(rt->pt) - rt->npt);
     if (z == -1) {
-        fprintf(stderr, "Device failed to return file descriptors.\n");
+        LOG_ERROR("Device failed to return file descriptors");
         return -1;
     }
 
@@ -174,13 +169,13 @@ int rt_add_controller(struct rt* rt, Controller* c)
     debug("%p adding controller %p", rt, c);
 
     if (rt->nctl == ARRAY_SIZE(rt->ctl)) {
-        fprintf(stderr, "Too many controllers\n");
+        LOG_WARN("Too many controllers");
         return -1;
     }
 
     z = controller_pollfds(c, &rt->pt[rt->npt], sizeof(rt->pt) - rt->npt);
     if (z == -1) {
-        fprintf(stderr, "Controller failed to return file descriptors.\n");
+        LOG_ERROR("Controller failed to return file descriptors");
         return -1;
     }
 
@@ -203,7 +198,7 @@ int rt_start(struct rt* rt, int priority)
     if (rt->npt > 0) {
         int r;
 
-        fprintf(stderr, "Launching realtime thread to handle devices...\n");
+        LOG_INFO("Launching realtime thread to handle devices...");
 
         if (sem_init(&rt->sem, 0, 0) == -1) {
             perror("sem_init");

@@ -26,6 +26,7 @@
 #include <sys/poll.h>
 #include <alsa/asoundlib.h>
 
+#include "../util/log.h"
 #include "../core/global.h"
 #include "../core/sc_settings.h"
 #include "../engine/cv_engine.h"
@@ -69,7 +70,7 @@ struct alsa
 
 static void alsa_error( const char* msg, int r )
 {
-   fprintf(stderr, "ALSA %s: %s\n", msg, snd_strerror(r));
+   LOG_ERROR("ALSA %s: %s", msg, snd_strerror(r));
 }
 
 static bool chk( const char* s, int r )
@@ -102,24 +103,31 @@ struct alsa_device_info
 
    unsigned int period_size;
    unsigned int buffer_period_factor;
+
+   char card_name[128];  // ALSA card name for matching
 };
 
 static void print_alsa_device_info(struct alsa_device_info* iface)
 {
-   printf("device_id %i\n", iface->device_id);
-   printf("subdevice_id %i\n", iface->subdevice_id);
-   printf("is_present %i\n", iface->is_present);
-   printf("is_internal %i\n", iface->is_internal);
-   printf("input_channels %i\n", iface->input_channels);
-   printf("output_channels %i\n", iface->output_channels);
-   printf("supports_48k_samplerate %i\n", iface->supports_48k_samplerate);
-   printf("supports_16bit_pcm %i\n", iface->supports_16bit_pcm);
-   printf("period %i\n", iface->period_size);
+   LOG_INFO("Device info: card='%s' dev=%d sub=%d present=%d internal=%d in=%d out=%d 48k=%d 16bit=%d period=%d",
+            iface->card_name, iface->device_id, iface->subdevice_id,
+            iface->is_present, iface->is_internal,
+            iface->input_channels, iface->output_channels,
+            iface->supports_48k_samplerate, iface->supports_16bit_pcm,
+            iface->period_size);
 }
 
-static struct alsa_device_info alsa_devices[] = {
-        {false, -1, -1, 0, 0, false, false, false, 2, 2},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2}
+#define MAX_ALSA_DEVICES 8
+
+static struct alsa_device_info alsa_devices[MAX_ALSA_DEVICES] = {
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
+        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""}
 };
 
 static void create_alsa_device_id_string(char* str, unsigned int size, int dev, int subdev, bool is_plughw)
@@ -145,28 +153,28 @@ static void fill_audio_interface_info(struct sc_settings* settings)
    snd_pcm_format_mask_t* fmask;
    snd_pcm_format_mask_alloca(&fmask);
 
-   printf("fill_audio_interface_info\n");
+   LOG_INFO("Scanning ALSA audio interfaces");
 
    // force alsa to init some state
    while ((err = snd_card_next(&card_id)) >= 0 && card_id < 0) {
-      printf("First call returned -1, retrying...\n");
+      LOG_DEBUG("First call returned -1, retrying...");
    }
 
    if(card_id >= 0)
    {
       do
       {
-         printf("card_id %i, last_card_id %i\n", card_id, last_card_id);
+         LOG_DEBUG("card_id %d, last_card_id %d", card_id, last_card_id);
 
          snd_ctl_t* card_handle;
 
          sprintf(str, "hw:%i", card_id);
 
-         printf("Open card %i: %s\n", card_id, str);
+         LOG_DEBUG("Open card %d: %s", card_id, str);
 
          if ( (err = snd_ctl_open(&card_handle, str, 0)) < 0 )
          {
-            printf("Can't open card %i: %s\n", card_id, snd_strerror(err));
+            LOG_WARN("Can't open card %d: %s", card_id, snd_strerror(err));
          }
          else
          {
@@ -176,15 +184,23 @@ static void fill_audio_interface_info(struct sc_settings* settings)
 
             if ( (err = snd_ctl_card_info(card_handle, card_info)) < 0 )
             {
-               printf("Can't get info for card %i: %s\n", card_id, snd_strerror(err));
+               LOG_WARN("Can't get info for card %d: %s", card_id, snd_strerror(err));
             }
             else
             {
                const char* card_name = snd_ctl_card_info_get_name(card_info);
 
-               printf("Card %i = %s\n", card_id, card_name);
+               LOG_INFO("Card %d = %s", card_id, card_name);
+
+               if (card_id >= MAX_ALSA_DEVICES) {
+                  LOG_WARN("Skipping card %d (max %d devices supported)", card_id, MAX_ALSA_DEVICES);
+                  snd_ctl_close(card_handle);
+                  continue;
+               }
 
                alsa_devices[ card_id ].is_present = true;
+               strncpy(alsa_devices[card_id].card_name, card_name, sizeof(alsa_devices[card_id].card_name) - 1);
+               alsa_devices[card_id].card_name[sizeof(alsa_devices[card_id].card_name) - 1] = '\0';
                if ( strcmp(card_name, "sun4i-codec") == 0 )
                {
                   alsa_devices[ card_id ].is_internal = true;
@@ -207,7 +223,7 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                {
                   create_alsa_device_id_string(pcm_name, sizeof(pcm_name), card_id, device_id, false);
 
-                  printf("\nChecking PCM device: %s\n", pcm_name);
+                  LOG_DEBUG("Checking PCM device: %s", pcm_name);
 
                   snd_pcm_t* pcm;
 
@@ -221,26 +237,26 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                      // Check if sample rate is supported
                      if ( snd_pcm_hw_params_test_rate(pcm, params, TARGET_SAMPLE_RATE, 0) == 0 )
                      {
-                        printf("  - Playback supported at %d Hz\n", TARGET_SAMPLE_RATE);
+                        LOG_DEBUG("  - Playback supported at %d Hz", TARGET_SAMPLE_RATE);
 
                         alsa_devices[ card_id ].supports_48k_samplerate = true;
                      }
                      else
                      {
-                        printf("  - Playback does NOT support %d Hz\n", TARGET_SAMPLE_RATE);
+                        LOG_DEBUG("  - Playback does NOT support %d Hz", TARGET_SAMPLE_RATE);
 
                         alsa_devices[ card_id ].supports_48k_samplerate = false;
                      }
 
                      if ( snd_pcm_hw_params_test_format(pcm, params, TARGET_SAMPLE_FORMAT) == 0 )
                      {
-                        printf("    - Playback supports 16-bit signed format\n");
+                        LOG_DEBUG("  - Playback supports 16-bit signed format");
 
                         alsa_devices[ card_id ].supports_16bit_pcm = true;
                      }
                      else
                      {
-                        printf("    - Playback does NOT support 16-bit signed format\n");
+                        LOG_DEBUG("  - Playback does NOT support 16-bit signed format");
 
                         alsa_devices[ card_id ].supports_16bit_pcm = false;
                      }
@@ -254,14 +270,13 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                         {
                            if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
                            {
-                              printf("Outputs: %u\n", max);
+                              LOG_DEBUG("Outputs: %u", max);
                               playback_count = max;
                            }
                         }
                      }
 
                      snd_pcm_hw_params_get_format_mask(params, fmask);
-                     printf("\n");
 
                      snd_pcm_close(pcm);
                   }
@@ -282,7 +297,7 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                         {
                            if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
                            {
-                              printf("Inputs: %u\n", max);
+                              LOG_DEBUG("Inputs: %u", max);
                               capture_count = max;
                            }
                         }
@@ -297,7 +312,7 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                   alsa_devices[ card_id ].device_id = card_id;
                   alsa_devices[ card_id ].subdevice_id = 0; // for now
 
-                  printf("I / O %i %i\n", capture_count, playback_count);
+                  LOG_DEBUG("I/O channels: %d/%d", capture_count, playback_count);
                }
 
                snd_ctl_close(card_handle);
@@ -308,7 +323,7 @@ static void fill_audio_interface_info(struct sc_settings* settings)
       } while ( (err = snd_card_next(&card_id)) >= 0 && card_id >= 0 );
    }
 
-   printf("last card id %i %i\n", card_id, last_card_id);
+   LOG_DEBUG("Last card id %d %d", card_id, last_card_id);
 
    //ALSA allocates some mem to load its config file when we call some of the
    //above functions. Now that we're done getting the info, let's tell ALSA
@@ -343,8 +358,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
 
    err = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, SND_PCM_FORMAT_S16);
    if (!chk("hw_params_set_format", err)) {
-      fprintf(stderr, "16-bit signed format is not available. "
-                      "You may need to use a 'plughw' device.\n");
+      LOG_ERROR("16-bit signed format is not available. You may need to use a 'plughw' device.");
       return -1;
    }
 
@@ -359,8 +373,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
 
    err = snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, TARGET_SAMPLE_RATE, 0);
    if (!chk("hw_params_set_rate", err)) {
-      fprintf(stderr, "Sample rate of %dHz is not implemented by the hardware.\n",
-              TARGET_SAMPLE_RATE);
+      LOG_ERROR("Sample rate of %dHz is not implemented by the hardware.", TARGET_SAMPLE_RATE);
       return -1;
    }
 
@@ -369,8 +382,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
    err = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, num_channels);
    if (!chk("hw_params_set_channels", err))
    {
-      fprintf(stderr, "%d channel audio not available on this device.\n",
-              num_channels);
+      LOG_ERROR("%d channel audio not available on this device.", num_channels);
       return -1;
    }
 
@@ -388,13 +400,13 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
    err = snd_pcm_hw_params_get_period_size(hw_params, &period_size, nullptr);
    if (!chk("snd_pcm_hw_params_get_period_size", err))
    {
-      printf("Error getting period size: %s\n", snd_strerror(err));
+      LOG_ERROR("Error getting period size: %s", snd_strerror(err));
       return -1;
    }
 
    alsa->period_size = period_size;
 
-   printf("Period size: %lu frames\n", period_size);
+   LOG_INFO("Period size: %lu frames", period_size);
 
    alsa->buf = nullptr;  /* Not needed for MMAP mode */
    auto buffer_size = static_cast<snd_pcm_uframes_t>(period_size * device_info->buffer_period_factor);
@@ -411,8 +423,8 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
          /* Smallest possible buffer to keep latencies low */
          err = snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size);
          if (!chk("hw_params_set_buffer_size", err)) {
-            fprintf(stderr, "Buffer of %lu samples is probably too small; try increasing period size or buffer_period_factor\n",
-                    buffer_size);
+            LOG_ERROR("Buffer of %lu samples is probably too small; try increasing period size or buffer_period_factor",
+                      buffer_size);
             return -1;
          }
          break;
@@ -448,7 +460,7 @@ static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
    int count = snd_pcm_poll_descriptors_count(alsa->pcm);
    auto ucount = static_cast<unsigned int>(count);
 
-   printf("poll %d ", count);
+   LOG_DEBUG("poll %d", count);
 
    if ( ucount > z )
    {
@@ -753,7 +765,7 @@ static int handle( struct sc1000* engine )
       {
          if ( r == -EPIPE )
          {
-            fprintf(stderr, "ALSA: playback xrun.\n");
+            LOG_WARN("ALSA: playback xrun");
 
             r = snd_pcm_prepare(alsa->playback.pcm);
             if ( r < 0 )
@@ -819,7 +831,7 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
    alsa = static_cast<struct alsa*>(malloc(sizeof *alsa));
    if ( alsa == nullptr )
    {
-      perror("malloc");
+      LOG_ERROR("malloc failed for alsa struct");
       return -1;
    }
 
@@ -829,12 +841,11 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
 
    char device_name[64];
    create_alsa_device_id_string(device_name, sizeof(device_name), device_info->device_id, device_info->subdevice_id, needs_plughw);
-   printf("Opening device %s with %d channels, period size %i...\n", device_name, num_channels, device_info->period_size);
+   LOG_INFO("Opening device %s with %d channels, period size %d...", device_name, num_channels, device_info->period_size);
 
    if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, device_info, num_channels) < 0 )
    {
-      fputs("Failed to open device for playback.\n", stderr);
-      printf(" failed!\n");
+      LOG_ERROR("Failed to open device for playback");
       free(alsa);
       return -1;
    }
@@ -858,30 +869,30 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
 
    if (available_inputs >= 2)
    {
-      printf("Opening capture with %d channels (left=%d, right=%d)...\n",
-             available_inputs, alsa->capture_left, alsa->capture_right);
+      LOG_INFO("Opening capture with %d channels (left=%d, right=%d)...",
+               available_inputs, alsa->capture_left, alsa->capture_right);
 
       if ( pcm_open(&alsa->capture, device_name, SND_PCM_STREAM_CAPTURE, device_info,
                     static_cast<uint8_t>(available_inputs)) >= 0 )
       {
          alsa->capture_enabled = true;
          alsa->capture_channels = available_inputs;
-         printf("Capture device opened successfully\n");
+         LOG_INFO("Capture device opened successfully");
 
          // Start capture immediately
          if (snd_pcm_start(alsa->capture.pcm) < 0)
          {
-            fprintf(stderr, "Warning: failed to start capture PCM\n");
+            LOG_WARN("Failed to start capture PCM");
          }
       }
       else
       {
-         fprintf(stderr, "Warning: failed to open capture device, recording disabled\n");
+         LOG_WARN("Failed to open capture device, recording disabled");
       }
    }
    else
    {
-      printf("No input channels available, recording disabled\n");
+      LOG_INFO("No input channels available, recording disabled");
    }
 
    // Initialize loop buffers for both decks
@@ -895,7 +906,7 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
    {
       cv_engine_init(&alsa->cv, TARGET_SAMPLE_RATE);
       cv_engine_set_mapping(&alsa->cv, config);
-      printf("CV engine initialized for %s\n", config->name);
+      LOG_INFO("CV engine initialized for %s", config->name);
    }
 
    // make sure this is really initialized
@@ -908,31 +919,84 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
 
    sc1000_audio_engine_init(sc1000_engine, &alsa_ops);
 
-   printf(" success!\n");
+   LOG_INFO("ALSA device setup complete");
 
    return 0;
+}
+
+// Case-insensitive substring search
+static bool contains_substring_ci(const char* haystack, const char* needle)
+{
+   if (!haystack || !needle) return false;
+   if (needle[0] == '\0') return true;
+
+   size_t haylen = strlen(haystack);
+   size_t needlelen = strlen(needle);
+
+   if (needlelen > haylen) return false;
+
+   for (size_t i = 0; i <= haylen - needlelen; i++)
+   {
+      bool match = true;
+      for (size_t j = 0; j < needlelen; j++)
+      {
+         char h = haystack[i + j];
+         char n = needle[j];
+         // Simple ASCII case-insensitive compare
+         if (h >= 'A' && h <= 'Z') h = static_cast<char>(h + ('a' - 'A'));
+         if (n >= 'A' && n <= 'Z') n = static_cast<char>(n + ('a' - 'A'));
+         if (h != n) { match = false; break; }
+      }
+      if (match) return true;
+   }
+   return false;
 }
 
 // Match a config entry to a detected ALSA device
 static struct alsa_device_info* find_matching_device(struct audio_interface* config)
 {
-   // Parse the device string to get card number
+   // Method 1: Parse the device string to get card number
    // Config device is like "hw:0" or "hw:1" or "plughw:1"
    int card_num = -1;
    if (sscanf(config->device, "hw:%d", &card_num) == 1 ||
        sscanf(config->device, "plughw:%d", &card_num) == 1)
    {
-      if (card_num >= 0 && card_num < 2 && alsa_devices[card_num].is_present)
+      if (card_num >= 0 && card_num < MAX_ALSA_DEVICES && alsa_devices[card_num].is_present)
       {
          return &alsa_devices[card_num];
       }
    }
+
+   // Method 2: Substring match against card name
+   // This allows matching by partial name, e.g., "USB" matches "USB Audio Device"
+   // Also try matching the config 'name' field against card name
+   for (int i = 0; i < MAX_ALSA_DEVICES; i++)
+   {
+      if (!alsa_devices[i].is_present) continue;
+
+      // Try matching config->device against card name (substring, case-insensitive)
+      if (contains_substring_ci(alsa_devices[i].card_name, config->device))
+      {
+         LOG_DEBUG("Matched by device substring: '%s' contains '%s'",
+                   alsa_devices[i].card_name, config->device);
+         return &alsa_devices[i];
+      }
+
+      // Try matching config->name against card name
+      if (contains_substring_ci(alsa_devices[i].card_name, config->name))
+      {
+         LOG_DEBUG("Matched by name substring: '%s' contains '%s'",
+                   alsa_devices[i].card_name, config->name);
+         return &alsa_devices[i];
+      }
+   }
+
    return nullptr;
 }
 
 int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
 {
-   printf("alsa_init\n");
+   LOG_INFO("ALSA init starting");
 
    sleep(settings->audio_init_delay);
 
@@ -946,27 +1010,27 @@ int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
 
       if (device)
       {
-         printf("Matched config '%s' to device %s\n", config->name, config->device);
+         LOG_INFO("Matched config '%s' to device %s", config->name, config->device);
          return setup_alsa_device(sc1000_engine, device, config, config->channels, settings);
       }
       else
       {
-         printf("Config '%s' (%s) - device not found\n", config->name, config->device);
+         LOG_DEBUG("Config '%s' (%s) - device not found", config->name, config->device);
       }
    }
 
    // Fallback: use first available device with stereo
-   printf("No config match, using fallback\n");
-   if (alsa_devices[0].is_present)
+   LOG_INFO("No config match, using fallback");
+   for (int i = 0; i < MAX_ALSA_DEVICES; i++)
    {
-      return setup_alsa_device(sc1000_engine, &alsa_devices[0], nullptr, DEVICE_CHANNELS, settings);
-   }
-   else if (alsa_devices[1].is_present)
-   {
-      return setup_alsa_device(sc1000_engine, &alsa_devices[1], nullptr, DEVICE_CHANNELS, settings);
+      if (alsa_devices[i].is_present)
+      {
+         LOG_INFO("Using fallback device %d (%s)", i, alsa_devices[i].card_name);
+         return setup_alsa_device(sc1000_engine, &alsa_devices[i], nullptr, DEVICE_CHANNELS, settings);
+      }
    }
 
-   fprintf(stderr, "No audio device found!\n");
+   LOG_ERROR("No audio device found!");
    return -1;
 }
 
@@ -994,27 +1058,27 @@ bool alsa_start_recording(struct sc1000* engine, int deck_no)
 
    if (!alsa->capture_enabled)
    {
-      fprintf(stderr, "Recording not available: no capture device\n");
+      LOG_WARN("Recording not available: no capture device");
       return false;
    }
 
    if (deck_no < 0 || deck_no > 1)
    {
-      fprintf(stderr, "Invalid deck number: %d\n", deck_no);
+      LOG_ERROR("Invalid deck number: %d", deck_no);
       return false;
    }
 
    // Only one deck can record at a time
    if (alsa->active_recording_deck >= 0 && alsa->active_recording_deck != deck_no)
    {
-      fprintf(stderr, "Deck %d already recording\n", alsa->active_recording_deck);
+      LOG_WARN("Deck %d already recording", alsa->active_recording_deck);
       return false;
    }
 
    if (loop_buffer_start(&alsa->loop[deck_no]))
    {
       alsa->active_recording_deck = deck_no;
-      printf("Started recording on deck %d\n", deck_no);
+      LOG_INFO("Started recording on deck %d", deck_no);
       return true;
    }
    return false;
@@ -1030,7 +1094,7 @@ void alsa_stop_recording(struct sc1000* engine, int deck_no)
       {
          alsa->active_recording_deck = -1;
       }
-      printf("Stopped recording on deck %d\n", deck_no);
+      LOG_INFO("Stopped recording on deck %d", deck_no);
    }
 }
 
@@ -1075,6 +1139,6 @@ void alsa_reset_loop(struct sc1000* engine, int deck_no)
    if (deck_no >= 0 && deck_no <= 1)
    {
       loop_buffer_reset(&alsa->loop[deck_no]);
-      printf("Reset loop on deck %d\n", deck_no);
+      LOG_INFO("Reset loop on deck %d", deck_no);
    }
 }

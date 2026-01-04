@@ -31,120 +31,140 @@
 #include "player.h"
 #include "track.h"
 
-/*
- * Post: player is initialised
- */
+//
+// C++ Member function implementations
+//
 
-void player_init(struct player *pl, unsigned int sample_rate,
-                 struct track *track, struct sc_settings* settings)
+void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings* settings)
 {
-	assert(track != nullptr);
+	assert(tr != nullptr);
 	assert(sample_rate != 0);
 
-	spin_init(&pl->lock);
+	spin_init(&lock);
 
-	pl->sample_dt = 1.0 / sample_rate;
-	pl->track = track;
+	sample_dt = 1.0 / sample_rate;
+	track = tr;
 
-	pl->position = 0.0;
-	pl->offset = 0.0;
-	pl->target_position = 0.0;
-	pl->last_difference = 0.0;
+	position = 0.0;
+	offset = 0.0;
+	target_position = 0.0;
+	last_difference = 0.0;
 
-	pl->pitch = 0.0;
-	pl->sync_pitch = 1.0;
-	pl->volume = 0.0;
-	pl->set_volume = settings->initial_volume;
+	pitch = 0.0;
+	sync_pitch = 1.0;
+	volume = 0.0;
+	set_volume = settings->initial_volume;
 
-	pl->note_pitch = 1.0;
-	pl->fader_pitch = 1.0;
-	pl->bend_pitch = 1.0;
-	pl->stopped = false;
-	pl->recording = false;
-	pl->recording_started = false;
-	pl->use_loop = false;
-	pl->beep_pos = 0;
-	pl->playing_beep = -1;
+	note_pitch = 1.0;
+	fader_pitch = 1.0;
+	bend_pitch = 1.0;
+	stopped = false;
+	recording = false;
+	recording_started = false;
+	use_loop = false;
+	beep_pos = 0;
+	playing_beep = -1;
 }
 
-/*
- * Pre: player is initialised
- * Post: no resources are allocated by the player
- */
-
-void player_clear(struct player *pl)
+void player::clear()
 {
-	spin_clear(&pl->lock);
-	track_release(pl->track);
+	spin_clear(&lock);
+	track_release(track);
 }
 
-double player_get_elapsed(struct player *pl)
+double player::get_elapsed() const
 {
-	return pl->position - pl->offset;
+	return position - offset;
 }
 
-bool player_is_active(const struct player *pl)
+bool player::is_active() const
 {
-	return (std::fabs(pl->pitch) > 0.01);
+	return (std::fabs(pitch) > 0.01);
 }
 
-/*
- * Cue to the zero position of the track
- */
-
-void player_recue(struct player *pl)
+void player::recue()
 {
-	pl->offset = pl->position;
+	offset = position;
 }
 
-/*
- * Set the track used for the playback
- *
- * Pre: caller holds reference on track
- * Post: caller does not hold reference on track
- */
-
-void player_set_track(struct player *pl, struct track *track)
+void player::set_track(struct track* tr)
 {
-	struct track *x;
-	assert(track != nullptr);
-	assert(track->refcount > 0);
-	spin_lock(&pl->lock); /* Synchronise with the playback thread */
-	x = pl->track;
-	pl->track = track;
-	spin_unlock(&pl->lock);
+	struct track* x;
+	assert(tr != nullptr);
+	assert(tr->refcount > 0);
+	spin_lock(&lock); /* Synchronise with the playback thread */
+	x = track;
+	track = tr;
+	spin_unlock(&lock);
 	track_release(x); /* discard the old track */
 }
 
-/*
- * Set the playback of one player to match another, used
- * for "instant doubles" and beat juggling
- */
-
-void player_clone(struct player *pl, const struct player *from)
+void player::clone(const player& from)
 {
 	double elapsed;
-	struct track *x, *t;
+	struct track* x;
+	struct track* t;
 
-	elapsed = from->position - from->offset;
-	pl->offset = pl->position - elapsed;
+	elapsed = from.position - from.offset;
+	offset = position - elapsed;
 
-	t = from->track;
+	t = from.track;
 	track_acquire(t);
 
-	spin_lock(&pl->lock);
-	x = pl->track;
-	pl->track = t;
-	spin_unlock(&pl->lock);
+	spin_lock(&lock);
+	x = track;
+	track = t;
+	spin_unlock(&lock);
 
 	track_release(x);
 }
 
-/*
- * Seek to the given position
- */
-
-void player_seek_to(struct player *pl, double seconds)
+void player::seek_to(double seconds)
 {
-	pl->offset = pl->position - seconds;
+	offset = position - seconds;
+}
+
+//
+// Legacy C API wrappers
+//
+
+void player_init(struct player* pl, unsigned int sample_rate,
+                 struct track* track, struct sc_settings* settings)
+{
+	pl->init(sample_rate, track, settings);
+}
+
+void player_clear(struct player* pl)
+{
+	pl->clear();
+}
+
+double player_get_elapsed(struct player* pl)
+{
+	return pl->get_elapsed();
+}
+
+bool player_is_active(const struct player* pl)
+{
+	return pl->is_active();
+}
+
+void player_recue(struct player* pl)
+{
+	pl->recue();
+}
+
+void player_set_track(struct player* pl, struct track* track)
+{
+	pl->set_track(track);
+}
+
+void player_clone(struct player* pl, const struct player* from)
+{
+	pl->clone(*from);
+}
+
+void player_seek_to(struct player* pl, double seconds)
+{
+	pl->seek_to(seconds);
 }

@@ -25,6 +25,7 @@
 #include <cstring>
 #include <cstdint>
 #include <ctime>
+#include <getopt.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -45,7 +46,69 @@
 #include "thread/thread.h"
 #include "thread/rig.h"
 
+#include "util/log.h"
 #include "main.h"
+
+// Command-line option parsing
+static void print_usage(const char* program) {
+    fprintf(stderr, "Usage: %s [OPTIONS]\n\n", program);
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  --log-console          Log to console (default)\n");
+    fprintf(stderr, "  --log-file             Log to /media/sda/sc1000.log\n");
+    fprintf(stderr, "  --log-file-path PATH   Log to specified file path\n");
+    fprintf(stderr, "  --log-level LEVEL      Set log level (debug, info, warn, error)\n");
+    fprintf(stderr, "  --show-stats           Enable FPS/DSP stats output\n");
+    fprintf(stderr, "  --help                 Show this help message\n");
+}
+
+static sc::log::Level parse_log_level(const char* str) {
+    if (strcmp(str, "debug") == 0) return sc::log::Level::LVL_DEBUG;
+    if (strcmp(str, "info") == 0)  return sc::log::Level::LVL_INFO;
+    if (strcmp(str, "warn") == 0)  return sc::log::Level::LVL_WARN;
+    if (strcmp(str, "error") == 0) return sc::log::Level::LVL_ERROR;
+    fprintf(stderr, "Unknown log level '%s', using 'info'\n", str);
+    return sc::log::Level::LVL_INFO;
+}
+
+static void parse_args(int argc, char* argv[], sc::log::Config* log_config) {
+    static struct option long_options[] = {
+        {"log-console",    no_argument,       nullptr, 'c'},
+        {"log-file",       no_argument,       nullptr, 'f'},
+        {"log-file-path",  required_argument, nullptr, 'p'},
+        {"log-level",      required_argument, nullptr, 'l'},
+        {"show-stats",     no_argument,       nullptr, 's'},
+        {"help",           no_argument,       nullptr, 'h'},
+        {nullptr, 0, nullptr, 0}
+    };
+
+    int opt;
+    while ((opt = getopt_long(argc, argv, "cfp:l:sh", long_options, nullptr)) != -1) {
+        switch (opt) {
+            case 'c':
+                log_config->use_file = false;
+                break;
+            case 'f':
+                log_config->use_file = true;
+                break;
+            case 'p':
+                log_config->use_file = true;
+                log_config->file_path = optarg;
+                break;
+            case 'l':
+                log_config->min_level = parse_log_level(optarg);
+                break;
+            case 's':
+                log_config->show_stats = true;
+                break;
+            case 'h':
+                print_usage(argv[0]);
+                exit(0);
+            default:
+                print_usage(argv[0]);
+                exit(1);
+        }
+    }
+}
 
 static void sig_handler(int signo)
 {
@@ -57,19 +120,23 @@ static void sig_handler(int signo)
 
 int main(int argc, char* argv[])
 {
-    (void)argc;
-    (void)argv;
-
     int rc = -1, priority;
     bool use_mlock;
 
+    // Parse command-line arguments
+    sc::log::Config log_config;
+    parse_args(argc, argv, &log_config);
+
+    // Initialize logging system first
+    sc::log::init(log_config);
+
     if (signal(SIGINT, sig_handler) == SIG_ERR) {
-        printf("\nCan't catch SIGINT\n");
+        SC_LOG_ERROR("Can't catch SIGINT");
         exit(1);
     }
 
     if (setlocale(LC_ALL, "") == nullptr) {
-        fprintf(stderr, "Could not honour the local encoding\n");
+        SC_LOG_ERROR("Could not honour the local encoding");
         return -1;
     }
     if (thread_global_init() == -1) {
@@ -103,7 +170,7 @@ int main(int argc, char* argv[])
     }
 
     // Main loop
-    fprintf(stderr, "In main loop\n\n");
+    SC_LOG_INFO("Entering main loop");
 
     if (rig_main() == -1) {
         goto out_interface;
@@ -111,7 +178,7 @@ int main(int argc, char* argv[])
 
     // Exit
     rc = EXIT_SUCCESS;
-    fprintf(stderr, "Exiting cleanly...\n");
+    SC_LOG_INFO("Exiting cleanly...");
 
 out_interface:
 out_rt:
@@ -121,6 +188,9 @@ out_rt:
 
     rig_clear();
     thread_global_clear();
+
+    // Shutdown logging
+    sc::log::shutdown();
 
     if (rc == EXIT_SUCCESS) {
         fprintf(stderr, "Done.\n");

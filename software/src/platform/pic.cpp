@@ -4,6 +4,7 @@
 #include "i2c.h"
 
 #include <cstdio>
+#include "../util/log.h"
 
 namespace sc {
 namespace platform {
@@ -15,7 +16,7 @@ bool pic_init(PicState* state)
 {
     state->i2c_fd = i2c_open("/dev/i2c-2", PIC_ADDR);
     if (state->i2c_fd < 0) {
-        printf("Couldn't init input processor (PIC)\n");
+        LOG_WARN("Couldn't init input processor (PIC)");
         state->present = false;
         return false;
     }

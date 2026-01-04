@@ -30,6 +30,7 @@
 #include "mutex.h"
 #include "realtime.h"
 #include "rig.h"
+#include "../util/log.h"
 
 #define EVENT_WAKE 0
 #define EVENT_QUIT 1
@@ -151,16 +152,19 @@ int rig_main()
 
         mutex_lock(&lock);
 
+        /* Flush any RT log messages */
+        sc::log::flush_rt_logs();
+
         /* Handle track events - iterate with index for safe removal */
         for (size_t i = 0; i < g_importing_tracks.size(); ) {
             track* t = g_importing_tracks[i];
-            bool was_importing = track_is_importing(t);
+            bool was_importing = t->is_importing();
 
             track_handle(t);
 
             // If track finished importing, it was removed from the vector
             // by rig_remove_track(), so don't increment index
-            if (was_importing && !track_is_importing(t)) {
+            if (was_importing && !t->is_importing()) {
                 // Track was removed, don't increment i
             } else {
                 i++;

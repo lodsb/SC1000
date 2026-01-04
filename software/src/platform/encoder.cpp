@@ -4,6 +4,7 @@
 #include "i2c.h"
 
 #include <cstdio>
+#include "../util/log.h"
 
 namespace sc {
 namespace platform {
@@ -19,7 +20,7 @@ bool encoder_init(EncoderState* state)
 {
     state->i2c_fd = i2c_open("/dev/i2c-0", AS5600_ADDR);
     if (state->i2c_fd < 0) {
-        printf("Couldn't init rotary sensor (AS5600)\n");
+        LOG_WARN("Couldn't init rotary sensor (AS5600)");
         state->present = false;
         return false;
     }

@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#include "../util/log.h"
+
 namespace sc {
 namespace platform {
 
@@ -26,14 +28,14 @@ bool gpio_init_mcp23017(GpioState* state)
 {
     state->mcp23017_fd = i2c_open("/dev/i2c-1", 0x20);
     if (state->mcp23017_fd < 0) {
-        printf("Couldn't init external GPIO (MCP23017)\n");
+        LOG_WARN("Couldn't init external GPIO (MCP23017)");
         state->mcp23017_present = false;
         return false;
     }
 
     // Test write to verify communication
     if (!i2c_write_reg(state->mcp23017_fd, MCP_GPPUA, 0xFF)) {
-        printf("Couldn't communicate with MCP23017\n");
+        LOG_WARN("Couldn't communicate with MCP23017");
         state->mcp23017_present = false;
         return false;
     }
@@ -53,7 +55,7 @@ bool gpio_init_a13_mmap(GpioState* state)
 {
     int fd = open("/dev/mem", O_RDWR | O_SYNC);
     if (fd < 0) {
-        fprintf(stderr, "Unable to open /dev/mem\n");
+        LOG_WARN("Unable to open /dev/mem");
         state->mmap_present = false;
         return false;
     }
@@ -63,7 +65,7 @@ bool gpio_init_a13_mmap(GpioState* state)
     close(fd);
 
     if (mapped == MAP_FAILED) {
-        fprintf(stderr, "Unable to mmap GPIO\n");
+        LOG_WARN("Unable to mmap GPIO");
         state->mmap_present = false;
         return false;
     }

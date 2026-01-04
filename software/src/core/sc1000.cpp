@@ -6,6 +6,7 @@
 
 #include "../platform/alsa.h"
 #include "../util/debug.h"
+#include "../util/log.h"
 
 #include "../player/deck.h"
 #include "../player/track.h"
@@ -22,7 +23,7 @@ static const char* BEEPS[3] = {
 
 void sc1000_setup(struct sc1000* engine, struct rt* rt)
 {
-    printf("sc1000_init\n");
+    LOG_INFO("SC1000 engine init");
 
     auto* settings = static_cast<struct sc_settings*>(malloc(sizeof(struct sc_settings)));
 
@@ -54,10 +55,10 @@ void sc1000_load_sample_folders(struct sc1000* engine)
 
         // Timeout after 12 sec, in which case emergency samples will be loaded
         for (int uscnt = 0; uscnt < 12; uscnt++) {
-            printf("Waiting for USB stick...\n");
+            LOG_INFO("Waiting for USB stick...");
             // Wait for /dev/sda1 to show up and then mount it
             if (access("/dev/sda1", F_OK) != -1) {
-                printf("Found USB stick, mounting!\n");
+                LOG_INFO("Found USB stick, mounting!");
                 (void)system("/bin/mount /dev/sda1 /media/sda");
                 break;
             } else {
@@ -74,9 +75,9 @@ void sc1000_load_sample_folders(struct sc1000* engine)
         // Load the default sentence if no sample files found on usb stick
         player_set_track(&engine->scratch_deck.player,
                          track_acquire_by_import(engine->scratch_deck.importer, "/var/scratchsentence.mp3"));
-        printf("set track ok");
+        LOG_DEBUG("Set default track ok");
         cues_load_from_file(&engine->scratch_deck.cues, engine->scratch_deck.player.track->path);
-        printf("set cues ok");
+        LOG_DEBUG("Set cues ok");
         // Set the time back a bit so the sample doesn't start too soon
         engine->scratch_deck.player.target_position = -4.0;
         engine->scratch_deck.player.position = -4.0;
@@ -155,7 +156,7 @@ void sc1000_audio_engine_handle(struct sc1000* engine)
 
     if (engine->ops->handle(engine) != 0) {
         engine->fault = true;
-        fputs("Error handling audio device; disabling it\n", stderr);
+        LOG_ERROR("Error handling audio device; disabling it");
     }
 }
 

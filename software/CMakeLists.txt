@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15...4.0)
+cmake_minimum_required(VERSION 3.10)
 
 project(SC1000BUILD VERSION 1.0)
 
@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(NATIVE "Build for native host instead of ARM" OFF)
+
+# Add DEBUG define for Debug builds (enables debug() macro in src/util/debug.h)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(DEBUG)
+endif()
 
 # Source files organized by directory
 set(CORE_SOURCES
@@ -56,6 +61,7 @@ set(THREAD_SOURCES
 
 set(UTIL_SOURCES
         src/util/external.cpp
+        src/util/log.cpp
         src/util/status.cpp
 )
 
@@ -72,11 +78,15 @@ add_executable(sc1000
 )
 
 # Compiler flags
-if(NATIVE)
+if(CMAKE_CROSSCOMPILING)
+    message(STATUS "Building for ARM (SC1000 device) via toolchain")
+    # ARM flags are set by toolchain file, just add optimization flags
+    target_compile_options(sc1000 PRIVATE -flto -ftree-vectorize)
+elseif(NATIVE)
     message(STATUS "Building for NATIVE host")
     target_compile_options(sc1000 PRIVATE -flto -ftree-vectorize)
 else()
-    message(STATUS "Building for ARM (SC1000 device)")
+    message(STATUS "Building for ARM (SC1000 device) - direct")
     target_compile_options(sc1000 PRIVATE -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize)
 endif()
 
@@ -96,9 +106,9 @@ target_include_directories(sc1000 PRIVATE
 
 # Link libraries
 # Static linking for C/C++ runtime, dynamic for ALSA (needs dlopen for plugins)
-target_link_options(sc1000 PRIVATE
-        -static-libstdc++
-        -static-libgcc
+# Using set_target_properties for CMake 3.10 compatibility (target_link_options requires 3.13)
+set_target_properties(sc1000 PROPERTIES
+        LINK_FLAGS "-static-libstdc++ -static-libgcc"
 )
 
 target_link_libraries(sc1000
@@ -106,3 +116,30 @@ target_link_libraries(sc1000
         m
         pthread
 )
+
+# Desktop test application (only for native builds)
+if(NATIVE)
+    option(BUILD_DESKTOP_TEST "Build desktop test application" OFF)
+
+    if(BUILD_DESKTOP_TEST)
+        add_executable(sc1000-desktop
+                src/desktop/main_desktop.cpp
+                src/desktop/platform_desktop.cpp
+        )
+
+        target_compile_options(sc1000-desktop PRIVATE
+                -Wall
+                -Wextra
+                -Wno-unused-parameter
+        )
+
+        target_include_directories(sc1000-desktop PRIVATE
+                deps
+                src
+        )
+
+        target_compile_definitions(sc1000-desktop PRIVATE SC1000_DESKTOP)
+
+        message(STATUS "Building desktop test application")
+    endif()
+endif()

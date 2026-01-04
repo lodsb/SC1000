@@ -12,16 +12,15 @@
  *
  * You should have received a copy of the GNU General Public License
  * version 2 along with this program; if not, write to the Free
- * Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ * Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  * MA 02110-1301, USA.
  *
  */
 
 #pragma once
 
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "../thread/spin.h"
 
@@ -78,29 +77,35 @@ struct player
 
    FILE* recording_file;
    char  recording_file_name[256];
-};
 
 #ifdef __cplusplus
-#define EXTERNC extern "C"
-#else
-#define EXTERNC
+   // C++ member functions
+   void init(unsigned int sample_rate, struct track* track, struct sc_settings* settings);
+   void clear();
+   void set_track(struct track* track);
+   void clone(const player& from);
+   double get_elapsed() const;
+   bool is_active() const;
+   void seek_to(double seconds);
+   void recue();
+#endif
+};
+
+// Legacy C-compatible API (wrappers around member functions)
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-EXTERNC void player_init( struct player* pl, unsigned int sample_rate,
-                  struct track* track, struct sc_settings* settings);
+void player_init(struct player* pl, unsigned int sample_rate,
+                 struct track* track, struct sc_settings* settings);
+void player_clear(struct player* pl);
+void player_set_track(struct player* pl, struct track* track);
+void player_clone(struct player* pl, const struct player* from);
+double player_get_elapsed(struct player* pl);
+bool player_is_active(const struct player* pl);
+void player_seek_to(struct player* pl, double seconds);
+void player_recue(struct player* pl);
 
-EXTERNC void player_clear( struct player* pl );
-
-EXTERNC void player_set_track( struct player* pl, struct track* track );
-
-EXTERNC void player_clone( struct player* pl, const struct player* from );
-
-EXTERNC double player_get_elapsed( struct player* pl );
-
-EXTERNC bool player_is_active( const struct player* pl );
-
-EXTERNC void player_seek_to( struct player* pl, double seconds );
-
-EXTERNC void player_recue( struct player* pl );
-
-#undef EXTERNC
+#ifdef __cplusplus
+}
+#endif

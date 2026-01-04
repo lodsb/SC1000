@@ -3,11 +3,6 @@
 #include "../core/sc_settings.h"
 #include <stdint.h>
 
-#ifdef __cplusplus
-#define EXTERNC extern "C"
-#else
-#define EXTERNC
-#endif
 
 //
 // CV Engine Configuration
@@ -104,20 +99,18 @@ struct cv_controller_input {
 //
 
 // Initialize CV engine
-EXTERNC void cv_engine_init(struct cv_state* state, int sample_rate);
+void cv_engine_init(struct cv_state* state, int sample_rate);
 
 // Cache channel mappings from audio interface (call once after init)
-EXTERNC void cv_engine_set_mapping(struct cv_state* state, struct audio_interface* iface);
+void cv_engine_set_mapping(struct cv_state* state, struct audio_interface* iface);
 
 // Update all CV inputs from controller state (call once per audio block)
-EXTERNC void cv_engine_update(struct cv_state* state, const struct cv_controller_input* input);
+void cv_engine_update(struct cv_state* state, const struct cv_controller_input* input);
 
 // Process one block - generates CV output samples
-EXTERNC void cv_engine_process(
+void cv_engine_process(
     struct cv_state* state,
     int16_t* buffer,
     int num_channels,
     unsigned long frames
 );
-
-#undef EXTERNC

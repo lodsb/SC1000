@@ -23,6 +23,7 @@
 #include <cstring>
 
 #include "midi.h"
+#include "../util/log.h"
 
 int listdev(const char* devname, char names[64][64])
 {
@@ -35,7 +36,7 @@ int listdev(const char* devname, char names[64][64])
     /* Enumerate sound devices */
     err = snd_device_name_hint(-1, devname, reinterpret_cast<void***>(&hints));
     if (err != 0) {
-        fprintf(stderr, "*** Cannot get device names\n");
+        LOG_ERROR("Cannot get device names");
         exit(1);
     }
 
@@ -45,12 +46,11 @@ int listdev(const char* devname, char names[64][64])
 
         strcpy(names[num++], name);
 
-        printf("Name of device: %s\n", name);
+        LOG_DEBUG("MIDI device: %s", name);
 
         if (name != nullptr && strcmp("null", name) != 0) {
             free(name);
         }
-        printf("lots\n");
         n++;
     }
 
@@ -64,7 +64,7 @@ int listdev(const char* devname, char names[64][64])
  */
 static void alsa_error(const char* msg, int r)
 {
-    fprintf(stderr, "ALSA %s: %s\n", msg, snd_strerror(r));
+    LOG_ERROR("ALSA %s: %s", msg, snd_strerror(r));
 }
 
 int midi_open(struct midi* m, const char* name)

@@ -152,7 +152,7 @@ unsigned int loop_buffer_write(struct loop_buffer* lb,
         for (unsigned int i = 0; i < to_write; i++)
         {
             unsigned int pos = lb->write_pos % lb->loop_length;
-            signed short* dest = track_get_sample(lb->track, static_cast<int>(pos));
+            signed short* dest = lb->track->get_sample(static_cast<int>(pos));
             const int16_t* src = &pcm[i * num_channels];
 
             dest[0] = src[left_channel];   // Left
@@ -183,7 +183,7 @@ unsigned int loop_buffer_write(struct loop_buffer* lb,
         // Write samples to track (space is pre-allocated, no RT allocation)
         for (unsigned int i = 0; i < to_write; i++)
         {
-            signed short* dest = track_get_sample(lb->track, static_cast<int>(lb->write_pos + i));
+            signed short* dest = lb->track->get_sample(static_cast<int>(lb->write_pos + i));
             const int16_t* src = &pcm[i * num_channels];
 
             dest[0] = src[left_channel];   // Left

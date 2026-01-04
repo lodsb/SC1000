@@ -171,7 +171,7 @@ collect_track_samples( track* tr_1, double sample_1, double tr_1_len, double& su
    }
    else
    {
-      ts = track_get_sample(tr_1, sa);
+      ts = tr_1->get_sample(sa);
       f1l1 = ts[ 0 ];
       f1r1 = ts[ 1 ];
    }
@@ -184,7 +184,7 @@ collect_track_samples( track* tr_1, double sample_1, double tr_1_len, double& su
    }
    else
    {
-      ts = track_get_sample(tr_1, sa);
+      ts = tr_1->get_sample(sa);
       f2l1 = ts[ 0 ];
       f2r1 = ts[ 1 ];
    }
@@ -197,7 +197,7 @@ collect_track_samples( track* tr_1, double sample_1, double tr_1_len, double& su
    }
    else
    {
-      ts = track_get_sample(tr_1, sa);
+      ts = tr_1->get_sample(sa);
       f3l1 = ts[ 0 ];
       f3r1 = ts[ 1 ];
    }
@@ -210,7 +210,7 @@ collect_track_samples( track* tr_1, double sample_1, double tr_1_len, double& su
    }
    else
    {
-      ts = track_get_sample(tr_1, sa);
+      ts = tr_1->get_sample(sa);
       f4l1 = ts[ 0 ];
       f4r1 = ts[ 1 ];
    }

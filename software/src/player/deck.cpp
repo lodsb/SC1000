@@ -33,180 +33,15 @@
 #include "playlist.h"
 #include "track.h"
 
-/*
- * An empty record, is used briefly until a record is loaded
- * to a deck
- */
+//
+// Helper function (internal)
+//
 
-/*
- * Initialise a deck
- *
- * A deck is a logical grouping of the various components which
- * reflects the user's view on a deck in the system.
- *
- * Pre: deck->device is valid
- */
-
-int deck_init(struct deck *d, struct sc_settings* settings)
+static void load_track_internal(struct deck* d, struct track* track, struct sc_settings* settings)
 {
-	d->ncontrol = 0;
-	d->punch = NO_PUNCH;
-	d->protect = false;
-	assert(settings->importer != nullptr);
-	d->importer = settings->importer;
-	d->shifted = false;
-
-	player_init(&d->player, TARGET_SAMPLE_RATE, track_acquire_empty(), settings);
-	cues_reset(&d->cues);
-
-	d->playlist = nullptr;
-	d->current_folder_idx = 0;
-	d->current_file_idx = 0;
-	d->files_present = false;
-
-	d->angle_offset = 0;
-	d->encoder_angle = 0xffff;
-	d->new_encoder_angle = 0xffff;
-
-	d->loop_track = nullptr;
-
-	return 0;
-}
-
-void deck_clear(struct deck *d)
-{
-	player_clear(&d->player);
-	delete d->playlist;
-	d->playlist = nullptr;
-
-	if (d->loop_track)
-	{
-		track_release(d->loop_track);
-		d->loop_track = nullptr;
-	}
-}
-
-bool deck_is_locked(const struct deck *d)
-{
-	return (d->protect && player_is_active(&d->player));
-}
-
-void deck_recue(struct deck *d)
-{
-	if (deck_is_locked(d))
-	{
-		status_printf(STATUS_WARN, "Stop deck to recue");
-		return;
-	}
-
-	player_recue(&d->player);
-}
-
-void deck_clone(struct deck *d, const struct deck *from)
-{
-	player_clone(&d->player, &from->player);
-}
-
-/*
- * Clear the cue point, ready to be set again
- */
-
-void deck_unset_cue(struct deck *d, unsigned int label)
-{
-	cues_unset(&d->cues, label);
-}
-
-/*
- * Seek the current playback position to a cue point position,
- * or set the cue point if unset
- */
-
-void deck_cue(struct deck *d, unsigned int label)
-{
-	double p;
-
-	p = cues_get(&d->cues, label);
-	if (p == CUE_UNSET) {
-		cues_set(&d->cues, label, player_get_elapsed(&d->player));
-		cues_save_to_file(&d->cues, d->player.track->path);
-	}
-	else
-		player_seek_to(&d->player, p);
-}
-
-/*
- * Seek to a cue point ready to return from it later. Overrides an
- * existing punch operation.
- */
-
-void deck_punch_in(struct deck *d, unsigned int label)
-{
-	double p, e;
-
-	e = player_get_elapsed(&d->player);
-	p = cues_get(&d->cues, label);
-	if (p == CUE_UNSET)
-	{
-		cues_set(&d->cues, label, e);
-		return;
-	}
-
-	if (d->punch != NO_PUNCH)
-		e -= d->punch;
-
-	player_seek_to(&d->player, p);
-	d->punch = p - e;
-}
-
-/*
- * Return from a cue point
- */
-
-void deck_punch_out(struct deck *d)
-{
-	double e;
-
-	if (d->punch == NO_PUNCH)
-		return;
-
-	e = player_get_elapsed(&d->player);
-	player_seek_to(&d->player, e - d->punch);
-	d->punch = NO_PUNCH;
-}
-
-void deck_load_folder(struct deck *d, char *folder_name)
-{
-	// Build index of all audio files on the USB stick
-	delete d->playlist;
-	d->playlist = new Playlist();
-
-	if (d->playlist->load(folder_name) && d->playlist->total_files() > 0)
-	{
-		printf("Folder '%s' Indexed with %zu files: \n", folder_name, d->playlist->total_files());
-		d->files_present = true;
-		d->current_folder_idx = 0;
-		d->current_file_idx = 0;
-
-		printf("deck_load_folder\n");
-
-		// Load first beat
-		sc_file* file = d->playlist->get_file(0, 0);
-		player_set_track(&d->player, track_acquire_by_import(d->importer, file->full_path));
-		printf("deck_load_folder set track ok\n");
-		cues_load_from_file(&d->cues, d->player.track->path);
-		printf("deck_load_folder set cues_load_from_file ok\n");
-	}
-	else
-	{
-		d->files_present = false;
-	}
-}
-
-static void load_track(struct deck *d, struct track *track, struct sc_settings* settings)
-{
-	struct player *pl = &d->player;
+	struct player* pl = &d->player;
 	cues_save_to_file(&d->cues, pl->track->path);
-	player_set_track(pl, track);
+	pl->set_track(track);
 	pl->target_position = 0;
 	pl->position = 0;
 	pl->offset = 0;
@@ -217,111 +52,335 @@ static void load_track(struct deck *d, struct track *track, struct sc_settings* 
 	pl->note_pitch = 1.0;
 	if (!d->player.just_play)
 	{
-		// If touch sensor is enabled, set the "zero point" to the current encoder angle
 		if (settings->platter_enabled)
 		{
 			d->angle_offset = 0 - d->encoder_angle;
 		}
-		else // If touch sensor is disabled, set the "zero point" to encoder zero point so sticker is exactly on each time sample is loaded
+		else
 		{
 			d->angle_offset = static_cast<int32_t>(pl->position * settings->platter_speed) - d->encoder_angle;
 		}
 	}
 }
 
-void deck_next_file(struct deck *d, struct sc_settings* settings)
+//
+// C++ Member function implementations
+//
+
+int deck::init(struct sc_settings* settings)
 {
-	if (d->files_present && d->playlist->has_next_file(d->current_folder_idx, d->current_file_idx))
+	ncontrol = 0;
+	punch = NO_PUNCH;
+	protect = false;
+	assert(settings->importer != nullptr);
+	importer = settings->importer;
+	shifted = false;
+
+	player.init(TARGET_SAMPLE_RATE, track_acquire_empty(), settings);
+	cues_reset(&cues);
+
+	playlist = nullptr;
+	current_folder_idx = 0;
+	current_file_idx = 0;
+	files_present = false;
+
+	angle_offset = 0;
+	encoder_angle = 0xffff;
+	new_encoder_angle = 0xffff;
+
+	loop_track = nullptr;
+
+	return 0;
+}
+
+void deck::clear()
+{
+	player.clear();
+	delete playlist;
+	playlist = nullptr;
+
+	if (loop_track)
+	{
+		track_release(loop_track);
+		loop_track = nullptr;
+	}
+}
+
+bool deck::is_locked() const
+{
+	return (protect && player.is_active());
+}
+
+void deck::recue()
+{
+	if (is_locked())
+	{
+		status_printf(STATUS_WARN, "Stop deck to recue");
+		return;
+	}
+
+	player.recue();
+}
+
+void deck::clone(const deck& from)
+{
+	player.clone(from.player);
+}
+
+void deck::unset_cue(unsigned int label)
+{
+	cues_unset(&cues, label);
+}
+
+void deck::cue(unsigned int label)
+{
+	double p = cues_get(&cues, label);
+	if (p == CUE_UNSET) {
+		cues_set(&cues, label, player.get_elapsed());
+		cues_save_to_file(&cues, player.track->path);
+	}
+	else {
+		player.seek_to(p);
+	}
+}
+
+void deck::punch_in(unsigned int label)
+{
+	double e = player.get_elapsed();
+	double p = cues_get(&cues, label);
+	if (p == CUE_UNSET)
+	{
+		cues_set(&cues, label, e);
+		return;
+	}
+
+	if (punch != NO_PUNCH)
+		e -= punch;
+
+	player.seek_to(p);
+	punch = p - e;
+}
+
+void deck::punch_out()
+{
+	if (punch == NO_PUNCH)
+		return;
+
+	double e = player.get_elapsed();
+	player.seek_to(e - punch);
+	punch = NO_PUNCH;
+}
+
+void deck::load_folder(char* folder_name)
+{
+	delete playlist;
+	playlist = new Playlist();
+
+	if (playlist->load(folder_name) && playlist->total_files() > 0)
+	{
+		printf("Folder '%s' Indexed with %zu files: \n", folder_name, playlist->total_files());
+		files_present = true;
+		current_folder_idx = 0;
+		current_file_idx = 0;
+
+		printf("deck_load_folder\n");
+
+		sc_file* file = playlist->get_file(0, 0);
+		player.set_track(track_acquire_by_import(importer, file->full_path));
+		printf("deck_load_folder set track ok\n");
+		cues_load_from_file(&cues, player.track->path);
+		printf("deck_load_folder set cues_load_from_file ok\n");
+	}
+	else
+	{
+		files_present = false;
+	}
+}
+
+void deck::next_file(struct sc_settings* settings)
+{
+	if (files_present && playlist->has_next_file(current_folder_idx, current_file_idx))
 	{
 		printf("files present\n");
-		d->current_file_idx++;
-		sc_file* file = d->playlist->get_file(d->current_folder_idx, d->current_file_idx);
-		load_track(d, track_acquire_by_import(d->importer, file->full_path), settings);
+		current_file_idx++;
+		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
+		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 	} else {
 		printf("file not present\n");
 	}
 }
 
-void deck_prev_file(struct deck *d, struct sc_settings* settings)
+void deck::prev_file(struct sc_settings* settings)
 {
-	if (d->files_present && d->playlist->has_prev_file(d->current_folder_idx, d->current_file_idx))
+	if (files_present && playlist->has_prev_file(current_folder_idx, current_file_idx))
 	{
-		d->current_file_idx--;
-		sc_file* file = d->playlist->get_file(d->current_folder_idx, d->current_file_idx);
-		load_track(d, track_acquire_by_import(d->importer, file->full_path), settings);
+		current_file_idx--;
+		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
+		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 	}
 }
 
-void deck_next_folder(struct deck *d, struct sc_settings* settings)
+void deck::next_folder(struct sc_settings* settings)
 {
-	if (d->files_present && d->playlist->has_next_folder(d->current_folder_idx))
+	if (files_present && playlist->has_next_folder(current_folder_idx))
 	{
-		d->current_folder_idx++;
-		d->current_file_idx = 0;
-		sc_file* file = d->playlist->get_file(d->current_folder_idx, d->current_file_idx);
-		load_track(d, track_acquire_by_import(d->importer, file->full_path), settings);
+		current_folder_idx++;
+		current_file_idx = 0;
+		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
+		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 	}
 }
 
-void deck_prev_folder(struct deck *d, struct sc_settings* settings)
+void deck::prev_folder(struct sc_settings* settings)
 {
-	if (d->files_present && d->playlist->has_prev_folder(d->current_folder_idx))
+	if (files_present && playlist->has_prev_folder(current_folder_idx))
 	{
-		d->current_folder_idx--;
-		d->current_file_idx = 0;
-		sc_file* file = d->playlist->get_file(d->current_folder_idx, d->current_file_idx);
-		load_track(d, track_acquire_by_import(d->importer, file->full_path), settings);
+		current_folder_idx--;
+		current_file_idx = 0;
+		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
+		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 	}
 }
 
-void deck_random_file(struct deck *d, struct sc_settings* settings)
+void deck::random_file(struct sc_settings* settings)
 {
-	if (d->files_present) {
-		unsigned int num_files = static_cast<unsigned int>(d->playlist->total_files());
+	if (files_present) {
+		unsigned int num_files = static_cast<unsigned int>(playlist->total_files());
 		unsigned int r = static_cast<unsigned int>(rand()) % num_files;
 		printf("Playing file %d/%d\n", r, num_files);
-		sc_file* file = d->playlist->get_file_at_index(r);
+		sc_file* file = playlist->get_file_at_index(r);
 		if (file != nullptr) {
-			load_track(d, track_acquire_by_import(d->importer, file->full_path), settings);
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 		}
 	}
 }
 
-void deck_record(struct deck *d)
+void deck::record()
 {
-	d->player.recording_started = !d->player.recording_started;
+	player.recording_started = !player.recording_started;
 }
 
-bool deck_recall_loop(struct deck *d, struct sc_settings* settings)
+bool deck::recall_loop(struct sc_settings* settings)
 {
-	if (!d->loop_track || d->loop_track->length == 0)
+	if (!loop_track || loop_track->length == 0)
 	{
 		return false;
 	}
 
-	// Load the loop track onto the player
-	track_acquire(d->loop_track);
-	player_set_track(&d->player, d->loop_track);
+	track_acquire(loop_track);
+	player.set_track(loop_track);
 
-	// Reset position to start
-	d->player.position = 0;
-	d->player.target_position = 0;
-	d->player.offset = 0;
+	player.position = 0;
+	player.target_position = 0;
+	player.offset = 0;
 
-	// Reset platter angle offset if platter is enabled
 	if (settings->platter_enabled)
 	{
-		d->angle_offset = 0 - d->encoder_angle;
+		angle_offset = 0 - encoder_angle;
 	}
 	else
 	{
-		d->angle_offset = static_cast<int32_t>(d->player.position * settings->platter_speed) - d->encoder_angle;
+		angle_offset = static_cast<int32_t>(player.position * settings->platter_speed) - encoder_angle;
 	}
 
 	return true;
 }
 
-bool deck_has_loop(const struct deck *d)
+bool deck::has_loop() const
 {
-	return d->loop_track != nullptr && d->loop_track->length > 0;
+	return loop_track != nullptr && loop_track->length > 0;
+}
+
+//
+// Legacy C API wrappers
+//
+
+int deck_init(struct deck* d, struct sc_settings* settings)
+{
+	return d->init(settings);
+}
+
+void deck_clear(struct deck* d)
+{
+	d->clear();
+}
+
+bool deck_is_locked(const struct deck* d)
+{
+	return d->is_locked();
+}
+
+void deck_recue(struct deck* d)
+{
+	d->recue();
+}
+
+void deck_clone(struct deck* d, const struct deck* from)
+{
+	d->clone(*from);
+}
+
+void deck_unset_cue(struct deck* d, unsigned int label)
+{
+	d->unset_cue(label);
+}
+
+void deck_cue(struct deck* d, unsigned int label)
+{
+	d->cue(label);
+}
+
+void deck_punch_in(struct deck* d, unsigned int label)
+{
+	d->punch_in(label);
+}
+
+void deck_punch_out(struct deck* d)
+{
+	d->punch_out();
+}
+
+void deck_load_folder(struct deck* d, char* folder_name)
+{
+	d->load_folder(folder_name);
+}
+
+void deck_next_file(struct deck* d, struct sc_settings* settings)
+{
+	d->next_file(settings);
+}
+
+void deck_prev_file(struct deck* d, struct sc_settings* settings)
+{
+	d->prev_file(settings);
+}
+
+void deck_next_folder(struct deck* d, struct sc_settings* settings)
+{
+	d->next_folder(settings);
+}
+
+void deck_prev_folder(struct deck* d, struct sc_settings* settings)
+{
+	d->prev_folder(settings);
+}
+
+void deck_random_file(struct deck* d, struct sc_settings* settings)
+{
+	d->random_file(settings);
+}
+
+void deck_record(struct deck* d)
+{
+	d->record();
+}
+
+bool deck_recall_loop(struct deck* d, struct sc_settings* settings)
+{
+	return d->recall_loop(settings);
+}
+
+bool deck_has_loop(const struct deck* d)
+{
+	return d->has_loop();
 }

@@ -364,13 +364,13 @@ struct track* track_acquire_for_recording(int sample_rate)
  *
  * Return: 0 on success, -1 if allocation failed
  */
-int track_ensure_space(struct track* tr, unsigned int samples)
+int track::ensure_space(unsigned int samples)
 {
 	unsigned int blocks_needed = (samples + TRACK_BLOCK_SAMPLES - 1) / TRACK_BLOCK_SAMPLES;
 
-	while (tr->blocks < blocks_needed)
+	while (blocks < blocks_needed)
 	{
-		if (more_space(tr) == -1)
+		if (more_space(this) == -1)
 		{
 			return -1;
 		}
@@ -383,10 +383,10 @@ int track_ensure_space(struct track* tr, unsigned int samples)
  * Set track length (for direct recording)
  * Uses atomic increment for thread safety
  */
-void track_set_length(struct track* tr, unsigned int samples)
+void track::set_length(unsigned int samples)
 {
-	__sync_lock_test_and_set(&tr->length, samples);
-	tr->bytes = samples * SAMPLE;
+	__sync_lock_test_and_set(&length, samples);
+	bytes = samples * SAMPLE;
 }
 
 void track_acquire(struct track* t)
@@ -442,14 +442,14 @@ void track_release(struct track* t)
  * Post: *pe contains poll entry
  */
 
-void track_pollfd(struct track* t, struct pollfd* pe)
+void track::pollfd(struct pollfd* poll_entry)
 {
-	assert(t->pid != 0);
+	assert(pid != 0);
 
-	pe->fd = t->fd;
-	pe->events = POLLIN;
+	poll_entry->fd = fd;
+	poll_entry->events = POLLIN;
 
-	t->pe = pe;
+	pe = poll_entry;
 }
 
 /*
@@ -544,29 +544,53 @@ static void stop_import(struct track* t)
  * Return: true if import has completed, otherwise false
  */
 
-void track_handle(struct track* tr)
+void track::handle()
 {
-	assert(tr->pid != 0);
+	assert(pid != 0);
 
 	/* A track may be added while poll() was waiting,
 	 * in which case it has no return data from poll */
 
-	if (tr->pe == nullptr)
+	if (pe == nullptr)
 	{
 		return;
 	}
 
-	if (tr->pe->revents == 0)
+	if (pe->revents == 0)
 	{
 		return;
 	}
 
-	if (read_from_pipe(tr) != -1)
+	if (read_from_pipe(this) != -1)
 	{
 		return;
 	}
 
-	stop_import(tr);
-	rig_remove_track(tr);
-	track_release(tr); /* may delete the track */
+	stop_import(this);
+	rig_remove_track(this);
+	track_release(this); /* may delete the track */
+}
+
+//
+// Legacy C API wrappers
+//
+
+int track_ensure_space(struct track* tr, unsigned int samples)
+{
+	return tr->ensure_space(samples);
+}
+
+void track_set_length(struct track* tr, unsigned int samples)
+{
+	tr->set_length(samples);
+}
+
+void track_pollfd(struct track* tr, struct pollfd* pe)
+{
+	tr->pollfd(pe);
+}
+
+void track_handle(struct track* tr)
+{
+	tr->handle();
 }

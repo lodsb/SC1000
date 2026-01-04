@@ -487,6 +487,15 @@ void collect_and_mix_players( struct sc1000* engine,
    setup_player_for_block(pl1, samples, settings, &target_volume_1, &filtered_pitch_1);
    setup_player_for_block(pl2, samples, settings, &target_volume_2, &filtered_pitch_2);
 
+   // During fresh recording (recording active but no loop yet), mute the file track playback
+   // so you only hear the monitoring input. For punch-in (use_loop already true), keep playing.
+   if (pl1->recording && !pl1->use_loop) {
+      target_volume_1 = 0.0;
+   }
+   if (pl2->recording && !pl2->use_loop) {
+      target_volume_2 = 0.0;
+   }
+
    // Select track for each player: use loop track if use_loop is set
    // Deck 0 = beat deck (pl1), Deck 1 = scratch deck (pl2)
    struct track* tr1 = pl1->use_loop ? alsa_peek_loop_track(engine, 0) : pl1->track;

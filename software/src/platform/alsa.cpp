@@ -629,8 +629,17 @@ static int process_audio( struct sc1000* engine)
       capture_info.loop[0] = &alsa->loop[0];
       capture_info.loop[1] = &alsa->loop[1];
       capture_info.recording_deck = alsa->active_recording_deck;
-      // TODO: Get monitoring volume from settings or deck volume
-      capture_info.monitoring_volume = (alsa->active_recording_deck >= 0) ? 1.0f : 0.0f;
+      // Monitoring volume matches playback volume so levels are consistent
+      // Playback uses: fabs(pitch) * BASE_VOLUME * fader_volume
+      // For monitoring we assume pitch ~= 1.0, BASE_VOLUME = 0.875
+      constexpr float BASE_VOLUME = 7.0f / 8.0f;
+      if (alsa->active_recording_deck == 0) {
+         capture_info.monitoring_volume = BASE_VOLUME * static_cast<float>(engine->beat_deck.player.fader_volume);
+      } else if (alsa->active_recording_deck == 1) {
+         capture_info.monitoring_volume = BASE_VOLUME * static_cast<float>(engine->scratch_deck.player.fader_volume);
+      } else {
+         capture_info.monitoring_volume = 0.0f;
+      }
    }
 
    /* Process audio - stereo output to playback buffer */
@@ -664,7 +673,8 @@ static int process_audio( struct sc1000* engine)
             .sample_position = pl->position,
             .sample_length = pl->track ? pl->track->length : 0,
             .fader_volume = pl->fader_volume,
-            .fader_target = pl->fader_target
+            .fader_target = pl->fader_target,
+            .crossfader_position = engine->crossfader_position
          };
 
          cv_engine_update(&alsa->cv, &cv_input);
@@ -1038,6 +1048,19 @@ bool alsa_start_recording(struct sc1000* engine, int deck_no)
    {
       LOG_WARN("Deck %d already recording", alsa->active_recording_deck);
       return false;
+   }
+
+   // For punch-in, sync write position to current playback position
+   struct loop_buffer* lb = &alsa->loop[deck_no];
+   if (loop_buffer_has_loop(lb))
+   {
+      struct player* pl = (deck_no == 0) ? &engine->beat_deck.player : &engine->scratch_deck.player;
+      // Convert player position (seconds) to samples
+      double pos_seconds = pl->position;
+      if (pos_seconds < 0) pos_seconds = 0;
+      unsigned int pos_samples = static_cast<unsigned int>(pos_seconds * lb->sample_rate);
+      loop_buffer_set_position(lb, pos_samples);
+      LOG_DEBUG("Punch-in: synced write_pos to playback position %.2f sec (%u samples)", pos_seconds, pos_samples);
    }
 
    if (loop_buffer_start(&alsa->loop[deck_no]))

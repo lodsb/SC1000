@@ -33,7 +33,7 @@ bool Playlist::load(const char* base_folder_path)
 		}
 
 		char subfolder_path[512];
-		snprintf(subfolder_path, sizeof(subfolder_path), "%s%s",
+		snprintf(subfolder_path, sizeof(subfolder_path), "%s/%s",
 		         base_folder_path, dir_list[d]->d_name);
 
 		int num_files = scandir(subfolder_path, &file_list, nullptr, alphasort);
@@ -43,7 +43,7 @@ bool Playlist::load(const char* base_folder_path)
 		}
 
 		sc_folder folder;
-		snprintf(folder.full_path, sizeof(folder.full_path), "%s%s",
+		snprintf(folder.full_path, sizeof(folder.full_path), "%s/%s",
 		         base_folder_path, dir_list[d]->d_name);
 
 		for (int f = 0; f < num_files; f++) {

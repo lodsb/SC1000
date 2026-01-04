@@ -13,6 +13,9 @@ struct sc1000
    struct sc_settings* settings;
    struct mapping*     mappings;
 
+   // Crossfader position for CV output (0.0 = beat side, 1.0 = scratch side)
+   double crossfader_position;
+
    /////////////////////////////////
    /// audio callback related stuff
    bool fault;
@@ -35,7 +38,7 @@ struct sc1000_ops {
 extern "C" {
 #endif
 
-void sc1000_setup(struct sc1000* engine, struct rt *rt);
+void sc1000_setup(struct sc1000* engine, struct rt *rt, const char* root_path);
 
 void sc1000_load_sample_folders(struct sc1000* engine);
 

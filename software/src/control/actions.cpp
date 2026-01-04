@@ -3,8 +3,12 @@
 #include "actions.h"
 
 #include <cmath>
+#include <cstdio>
 
+#include "../player/cues.h"
 #include "../player/deck.h"
+#include "../player/playlist.h"
+#include "../player/track.h"
 #include "../core/sc1000.h"
 #include "../core/sc_settings.h"
 #include "../platform/alsa.h"
@@ -21,7 +25,7 @@ int pitch_mode = 0;
 
 void perform_action_for_deck(struct deck* deck, struct mapping* map,
                              const unsigned char midi_buffer[3],
-                             struct sc_settings* settings)
+                             struct sc1000* engine, struct sc_settings* settings)
 {
     if (map->action_type == CUE) {
         unsigned int cuenum = 0;
@@ -47,27 +51,27 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
         deck->player.stopped = !deck->player.stopped;
     }
     else if (map->action_type == SHIFTON) {
-        LOG_DEBUG("Shift on");
+        LOG_DEBUG("SHIFTON action fired, shifted: %d -> true", shifted);
         shifted = true;
     }
     else if (map->action_type == SHIFTOFF) {
-        LOG_DEBUG("Shift off");
+        LOG_DEBUG("SHIFTOFF action fired, shifted: %d -> false", shifted);
         shifted = false;
     }
     else if (map->action_type == NEXTFILE) {
-        deck_next_file(deck, settings);
+        deck_next_file(deck, engine, settings);
     }
     else if (map->action_type == PREVFILE) {
-        deck_prev_file(deck, settings);
+        deck_prev_file(deck, engine, settings);
     }
     else if (map->action_type == RANDOMFILE) {
-        deck_random_file(deck, settings);
+        deck_random_file(deck, engine, settings);
     }
     else if (map->action_type == NEXTFOLDER) {
-        deck_next_folder(deck, settings);
+        deck_next_folder(deck, engine, settings);
     }
     else if (map->action_type == PREVFOLDER) {
-        deck_prev_folder(deck, settings);
+        deck_prev_folder(deck, engine, settings);
     }
     else if (map->action_type == VOLUME) {
         deck->player.set_volume = static_cast<double>(midi_buffer[2]) / 128.0;
@@ -146,11 +150,29 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
         deck_record(target);
     }
     else if (map->action_type == LOOPERASE) {
-        // Long-hold RECORD (3 sec) erases the loop, allowing fresh recording
-        LOG_DEBUG("Loop erase triggered on deck %d", map->deck_no);
+        // Long-hold RECORD erases the loop and navigates to first file
+        LOG_DEBUG("LOOPERASE triggered on deck %d, was use_loop=%d, was current_file_idx=%d",
+                  map->deck_no, target->player.use_loop, target->current_file_idx);
         alsa_reset_loop(engine, map->deck_no);
-        target->player.use_loop = false;  // Switch back to file track
+        target->player.use_loop = false;
+
+        // Navigate to first file (position 1, index 0)
+        target->current_file_idx = 0;
+        LOG_DEBUG("LOOPERASE set use_loop=false, current_file_idx=0");
+        if (target->files_present) {
+            sc_file* file = target->playlist->get_file(target->current_folder_idx, 0);
+            if (file != nullptr) {
+                // Load the first file in current folder
+                target->player.set_track(track_acquire_by_import(target->importer, file->full_path));
+                target->player.position = 0;
+                target->player.target_position = 0;
+                target->player.offset = 0;
+                cues_load_from_file(&target->cues, target->player.track->path);
+            }
+        }
+
         target->player.playing_beep = BEEP_RECORDINGERROR;  // Use error beep as "erased" feedback
+        LOG_DEBUG("Loop erased on deck %d, navigated to file 0", map->deck_no);
     }
     else if (map->action_type == LOOPRECALL) {
         // Recall the last recorded loop
@@ -162,7 +184,7 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
         }
     }
     else {
-        perform_action_for_deck(target, map, midi_buffer, settings);
+        perform_action_for_deck(target, map, midi_buffer, engine, settings);
     }
 }
 

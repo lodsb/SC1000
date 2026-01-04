@@ -60,3 +60,7 @@ unsigned int loop_buffer_get_length(struct loop_buffer* lb);
 
 // Reset/erase the loop (clears track and unlocks length for fresh recording)
 void loop_buffer_reset(struct loop_buffer* lb);
+
+// Set write position for punch-in (syncs to playback position)
+// position_samples should be within [0, loop_length)
+void loop_buffer_set_position(struct loop_buffer* lb, unsigned int position_samples);

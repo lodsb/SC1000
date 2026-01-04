@@ -13,6 +13,7 @@
 #include "sc_control_mapping.h"
 #include "sc_settings.h"
 #include "global.h"
+#include "../util/log.h"
 
 // JSON serialization for enums - must be in global namespace to match enum definitions
 NLOHMANN_JSON_SERIALIZE_ENUM( EventType, {
@@ -21,6 +22,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM( EventType, {
     {EventType::BUTTON_PRESSED, "button_pressed"},
     {EventType::BUTTON_PRESSED_SHIFTED, "button_pressed_shifted"},
     {EventType::BUTTON_RELEASED, "button_released"},
+    {EventType::BUTTON_RELEASED_SHIFTED, "button_released_shifted"},
 })
 
 NLOHMANN_JSON_SERIALIZE_ENUM( MIDIStatusType, {
@@ -99,6 +101,7 @@ void add_mapping_to_list( struct mapping **maps, IOType type, unsigned char deck
    new_map->pullup    = pullup;
 
    new_map->debounce = 0;
+   new_map->shifted_at_press = false;
 
    if (buf == nullptr)
    {
@@ -233,21 +236,34 @@ void add_gpio_mapping_from_json(mapping** mappings, const nlohmann::json& json)
 void load_json_config( sc_settings* settings, mapping** mappings )
 {
    std::ifstream f;
-   f.open("/media/sda/sc_settings.json", std::ios::in);
 
-   if ( f.fail() )
+   // Try several locations for settings file:
+   // 1. Current directory (for desktop development)
+   // 2. Root path from settings (if already set)
+   // 3. Default hardware paths
+   const char* paths[] = {
+      "./sc_settings.json",
+      "../sc_settings.json",
+      "/media/sda/sc_settings.json",
+      "/var/sc_settings.json",
+      nullptr
+   };
+
+   for (int i = 0; paths[i] != nullptr; i++)
    {
-      f.open("/var/sc_settings.json", std::ios::in);
-      if (f.fail() )
+      f.open(paths[i], std::ios::in);
+      if (!f.fail())
       {
-         // probably started native from the build dir
-         f.open("../sc_settings.json", std::ios::in);
+         std::cerr << "Loaded settings from: " << paths[i] << std::endl;
+         break;
       }
+      f.clear();  // Clear fail state before trying next path
    }
 
    if (f.fail())
    {
       std::cerr << "Could not open any settings file, exiting" << std::endl;
+      std::cerr << "Searched: ./sc_settings.json, ../sc_settings.json, /media/sda/sc_settings.json, /var/sc_settings.json" << std::endl;
       exit(-1);
    }
 
@@ -465,6 +481,47 @@ void load_json_config( sc_settings* settings, mapping** mappings )
 void sc_settings_load_user_configuration( sc_settings* settings, mapping** mappings )
 {
    sc::config::load_json_config(settings, mappings);
+}
+
+void sc_settings_print_gpio_mappings(mapping* mappings)
+{
+   LOG_INFO("=== GPIO Mappings Loaded ===");
+
+   static const char* action_names[] = {
+      "CUE", "SHIFTON", "SHIFTOFF", "STARTSTOP", "START", "STOP",
+      "PITCH", "NOTE", "GND", "VOLUME", "NEXTFILE", "PREVFILE",
+      "RANDOMFILE", "NEXTFOLDER", "PREVFOLDER", "RECORD", "LOOPERASE",
+      "LOOPRECALL", "VOLUP", "VOLDOWN", "JOGPIT", "DELETECUE", "SC500",
+      "VOLUHOLD", "VOLDHOLD", "JOGPSTOP", "JOGREVERSE", "BEND", "NOTHING"
+   };
+
+   static const char* edge_names[] = {
+      "RELEASED", "PRESSED", "HOLDING", "PRESSED_SHIFTED",
+      "HOLDING_SHIFTED", "RELEASED_SHIFTED"
+   };
+
+   int gpio_count = 0;
+   int midi_count = 0;
+
+   mapping* m = mappings;
+   while (m != nullptr)
+   {
+      if (m->type == IOType::IO)
+      {
+         const char* action_str = (m->action_type < 29) ? action_names[m->action_type] : "UNKNOWN";
+         const char* edge_str = (m->edge_type < 6) ? edge_names[m->edge_type] : "UNKNOWN";
+         LOG_DEBUG("  GPIO port=%d pin=%2d deck=%d action=%-12s event=%-16s",
+                   m->gpio_port, m->pin, m->deck_no, action_str, edge_str);
+         gpio_count++;
+      }
+      else
+      {
+         midi_count++;
+      }
+      m = m->next;
+   }
+
+   LOG_INFO("=== Total: %d GPIO, %d MIDI mappings ===", gpio_count, midi_count);
 }
 
 audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_interface_type type )

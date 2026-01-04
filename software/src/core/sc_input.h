@@ -23,6 +23,7 @@ enum EventType
    BUTTON_HOLDING = 2,
    BUTTON_PRESSED_SHIFTED = 3,
    BUTTON_HOLDING_SHIFTED = 4,
+   BUTTON_RELEASED_SHIFTED = 5,
 };
 
 enum MIDIStatusType
@@ -88,6 +89,7 @@ struct mapping {
    unsigned char   parameter;   // for example the output note
 
    int debounce;
+   bool shifted_at_press;  // Latched shift state when button was pressed
 
    struct mapping *next;
 };

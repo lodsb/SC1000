@@ -37,6 +37,7 @@ typedef struct Controller Controller;
 
 struct sc_settings;
 struct track;
+struct sc1000;
 
 #define NO_PUNCH (HUGE_VAL)
 
@@ -59,10 +60,12 @@ struct deck
    bool shifted;
 
    // Playlist navigation (index-based for O(1) access)
+   // current_file_idx: -1 = loop track (position 0), 0+ = file tracks (position 1+)
    Playlist* playlist;
    size_t current_folder_idx;
-   size_t current_file_idx;
+   int current_file_idx;
    bool files_present;
+   int deck_no;  // 0 = beat, 1 = scratch
 
    int32_t angle_offset; // Offset between encoder angle and track position, reset every time the platter is touched
    int encoder_angle, new_encoder_angle;
@@ -82,14 +85,18 @@ struct deck
    void punch_in(unsigned int label);
    void punch_out();
    void load_folder(char* folder_name);
-   void next_file(struct sc_settings* settings);
-   void prev_file(struct sc_settings* settings);
-   void next_folder(struct sc_settings* settings);
-   void prev_folder(struct sc_settings* settings);
-   void random_file(struct sc_settings* settings);
+   void next_file(struct sc1000* engine, struct sc_settings* settings);
+   void prev_file(struct sc1000* engine, struct sc_settings* settings);
+   void next_folder(struct sc1000* engine, struct sc_settings* settings);
+   void prev_folder(struct sc1000* engine, struct sc_settings* settings);
+   void random_file(struct sc1000* engine, struct sc_settings* settings);
    void record();
    bool recall_loop(struct sc_settings* settings);
    bool has_loop() const;
+
+   // Loop navigation helpers
+   bool is_at_loop() const { return current_file_idx == -1; }
+   void goto_loop(struct sc1000* engine, struct sc_settings* settings);
 #endif
 };
 
@@ -108,11 +115,12 @@ void deck_cue(struct deck* deck, unsigned int label);
 void deck_punch_in(struct deck* d, unsigned int label);
 void deck_punch_out(struct deck* d);
 void deck_load_folder(struct deck* d, char* folder_name);
-void deck_next_file(struct deck* d, struct sc_settings* settings);
-void deck_prev_file(struct deck* d, struct sc_settings* settings);
-void deck_next_folder(struct deck* d, struct sc_settings* settings);
-void deck_prev_folder(struct deck* d, struct sc_settings* settings);
-void deck_random_file(struct deck* d, struct sc_settings* settings);
+void deck_next_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
+void deck_prev_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
+void deck_next_folder(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
+void deck_prev_folder(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
+void deck_random_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
+void deck_goto_loop(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
 void deck_record(struct deck* d);
 bool deck_recall_loop(struct deck* d, struct sc_settings* settings);
 bool deck_has_loop(const struct deck* d);

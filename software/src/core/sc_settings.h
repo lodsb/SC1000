@@ -137,6 +137,10 @@ struct sc_settings
 
    // Loop recording settings
    int loop_max_seconds;        // Maximum loop recording duration (default 60)
+
+   // Root directory for samples, settings, etc.
+   // Default: /media/sda (hardware), can be overridden via --root CLI arg
+   char root_path[256];
 };
 
 #ifdef __cplusplus
@@ -146,6 +150,7 @@ struct sc_settings
 #endif
 
 EXTERNC void sc_settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings );
+EXTERNC void sc_settings_print_gpio_mappings( struct mapping* mappings );
 EXTERNC struct audio_interface* sc_settings_get_audio_interface( struct sc_settings* settings, enum audio_interface_type type );
 EXTERNC void sc_settings_init_default_audio( struct sc_settings* settings );
 EXTERNC int sc_settings_get_output_channel( struct audio_interface* iface, enum output_channel_type logical );

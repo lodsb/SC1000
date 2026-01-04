@@ -91,7 +91,8 @@ struct cv_controller_input {
 
     // Fader
     double fader_volume;       // Smoothed fader position (for crossfader CV)
-    double fader_target;       // Instant fader position (for gates)
+    double fader_target;       // Instant fader position (legacy, not used for gates)
+    double crossfader_position; // Raw crossfader position 0.0-1.0 (for gates)
 };
 
 //

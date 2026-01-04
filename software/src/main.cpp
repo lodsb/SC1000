@@ -49,12 +49,16 @@
 #include "util/log.h"
 #include "main.h"
 
+// Global root path (set from command line, used by sc1000_setup)
+static const char* g_root_path = "/media/sda";
+
 // Command-line option parsing
 static void print_usage(const char* program) {
     fprintf(stderr, "Usage: %s [OPTIONS]\n\n", program);
     fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  --root PATH            Root directory for samples/settings (default: /media/sda)\n");
     fprintf(stderr, "  --log-console          Log to console (default)\n");
-    fprintf(stderr, "  --log-file             Log to /media/sda/sc1000.log\n");
+    fprintf(stderr, "  --log-file             Log to {root}/sc1000.log\n");
     fprintf(stderr, "  --log-file-path PATH   Log to specified file path\n");
     fprintf(stderr, "  --log-level LEVEL      Set log level (debug, info, warn, error)\n");
     fprintf(stderr, "  --show-stats           Enable FPS/DSP stats output\n");
@@ -72,6 +76,7 @@ static sc::log::Level parse_log_level(const char* str) {
 
 static void parse_args(int argc, char* argv[], sc::log::Config* log_config) {
     static struct option long_options[] = {
+        {"root",           required_argument, nullptr, 'r'},
         {"log-console",    no_argument,       nullptr, 'c'},
         {"log-file",       no_argument,       nullptr, 'f'},
         {"log-file-path",  required_argument, nullptr, 'p'},
@@ -82,8 +87,11 @@ static void parse_args(int argc, char* argv[], sc::log::Config* log_config) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "cfp:l:sh", long_options, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:cfp:l:sh", long_options, nullptr)) != -1) {
         switch (opt) {
+            case 'r':
+                g_root_path = optarg;
+                break;
             case 'c':
                 log_config->use_file = false;
                 break;
@@ -149,7 +157,7 @@ int main(int argc, char* argv[])
 
     use_mlock = false;
 
-    sc1000_setup(&g_sc1000_engine, &g_rt);
+    sc1000_setup(&g_sc1000_engine, &g_rt, g_root_path);
     sc1000_load_sample_folders(&g_sc1000_engine);
 
     rc = EXIT_FAILURE; /* until clean exit */

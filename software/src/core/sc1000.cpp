@@ -15,20 +15,34 @@
 #include "sc1000.h"
 #include "sc_settings.h"
 
-void sc1000_setup(struct sc1000* engine, struct rt* rt)
+void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
 {
-    LOG_INFO("SC1000 engine init");
+    LOG_INFO("SC1000 engine init (root: %s)", root_path);
 
     auto* settings = static_cast<struct sc_settings*>(malloc(sizeof(struct sc_settings)));
 
     engine->settings = settings;
     engine->mappings = nullptr;
 
+    // Store root path in settings for use by other components
+    strncpy(settings->root_path, root_path, sizeof(settings->root_path) - 1);
+    settings->root_path[sizeof(settings->root_path) - 1] = '\0';
+
     sc_settings_load_user_configuration(engine->settings, &engine->mappings);
+
+    // Verify root_path wasn't corrupted by settings loading
+    LOG_DEBUG("After settings load, root_path = '%s'", settings->root_path);
+
+    // Print loaded mappings for debugging
+    sc_settings_print_gpio_mappings(engine->mappings);
 
     // Create two decks, both pointed at the same audio device
     deck_init(&engine->scratch_deck, settings);
     deck_init(&engine->beat_deck, settings);
+
+    // Set deck numbers for loop navigation
+    engine->beat_deck.deck_no = 0;
+    engine->scratch_deck.deck_no = 1;
 
     // Tell deck0 to just play without considering inputs
     engine->beat_deck.player.just_play = true;
@@ -41,8 +55,19 @@ void sc1000_setup(struct sc1000* engine, struct rt* rt)
 
 void sc1000_load_sample_folders(struct sc1000* engine)
 {
-    // Check for samples folder
-    if (access("/media/sda/samples", F_OK) == -1) {
+    const char* root = engine->settings->root_path;
+    char samples_path[512];
+    char beats_path[512];
+
+    LOG_DEBUG("sc1000_load_sample_folders called, root_path = '%s'", root);
+
+    snprintf(samples_path, sizeof(samples_path), "%s/samples", root);
+    snprintf(beats_path, sizeof(beats_path), "%s/beats", root);
+
+    LOG_DEBUG("samples_path = '%s', beats_path = '%s'", samples_path, beats_path);
+
+    // Check for samples folder (only do USB mount dance for default /media/sda)
+    if (strcmp(root, "/media/sda") == 0 && access(samples_path, F_OK) == -1) {
         // Not there, so presumably the boot script didn't manage to mount the drive
         // Maybe it hasn't initialized yet, or at least wasn't at boot time
         // We have to do it ourselves
@@ -62,8 +87,11 @@ void sc1000_load_sample_folders(struct sc1000* engine)
         }
     }
 
-    deck_load_folder(&engine->beat_deck, const_cast<char*>("/media/sda/beats/"));
-    deck_load_folder(&engine->scratch_deck, const_cast<char*>("/media/sda/samples/"));
+    LOG_INFO("Loading beats from: %s", beats_path);
+    LOG_INFO("Loading samples from: %s", samples_path);
+
+    deck_load_folder(&engine->beat_deck, beats_path);
+    deck_load_folder(&engine->scratch_deck, samples_path);
 
     if (!engine->scratch_deck.files_present) {
         // Load the default sentence if no sample files found on usb stick
@@ -179,9 +207,13 @@ static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int 
         // Stop recording
         alsa_stop_recording(engine, deck_no);
 
+        // Navigate to loop position (position 0 in track list)
+        deck->current_file_idx = -1;
+
         // Switch player to use loop track (RT-safe: just a bool flag)
         // Audio engine will read from loop buffer instead of player->track
         pl->use_loop = true;  // Always switch to loop after recording
+        LOG_DEBUG("Recording stopped on deck %d, set use_loop=true, current_file_idx=-1", deck_no);
         if (was_first_recording) {
             pl->position = 0;
             pl->target_position = 0;
@@ -190,6 +222,7 @@ static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int 
 
         pl->recording = false;
         pl->playing_beep = BEEP_RECORDINGSTOP;
+        LOG_DEBUG("Recording stopped on deck %d, navigated to loop (position 0)", deck_no);
     }
 }
 

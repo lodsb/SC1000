@@ -249,3 +249,15 @@ void loop_buffer_reset(struct loop_buffer* lb)
 
     printf("loop_buffer: reset/erased\n");
 }
+
+void loop_buffer_set_position(struct loop_buffer* lb, unsigned int position_samples)
+{
+    if (!lb->length_locked || lb->loop_length == 0)
+    {
+        // No loop defined, can't set position
+        return;
+    }
+
+    // Clamp to valid range
+    lb->write_pos = position_samples % lb->loop_length;
+}

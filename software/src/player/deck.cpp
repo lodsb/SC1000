@@ -21,6 +21,8 @@
 #include <cstdlib>
 
 #include "../core/global.h"
+#include "../core/sc1000.h"
+#include "../platform/alsa.h"
 
 #include "../util/log.h"
 #include "../util/status.h"
@@ -83,6 +85,7 @@ int deck::init(struct sc_settings* settings)
 	current_folder_idx = 0;
 	current_file_idx = 0;
 	files_present = false;
+	deck_no = -1;  // Will be set by sc1000 init
 
 	angle_offset = 0;
 	encoder_angle = 0xffff;
@@ -197,59 +200,146 @@ void deck::load_folder(char* folder_name)
 	}
 }
 
-void deck::next_file(struct sc_settings* settings)
+void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (files_present && playlist->has_next_file(current_folder_idx, current_file_idx))
+	LOG_DEBUG("deck %d next_file called, files_present=%d, current_file_idx=%d, use_loop=%d",
+	          deck_no, files_present, current_file_idx, player.use_loop);
+
+	if (!files_present) return;
+
+	if (current_file_idx == -1)
 	{
-		LOG_DEBUG("files present");
+		// At loop, go to first file
+		current_file_idx = 0;
+		player.use_loop = false;
+		sc_file* file = playlist->get_file(current_folder_idx, 0);
+		if (file != nullptr)
+		{
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			LOG_DEBUG("deck %d next_file: loaded file 0", deck_no);
+		}
+		else
+		{
+			LOG_DEBUG("deck %d next_file: no file at folder %zu index 0", deck_no, current_folder_idx);
+		}
+	}
+	else if (playlist->has_next_file(current_folder_idx, static_cast<size_t>(current_file_idx)))
+	{
 		current_file_idx++;
-		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
-		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
-	} else {
-		LOG_DEBUG("file not present");
+		sc_file* file = playlist->get_file(current_folder_idx, static_cast<size_t>(current_file_idx));
+		if (file != nullptr)
+		{
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			LOG_DEBUG("deck %d next_file: loaded file %d", deck_no, current_file_idx);
+		}
 	}
 }
 
-void deck::prev_file(struct sc_settings* settings)
+void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (files_present && playlist->has_prev_file(current_folder_idx, current_file_idx))
+	LOG_DEBUG("deck %d prev_file called, files_present=%d, current_file_idx=%d, use_loop=%d",
+	          deck_no, files_present, current_file_idx, player.use_loop);
+
+	if (!files_present) return;
+
+	if (current_file_idx == -1)
 	{
+		// Already at loop, do nothing
+		LOG_DEBUG("deck %d prev_file: already at loop, staying", deck_no);
+		return;
+	}
+	else if (current_file_idx == 0)
+	{
+		// At first file, go to loop if exists
+		bool has_loop = alsa_has_loop(engine, deck_no);
+		LOG_DEBUG("deck %d prev_file: at file 0, has_loop=%d", deck_no, has_loop);
+		if (has_loop)
+		{
+			goto_loop(engine, settings);
+			LOG_DEBUG("deck %d prev_file: went to loop", deck_no);
+		}
+		// else: no loop, stay at position 0
+	}
+	else
+	{
+		// Normal prev behavior
 		current_file_idx--;
-		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
-		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+		player.use_loop = false;
+		sc_file* file = playlist->get_file(current_folder_idx, static_cast<size_t>(current_file_idx));
+		if (file != nullptr)
+		{
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			LOG_DEBUG("deck %d prev_file: loaded file %d", deck_no, current_file_idx);
+		}
 	}
 }
 
-void deck::next_folder(struct sc_settings* settings)
+void deck::next_folder(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (files_present && playlist->has_next_folder(current_folder_idx))
+	if (!files_present) return;
+
+	// If at loop, stay at loop (folder change doesn't affect it)
+	if (current_file_idx == -1)
+	{
+		if (playlist->has_next_folder(current_folder_idx))
+		{
+			current_folder_idx++;
+			LOG_DEBUG("Deck %d: next_folder to %zu (staying at loop)", deck_no, current_folder_idx);
+		}
+		return;  // Stay at loop
+	}
+
+	// Normal folder navigation
+	if (playlist->has_next_folder(current_folder_idx))
 	{
 		current_folder_idx++;
 		current_file_idx = 0;
-		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
+		sc_file* file = playlist->get_file(current_folder_idx, 0);
 		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+		LOG_DEBUG("Deck %d: next_folder to %zu, file 0", deck_no, current_folder_idx);
 	}
 }
 
-void deck::prev_folder(struct sc_settings* settings)
+void deck::prev_folder(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (files_present && playlist->has_prev_folder(current_folder_idx))
+	if (!files_present) return;
+
+	// If at loop, stay at loop (folder change doesn't affect it)
+	if (current_file_idx == -1)
+	{
+		if (playlist->has_prev_folder(current_folder_idx))
+		{
+			current_folder_idx--;
+			LOG_DEBUG("Deck %d: prev_folder to %zu (staying at loop)", deck_no, current_folder_idx);
+		}
+		return;  // Stay at loop
+	}
+
+	// Normal folder navigation
+	if (playlist->has_prev_folder(current_folder_idx))
 	{
 		current_folder_idx--;
 		current_file_idx = 0;
-		sc_file* file = playlist->get_file(current_folder_idx, current_file_idx);
+		sc_file* file = playlist->get_file(current_folder_idx, 0);
 		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+		LOG_DEBUG("Deck %d: prev_folder to %zu, file 0", deck_no, current_folder_idx);
 	}
 }
 
-void deck::random_file(struct sc_settings* settings)
+void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (files_present) {
+	if (files_present)
+	{
 		unsigned int num_files = static_cast<unsigned int>(playlist->total_files());
 		unsigned int r = static_cast<unsigned int>(rand()) % num_files;
-		LOG_DEBUG("Playing file %d/%d", r, num_files);
+		LOG_DEBUG("Deck %d: random_file %d/%d", deck_no, r, num_files);
 		sc_file* file = playlist->get_file_at_index(r);
-		if (file != nullptr) {
+		if (file != nullptr)
+		{
+			// Random file exits loop mode
+			player.use_loop = false;
+			// We don't update current_file_idx here since random doesn't fit folder navigation
+			// Just load the track
 			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
 		}
 	}
@@ -289,6 +379,27 @@ bool deck::recall_loop(struct sc_settings* settings)
 bool deck::has_loop() const
 {
 	return loop_track != nullptr && loop_track->length > 0;
+}
+
+void deck::goto_loop(struct sc1000* engine, struct sc_settings* settings)
+{
+	current_file_idx = -1;
+	player.use_loop = true;
+	player.position = 0;
+	player.target_position = 0;
+	player.offset = 0;
+
+	// Reset platter angle offset
+	if (settings->platter_enabled)
+	{
+		angle_offset = 0 - encoder_angle;
+	}
+	else
+	{
+		angle_offset = static_cast<int32_t>(player.position * settings->platter_speed) - encoder_angle;
+	}
+
+	LOG_DEBUG("Deck %d: goto_loop", deck_no);
 }
 
 //
@@ -345,29 +456,34 @@ void deck_load_folder(struct deck* d, char* folder_name)
 	d->load_folder(folder_name);
 }
 
-void deck_next_file(struct deck* d, struct sc_settings* settings)
+void deck_next_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings)
 {
-	d->next_file(settings);
+	d->next_file(engine, settings);
 }
 
-void deck_prev_file(struct deck* d, struct sc_settings* settings)
+void deck_prev_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings)
 {
-	d->prev_file(settings);
+	d->prev_file(engine, settings);
 }
 
-void deck_next_folder(struct deck* d, struct sc_settings* settings)
+void deck_next_folder(struct deck* d, struct sc1000* engine, struct sc_settings* settings)
 {
-	d->next_folder(settings);
+	d->next_folder(engine, settings);
 }
 
-void deck_prev_folder(struct deck* d, struct sc_settings* settings)
+void deck_prev_folder(struct deck* d, struct sc1000* engine, struct sc_settings* settings)
 {
-	d->prev_folder(settings);
+	d->prev_folder(engine, settings);
 }
 
-void deck_random_file(struct deck* d, struct sc_settings* settings)
+void deck_random_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings)
 {
-	d->random_file(settings);
+	d->random_file(engine, settings);
+}
+
+void deck_goto_loop(struct deck* d, struct sc1000* engine, struct sc_settings* settings)
+{
+	d->goto_loop(engine, settings);
 }
 
 void deck_record(struct deck* d)

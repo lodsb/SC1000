@@ -206,6 +206,10 @@ void process_io(struct sc1000* sc1000_engine)
         mcp_pins = gpio_mcp23017_read_all(gpio);
     }
 
+    // Capture shifted state ONCE before processing any mappings
+    // This ensures all mappings for the same button see the same pre-press shifted state
+    bool shifted_at_start = shifted;
+
     struct mapping* last_map = sc1000_engine->mappings;
 
     while (last_map != nullptr)
@@ -239,6 +243,12 @@ void process_io(struct sc1000* sc1000_engine)
             {
                 if (pin_value)
                 {
+                    // Debug: log all button presses with their mapping details
+                    if (last_map->action_type == RECORD || last_map->action_type == LOOPERASE)
+                    {
+                        LOG_DEBUG("Button port=%d pin=%d pressed, shifted=%d, edge_type=%d, action=%d",
+                                  last_map->gpio_port, last_map->pin, shifted, last_map->edge_type, last_map->action_type);
+                    }
                     LOG_DEBUG("Button %d pressed", last_map->pin);
                     if (first_time && last_map->deck_no == 1 && (last_map->action_type == VOLUP || last_map->action_type
                         == VOLDOWN))
@@ -252,9 +262,34 @@ void process_io(struct sc1000* sc1000_engine)
                     }
                     else
                     {
+                        // IMPORTANT: Use the shifted state captured at start of process_io()
+                        // This ensures ALL mappings for the same button see the same pre-press state
+                        // (prevents SHIFTON from affecting SHIFTOFF's latch value)
+                        last_map->shifted_at_press = shifted_at_start;
+
+                        // Debug: show when mapping check happens for nav buttons
+                        if (last_map->action_type == NEXTFILE || last_map->action_type == PREVFILE ||
+                            last_map->action_type == RANDOMFILE || last_map->action_type == JOGPIT)
+                        {
+                            LOG_DEBUG("Checking mapping port=%d pin=%d action=%d edge=%d shifted=%d will_fire=%d",
+                                      last_map->gpio_port, last_map->pin, last_map->action_type,
+                                      last_map->edge_type, shifted,
+                                      ((!shifted && last_map->edge_type == BUTTON_PRESSED) ||
+                                       (shifted && last_map->edge_type == BUTTON_PRESSED_SHIFTED)) ? 1 : 0);
+                        }
+
                         if ((!shifted && last_map->edge_type == BUTTON_PRESSED) || (shifted && last_map->edge_type ==
                             BUTTON_PRESSED_SHIFTED))
+                        {
+                            // Show which action fires
+                            if (last_map->action_type == NEXTFILE || last_map->action_type == PREVFILE ||
+                                last_map->action_type == RANDOMFILE || last_map->action_type == JOGPIT)
+                            {
+                                LOG_DEBUG("FIRING action=%d for port=%d pin=%d deck=%d",
+                                          last_map->action_type, last_map->gpio_port, last_map->pin, last_map->deck_no);
+                            }
                             io_event(last_map, NULL, sc1000_engine, settings);
+                        }
 
                         // start the counter
                         last_map->debounce++;
@@ -275,7 +310,9 @@ void process_io(struct sc1000* sc1000_engine)
                 if (!pin_value)
                 {
                     LOG_DEBUG("Button %d released", last_map->pin);
-                    if (last_map->edge_type == BUTTON_RELEASED)
+                    // Use latched shifted state for release detection
+                    if ((!last_map->shifted_at_press && last_map->edge_type == BUTTON_RELEASED) ||
+                        (last_map->shifted_at_press && last_map->edge_type == BUTTON_RELEASED_SHIFTED))
                         io_event(last_map, NULL, sc1000_engine, settings);
                     // start the counter
                     last_map->debounce = -settings->debounce_time;
@@ -287,10 +324,18 @@ void process_io(struct sc1000* sc1000_engine)
             // Button has been held for a while
             else if (last_map->debounce == settings->hold_time)
             {
-                LOG_DEBUG("Button %d-%d held", last_map->gpio_port, last_map->pin);
-                if ((!shifted && last_map->edge_type == BUTTON_HOLDING) || (shifted && last_map->edge_type ==
-                    BUTTON_HOLDING_SHIFTED))
+                // Debug: log all hold events
+                LOG_DEBUG("Button port=%d pin=%d HELD, shifted_at_press=%d, edge_type=%d, action=%d",
+                          last_map->gpio_port, last_map->pin, last_map->shifted_at_press,
+                          last_map->edge_type, last_map->action_type);
+                // Use latched shifted state from when button was first pressed
+                if ((!last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING) ||
+                    (last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING_SHIFTED))
+                {
+                    LOG_DEBUG("Triggering held action for port=%d pin=%d action=%d",
+                              last_map->gpio_port, last_map->pin, last_map->action_type);
                     io_event(last_map, NULL, sc1000_engine, settings);
+                }
                 last_map->debounce++;
             }
 
@@ -302,8 +347,9 @@ void process_io(struct sc1000* sc1000_engine)
                     if (last_map->action_type == VOLUHOLD || last_map->action_type == VOLDHOLD)
                     {
                         // keep running the vol up/down actions if they're held
-                        if ((!shifted && last_map->edge_type == BUTTON_HOLDING) || (shifted && last_map->edge_type ==
-                            BUTTON_HOLDING_SHIFTED))
+                        // Use latched shifted state from when button was first pressed
+                        if ((!last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING) ||
+                            (last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING_SHIFTED))
                             io_event(last_map, NULL, sc1000_engine, settings);
                     }
                 }
@@ -311,7 +357,9 @@ void process_io(struct sc1000* sc1000_engine)
                 else
                 {
                     LOG_DEBUG("Button %d released", last_map->pin);
-                    if (last_map->edge_type == BUTTON_RELEASED)
+                    // Note: After hold time, release events don't fire (button was held too long)
+                    // Only unshifted BUTTON_RELEASED fires here (for legacy compatibility)
+                    if (last_map->edge_type == BUTTON_RELEASED && !last_map->shifted_at_press)
                         io_event(last_map, NULL, sc1000_engine, settings);
                     // start the counter
                     last_map->debounce = -settings->debounce_time;
@@ -392,6 +440,10 @@ void process_pic(struct sc1000* sc1000_engine)
     sc1000_engine->beat_deck.player.fader_target = fadertarget0;
     sc1000_engine->scratch_deck.player.fader_target = fadertarget1;
 
+    // Crossfader position for CV gates (0.0 = beat side, 1.0 = scratch side)
+    // ADCs[0] is inverted: low when scratch side, high when beat side
+    sc1000_engine->crossfader_position = 1.0 - (static_cast<double>(ADCs[0]) / 1024.0);
+
     if (!settings->disable_pic_buttons)
     {
         /*
@@ -458,19 +510,19 @@ void process_pic(struct sc1000* sc1000_engine)
             }
             else if (totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
-                deck_prev_file(&sc1000_engine->scratch_deck, settings);
+                deck_prev_file(&sc1000_engine->scratch_deck, sc1000_engine, settings);
             else if (!totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
-                deck_next_file(&sc1000_engine->scratch_deck, settings);
+                deck_next_file(&sc1000_engine->scratch_deck, sc1000_engine, settings);
             else if (totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
                 pitch_mode = 2;
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
-                deck_prev_file(&sc1000_engine->beat_deck, settings);
+                deck_prev_file(&sc1000_engine->beat_deck, sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
-                deck_next_file(&sc1000_engine->beat_deck, settings);
+                deck_next_file(&sc1000_engine->beat_deck, sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
                 pitch_mode = 1;
@@ -486,19 +538,19 @@ void process_pic(struct sc1000* sc1000_engine)
         // Act on whatever buttons are being held down when the timeout happens
         case BUTTONSTATE_ACTING_HELD:
             if (buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.files_present)
-                deck_prev_folder(&sc1000_engine->scratch_deck, settings);
+                deck_prev_folder(&sc1000_engine->scratch_deck, sc1000_engine, settings);
             else if (!buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.
                 files_present)
-                deck_next_folder(&sc1000_engine->scratch_deck, settings);
+                deck_next_folder(&sc1000_engine->scratch_deck, sc1000_engine, settings);
             else if (buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.
                 files_present)
-                deck_random_file(&sc1000_engine->scratch_deck, settings);
+                deck_random_file(&sc1000_engine->scratch_deck, sc1000_engine, settings);
             else if (!buttons[0] && !buttons[1] && buttons[2] && !buttons[3] && sc1000_engine->beat_deck.files_present)
-                deck_prev_folder(&sc1000_engine->beat_deck, settings);
+                deck_prev_folder(&sc1000_engine->beat_deck, sc1000_engine, settings);
             else if (!buttons[0] && !buttons[1] && !buttons[2] && buttons[3] && sc1000_engine->beat_deck.files_present)
-                deck_next_folder(&sc1000_engine->beat_deck, settings);
+                deck_next_folder(&sc1000_engine->beat_deck, sc1000_engine, settings);
             else if (!buttons[0] && !buttons[1] && buttons[2] && buttons[3] && sc1000_engine->beat_deck.files_present)
-                deck_random_file(&sc1000_engine->beat_deck, settings);
+                deck_random_file(&sc1000_engine->beat_deck, sc1000_engine, settings);
             else if (buttons[0] && buttons[1] && buttons[2] && buttons[3])
             {
                 LOG_DEBUG("All buttons held!");
@@ -774,7 +826,7 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
             LOG_STATS(
                 "FPS: %06u - ADCS: %04u, %04u, %04u, %04u | "
                 "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu) | "
-                "Enc: %04d Cap: %d Buttons: %01u,%01u,%01u,%01u",
+                "Enc: %04d Cap: %d Buttons: %01u,%01u,%01u,%01u\n",
                 frame_count, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
                 dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
                 sc1000_engine->scratch_deck.encoder_angle,

@@ -15,6 +15,72 @@
 #include "sc_settings.h"
 #include "global.h"
 
+// JSON serialization for enums - must be in global namespace to match enum definitions
+NLOHMANN_JSON_SERIALIZE_ENUM( EventType, {
+    {EventType::BUTTON_HOLDING, "button_holding"},
+    {EventType::BUTTON_HOLDING_SHIFTED, "button_holding_shifted"},
+    {EventType::BUTTON_PRESSED, "button_pressed"},
+    {EventType::BUTTON_PRESSED_SHIFTED, "button_pressed_shifted"},
+    {EventType::BUTTON_RELEASED, "button_released"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM( MIDIStatusType, {
+    {MIDIStatusType::MIDI_NOTE_ON, "midi_note_on"},
+    {MIDIStatusType::MIDI_NOTE_OFF, "midi_note_off"},
+    {MIDIStatusType::MIDI_CC, "midi_cc"},
+    {MIDIStatusType::MIDI_PB, "midi_pb"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM( ActionType, {
+   {ActionType::CUE, "cue"},
+   {ActionType::SHIFTON, "shift_on"},
+   {ActionType::SHIFTOFF, "shift_off"},
+   {ActionType::STARTSTOP, "start_stop"},
+   {ActionType::START, "start"},
+   {ActionType::STOP, "stop"},
+   {ActionType::PITCH, "pitch"},
+   {ActionType::NOTE, "note"},
+   {ActionType::GND, "gnd"},
+   {ActionType::VOLUME, "volume"},
+   {ActionType::NEXTFILE, "next_file"},
+   {ActionType::PREVFILE, "prev_file"},
+   {ActionType::RANDOMFILE, "random_file"},
+   {ActionType::NEXTFOLDER, "next_folder"},
+   {ActionType::PREVFOLDER, "prev_folder"},
+   {ActionType::RECORD, "record"},
+   {ActionType::VOLUP, "volume_up"},
+   {ActionType::VOLDOWN, "volume_down"},
+   {ActionType::JOGPIT, "jog_pit"},
+   {ActionType::DELETECUE, "delete_cue"},
+   {ActionType::SC500, "sc500"},
+   {ActionType::VOLUHOLD, "volume_up_hold"},
+   {ActionType::VOLDHOLD, "volume_down_hold"},
+   {ActionType::JOGPSTOP, "jog_pstop"},
+   {ActionType::JOGREVERSE, "jog_reverse"},
+   {ActionType::BEND, "bend"},
+   {ActionType::NOTHING, "nothing"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM( audio_interface_type, {
+   {AUDIO_TYPE_MAIN, "main"},
+   {AUDIO_TYPE_USB, "usb"},
+   {AUDIO_TYPE_CUSTOM, "custom"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM( output_channel_type, {
+   {OUT_NONE, "none"},
+   {OUT_SCRATCH_LEFT, "scratch_left"},
+   {OUT_SCRATCH_RIGHT, "scratch_right"},
+   {OUT_BEAT_LEFT, "beat_left"},
+   {OUT_BEAT_RIGHT, "beat_right"},
+   {OUT_CV1, "cv1"},
+   {OUT_CV2, "cv2"},
+   {OUT_CV3, "cv3"},
+   {OUT_CV4, "cv4"},
+   {OUT_GATE1, "gate1"},
+   {OUT_GATE2, "gate2"},
+})
+
 namespace sc {
 namespace config {
 
@@ -148,51 +214,6 @@ void get_deck_action_parameter(unsigned char& deck_no, ActionType& action, unsig
    }
 }
 
-NLOHMANN_JSON_SERIALIZE_ENUM( EventType, {
-    {EventType::BUTTON_HOLDING, "button_holding"},
-    {EventType::BUTTON_HOLDING_SHIFTED, "button_holding_shifted"},
-    {EventType::BUTTON_PRESSED, "button_pressed"},
-    {EventType::BUTTON_PRESSED_SHIFTED, "button_pressed_shifted"},
-    {EventType::BUTTON_RELEASED, "button_released"},
-})
-
-NLOHMANN_JSON_SERIALIZE_ENUM( MIDIStatusType, {
-    {MIDIStatusType::MIDI_NOTE_ON, "midi_note_on"},
-    {MIDIStatusType::MIDI_NOTE_OFF, "midi_note_off"},
-    {MIDIStatusType::MIDI_CC, "midi_cc"},
-    {MIDIStatusType::MIDI_PB, "midi_pb"},
-})
-
-NLOHMANN_JSON_SERIALIZE_ENUM( ActionType, {
-   {ActionType::CUE, "cue"},
-   {ActionType::SHIFTON, "shift_on"},
-   {ActionType::SHIFTOFF, "shift_off"},
-   {ActionType::STARTSTOP, "start_stop"},
-   {ActionType::START, "start"},
-   {ActionType::STOP, "stop"},
-   {ActionType::PITCH, "pitch"},
-   {ActionType::NOTE, "note"},
-   {ActionType::GND, "gnd"},
-   {ActionType::VOLUME, "volume"},
-   {ActionType::NEXTFILE, "next_file"},
-   {ActionType::PREVFILE, "prev_file"},
-   {ActionType::RANDOMFILE, "random_file"},
-   {ActionType::NEXTFOLDER, "next_folder"},
-   {ActionType::PREVFOLDER, "prev_folder"},
-   {ActionType::RECORD, "record"},
-   {ActionType::VOLUP, "volume_up"},
-   {ActionType::VOLDOWN, "volume_down"},
-   {ActionType::JOGPIT, "jog_pit"},
-   {ActionType::DELETECUE, "delete_cue"},
-   {ActionType::SC500, "sc500"},
-   {ActionType::VOLUHOLD, "volume_up_hold"},
-   {ActionType::VOLDHOLD, "volume_down_hold"},
-   {ActionType::JOGPSTOP, "jog_pstop"},
-   {ActionType::JOGREVERSE, "jog_reverse"},
-   {ActionType::BEND, "bend"},
-   {ActionType::NOTHING, "nothing"},
-})
-
 nlohmann::json settings_to_json(sc_settings* settings)
 {
    nlohmann::json json;
@@ -231,9 +252,9 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->period_size = json.value("period_size", 256u);
    settings->buffer_period_factor = json.value("buffer_period_factor", 4u);
    settings->sample_rate = json.value("sample_rate", 48000);
-   settings->single_vca = json.value("single_vca", '\0');
-   settings->double_cut = json.value("double_cut", '\0');
-   settings->hamster = json.value("hamster", '\0');
+   settings->single_vca = static_cast<char>(json.value("single_vca", 0));
+   settings->double_cut = static_cast<char>(json.value("double_cut", 0));
+   settings->hamster = static_cast<char>(json.value("hamster", 0));
    settings->fader_close_point = json.value("fader_close_point", 2);
    settings->fader_open_point = json.value("fader_open_point", 10);
    settings->update_rate = json.value("update_rate", 2000);
@@ -694,6 +715,118 @@ void load_json_config( sc_settings* settings, mapping** mappings )
             }
          }
       }
+
+      // Load audio devices if present
+      if (json_main.contains("audio_devices") && json_main["audio_devices"].is_array())
+      {
+         settings->num_audio_interfaces = 0;
+         for (const auto& dev : json_main["audio_devices"])
+         {
+            if (settings->num_audio_interfaces >= MAX_AUDIO_INTERFACES)
+            {
+               std::cerr << "Warning: Maximum audio interfaces reached, ignoring additional" << std::endl;
+               break;
+            }
+
+            try {
+               auto& iface = settings->audio_interfaces[settings->num_audio_interfaces];
+
+               // Human-readable name
+               std::string friendly_name = dev.value("name", "Audio Device");
+               strncpy(iface.name, friendly_name.c_str(), sizeof(iface.name) - 1);
+               iface.name[sizeof(iface.name) - 1] = '\0';
+
+               // ALSA device identifier
+               std::string alsa_device = dev.value("device", "hw:0");
+               strncpy(iface.device, alsa_device.c_str(), sizeof(iface.device) - 1);
+               iface.device[sizeof(iface.device) - 1] = '\0';
+
+               // Type
+               iface.type = dev.value("type", AUDIO_TYPE_MAIN);
+
+               // Channels
+               iface.channels = dev.value("channels", 2);
+
+               // Sample rate (inherit from main settings if not specified)
+               iface.sample_rate = dev.value("sample_rate", settings->sample_rate);
+
+               // Period size (inherit from main settings if not specified)
+               iface.period_size = dev.value("period_size", static_cast<int>(settings->period_size));
+
+               // Buffer factor (inherit from main settings if not specified)
+               iface.buffer_period_factor = dev.value("buffer_period_factor",
+                                                       static_cast<int>(settings->buffer_period_factor));
+
+               // Enabled
+               iface.enabled = dev.value("enabled", true);
+
+               // Capabilities
+               iface.supports_cv = dev.value("supports_cv", false);
+               iface.supports_recording = dev.value("supports_recording", false);
+
+               // Initialize output map to none
+               for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++) {
+                  iface.output_map[i] = OUT_NONE;
+               }
+               iface.num_mapped_outputs = 0;
+
+               // Parse output_map if present: { "scratch_left": 0, "cv1": 4, ... }
+               if (dev.contains("output_map") && dev["output_map"].is_object())
+               {
+                  for (auto& [key, val] : dev["output_map"].items())
+                  {
+                     int hw_channel = val.get<int>();
+                     if (hw_channel >= 0 && hw_channel < MAX_OUTPUT_CHANNELS)
+                     {
+                        // Parse the logical channel type from the key
+                        output_channel_type logical = OUT_NONE;
+                        if (key == "scratch_left") logical = OUT_SCRATCH_LEFT;
+                        else if (key == "scratch_right") logical = OUT_SCRATCH_RIGHT;
+                        else if (key == "beat_left") logical = OUT_BEAT_LEFT;
+                        else if (key == "beat_right") logical = OUT_BEAT_RIGHT;
+                        else if (key == "cv1") logical = OUT_CV1;
+                        else if (key == "cv2") logical = OUT_CV2;
+                        else if (key == "cv3") logical = OUT_CV3;
+                        else if (key == "cv4") logical = OUT_CV4;
+                        else if (key == "gate1") logical = OUT_GATE1;
+                        else if (key == "gate2") logical = OUT_GATE2;
+
+                        if (logical != OUT_NONE)
+                        {
+                           iface.output_map[hw_channel] = logical;
+                           iface.num_mapped_outputs++;
+                        }
+                     }
+                  }
+               }
+               else if (iface.type == AUDIO_TYPE_MAIN && iface.channels >= 2)
+               {
+                  // Default mapping for main stereo: channels 0,1 = scratch L/R
+                  iface.output_map[0] = OUT_SCRATCH_LEFT;
+                  iface.output_map[1] = OUT_SCRATCH_RIGHT;
+                  iface.num_mapped_outputs = 2;
+               }
+
+               settings->num_audio_interfaces++;
+
+               std::cout << "Audio device: " << iface.name
+                         << " (" << iface.device << ")"
+                         << " type=" << static_cast<int>(iface.type)
+                         << " ch=" << iface.channels
+                         << " cv=" << iface.supports_cv
+                         << " mapped=" << iface.num_mapped_outputs
+                         << " enabled=" << iface.enabled << std::endl;
+
+            } catch (const nlohmann::json::exception& e) {
+               std::cerr << "Warning: Invalid audio device entry: " << e.what() << std::endl;
+            }
+         }
+      }
+      else
+      {
+         // No audio_devices section - create default main device
+         sc_settings_init_default_audio(settings);
+      }
    }
    catch (const nlohmann::json::parse_error& e)
    {
@@ -713,8 +846,71 @@ void load_json_config( sc_settings* settings, mapping** mappings )
 } // namespace config
 } // namespace sc
 
-// C API - extern "C" function for use by C code
+// C API - extern "C" functions for use by C code
 void sc_settings_load_user_configuration( sc_settings* settings, mapping** mappings )
 {
    sc::config::load_json_config(settings, mappings);
+}
+
+audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_interface_type type )
+{
+   for (int i = 0; i < settings->num_audio_interfaces; i++)
+   {
+      if (settings->audio_interfaces[i].type == type && settings->audio_interfaces[i].enabled)
+      {
+         return &settings->audio_interfaces[i];
+      }
+   }
+   return nullptr;
+}
+
+void sc_settings_init_default_audio( sc_settings* settings )
+{
+   settings->num_audio_interfaces = 1;
+
+   auto& iface = settings->audio_interfaces[0];
+   strncpy(iface.name, "Internal Codec", sizeof(iface.name));
+   strncpy(iface.device, "hw:0", sizeof(iface.device));
+   iface.type = AUDIO_TYPE_MAIN;
+   iface.channels = 2;
+   iface.sample_rate = settings->sample_rate;
+   iface.period_size = static_cast<int>(settings->period_size);
+   iface.buffer_period_factor = static_cast<int>(settings->buffer_period_factor);
+   iface.enabled = true;
+   iface.supports_cv = false;
+   iface.supports_recording = false;
+
+   // Default stereo mapping
+   for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++) {
+      iface.output_map[i] = OUT_NONE;
+   }
+   iface.output_map[0] = OUT_SCRATCH_LEFT;
+   iface.output_map[1] = OUT_SCRATCH_RIGHT;
+   iface.num_mapped_outputs = 2;
+}
+
+int sc_settings_get_output_channel( audio_interface* iface, output_channel_type logical )
+{
+   if (iface == nullptr) return -1;
+
+   for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++)
+   {
+      if (iface->output_map[i] == logical)
+      {
+         return i;
+      }
+   }
+   return -1;  // Not mapped
+}
+
+audio_interface* sc_settings_find_cv_interface( sc_settings* settings )
+{
+   for (int i = 0; i < settings->num_audio_interfaces; i++)
+   {
+      if (settings->audio_interfaces[i].enabled && settings->audio_interfaces[i].supports_cv)
+      {
+         return &settings->audio_interfaces[i];
+      }
+   }
+   return nullptr;
 }

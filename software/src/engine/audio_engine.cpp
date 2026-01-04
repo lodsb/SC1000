@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cmath>
 #include <climits>
+#include <ctime>
 
 #include "audio_engine.h"
 #include "../core/sc_settings.h"
@@ -8,8 +9,34 @@
 #include "../player/track.h"
 #include "../player/deck.h"
 
+// ARM NEON intrinsics for explicit SIMD
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#define USE_NEON 1
+#else
+#define USE_NEON 0
+#endif
+
 namespace sc {
 namespace audio {
+
+// DSP performance tracking
+static struct {
+    double load_percent;
+    double load_peak;
+    double process_time_us;
+    double budget_time_us;
+    unsigned long xruns;
+    // For averaging
+    double load_accumulator;
+    unsigned int load_samples;
+} g_dsp_stats = {};
+
+static inline double get_time_us() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<double>(ts.tv_sec) * 1000000.0 + static_cast<double>(ts.tv_nsec) / 1000.0;
+}
 
 // Time in seconds fader takes to decay
 constexpr double FADER_DECAY_TIME = 0.020;
@@ -19,7 +46,50 @@ constexpr double DECAY_SAMPLES = FADER_DECAY_TIME * 48000;
 // louder when the record is going faster than 1.0.
 constexpr double BASE_VOLUME = 7.0 / 8.0;
 
-// Vector types for SIMD operations
+#if USE_NEON
+// NEON-optimized cubic interpolation for two stereo samples
+// Input: t0-t3 are the 4 sample windows {L1, R1, L2, R2} for each position
+// mu1, mu2 are the fractional positions for player 1 and 2
+// Returns interpolated {L1, R1, L2, R2}
+static inline float32x4_t neon_interpolate_cubic(
+    float32x4_t t0, float32x4_t t1, float32x4_t t2, float32x4_t t3,
+    float mu1, float mu2)
+{
+    // Build mu vector {mu1, mu1, mu2, mu2}
+    float mu_arr[4] = {mu1, mu1, mu2, mu2};
+    float32x4_t mu = vld1q_f32(mu_arr);
+    float32x4_t mu2_vec = vmulq_f32(mu, mu);        // mu^2
+    float32x4_t mu3_vec = vmulq_f32(mu2_vec, mu);   // mu^3
+
+    // Cubic interpolation coefficients:
+    // a0 = t3 - t2 - t0 + t1
+    // a1 = t0 - t1 - a0
+    // a2 = t2 - t0
+    // a3 = t1
+    // result = a0*mu^3 + a1*mu^2 + a2*mu + a3
+
+    float32x4_t a0 = vsubq_f32(vsubq_f32(vaddq_f32(t3, t1), t2), t0);
+    float32x4_t a1 = vsubq_f32(vsubq_f32(t0, t1), a0);
+    float32x4_t a2 = vsubq_f32(t2, t0);
+    float32x4_t a3 = t1;
+
+    // Horner's method: ((a0*mu + a1)*mu + a2)*mu + a3
+    float32x4_t result = vmlaq_f32(a1, a0, mu);      // a0*mu + a1
+    result = vmlaq_f32(a2, result, mu);              // (a0*mu + a1)*mu + a2
+    result = vmlaq_f32(a3, result, mu);              // final result
+
+    return result;
+}
+
+// NEON clamp to int16 range
+static inline float32x4_t neon_clamp_s16(float32x4_t v) {
+    const float32x4_t min_val = vdupq_n_f32(-32768.0f);
+    const float32x4_t max_val = vdupq_n_f32(32767.0f);
+    return vminq_f32(vmaxq_f32(v, min_val), max_val);
+}
+#endif
+
+// Fallback vector types for non-NEON builds
 using v4sf = float __attribute__ ((vector_size (16)));
 using v4si = int   __attribute__ ((vector_size (16)));
 using v2sf = float __attribute__ ((vector_size (8)));
@@ -183,25 +253,10 @@ collect_track_samples_vectorized( track* tr_1, track* tr_2, double sample_1, dou
    t3 = vt3;
 }
 
-// Shuffle helper function for selection
-static inline v4sf select_vector_4(v4sf a, v4sf b, v4si mask) {
-   return __builtin_shuffle(a, b, mask);
-}
-
-static inline v2sf select_vector_2(v2sf a, v2sf b, v2si mask) {
-   return __builtin_shuffle(a, b, mask);
-}
-
-static inline v2sf clamp_vector_2( v2sf v, v2sf min_val, v2sf max_val ) {
-   v2si mask_min = v < min_val;  // Mask: 0xFFFFFFFF where v < min_val
-   v2si mask_max = v > max_val;  // Mask: 0xFFFFFFFF where v > max_val
-
-   // Select max(v, min_val)
-   v = select_vector_2(v, min_val, mask_min);
-
-   // Select min(v, max_val)
-   v = select_vector_2(v, max_val, mask_max);
-
+// Simple scalar clamp - the vector shuffle approach was buggy
+static inline float clamp_scalar(float v, float min_val, float max_val) {
+   if (v < min_val) return min_val;
+   if (v > max_val) return max_val;
    return v;
 }
 
@@ -298,9 +353,6 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
                                         double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
                                         double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2 )
 {
-   static constexpr v2sf max2 = {SHRT_MAX, SHRT_MAX};
-   static constexpr v2sf min2 = {SHRT_MIN, SHRT_MIN};
-
    const float ONE_OVER_SAMPLES = 1.0f / static_cast<float>(samples);
 
    const float volume_gradient_1 = (end_vol_1 - start_vol_1) * ONE_OVER_SAMPLES;
@@ -323,7 +375,70 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
    float vol_1 = start_vol_1;
    float vol_2 = start_vol_2;
 
-   for (int s = 0; s < samples; s++)
+#if USE_NEON
+   // NEON-optimized loop
+   for (unsigned s = 0; s < samples; s++)
+   {
+      double step_1 = dt_rate_1 * pitch_1;
+      double step_2 = dt_rate_2 * pitch_2;
+
+      double subpos_1;
+      double subpos_2;
+
+      // Collect samples for both tracks
+      float f1l1, f2l1, f3l1, f4l1, f1r1, f2r1, f3r1, f4r1;
+      float f1l2, f2l2, f3l2, f4l2, f1r2, f2r2, f3r2, f4r2;
+
+      collect_track_samples(tr_1, sample_1, tr_1_len, subpos_1, f1l1, f2l1, f3l1, f4l1, f1r1, f2r1, f3r1, f4r1);
+      collect_track_samples(tr_2, sample_2, tr_2_len, subpos_2, f1l2, f2l2, f3l2, f4l2, f1r2, f2r2, f3r2, f4r2);
+
+      // Load into NEON registers: {L1, R1, L2, R2}
+      float t0_arr[4] = {f1l1, f1r1, f1l2, f1r2};
+      float t1_arr[4] = {f2l1, f2r1, f2l2, f2r2};
+      float t2_arr[4] = {f3l1, f3r1, f3l2, f3r2};
+      float t3_arr[4] = {f4l1, f4r1, f4l2, f4r2};
+
+      float32x4_t t0 = vld1q_f32(t0_arr);
+      float32x4_t t1 = vld1q_f32(t1_arr);
+      float32x4_t t2 = vld1q_f32(t2_arr);
+      float32x4_t t3 = vld1q_f32(t3_arr);
+
+      // Cubic interpolation
+      float32x4_t interpol = neon_interpolate_cubic(t0, t1, t2, t3,
+                                                     static_cast<float>(subpos_1),
+                                                     static_cast<float>(subpos_2));
+
+      // Apply volume: {L1*vol1, R1*vol1, L2*vol2, R2*vol2}
+      float vol_arr[4] = {vol_1, vol_1, vol_2, vol_2};
+      float32x4_t vol_vec = vld1q_f32(vol_arr);
+      float32x4_t res = vmulq_f32(interpol, vol_vec);
+
+      // Extract and mix: L = L1 + L2, R = R1 + R2
+      float res_arr[4];
+      vst1q_f32(res_arr, res);
+      float sum_l = res_arr[0] + res_arr[2];
+      float sum_r = res_arr[1] + res_arr[3];
+
+      // Clamp using NEON min/max
+      float sum_arr[4] = {sum_l, sum_r, 0, 0};
+      float32x4_t sum_vec = vld1q_f32(sum_arr);
+      sum_vec = neon_clamp_s16(sum_vec);
+      vst1q_f32(sum_arr, sum_vec);
+
+      *pcm++ = static_cast<signed short>(sum_arr[0]);
+      *pcm++ = static_cast<signed short>(sum_arr[1]);
+
+      sample_1 += step_1;
+      vol_1    += volume_gradient_1;
+      pitch_1  += pitch_gradient_1;
+
+      sample_2 += step_2;
+      vol_2    += volume_gradient_2;
+      pitch_2  += pitch_gradient_2;
+   }
+#else
+   // Fallback non-NEON loop (original implementation)
+   for (unsigned s = 0; s < samples; s++)
    {
       double step_1 = dt_rate_1 * pitch_1;
       double step_2 = dt_rate_2 * pitch_2;
@@ -347,12 +462,15 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
          v4sf tvol = {vol_1, vol_1, vol_2, vol_2};
          v4sf res = interpol * tvol;
 
-         v2sf sum = {res[0] + res[2], res[1] + res[3]};
+         // Mix left and right channels from both players, then clamp
+         float sum_l = res[0] + res[2];
+         float sum_r = res[1] + res[3];
 
-         sum = clamp_vector_2(sum, min2, max2);
+         sum_l = clamp_scalar(sum_l, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
+         sum_r = clamp_scalar(sum_r, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
 
-         *pcm++ =(signed short) sum[0];
-         *pcm++ =(signed short) sum[1];
+         *pcm++ = static_cast<signed short>(sum_l);
+         *pcm++ = static_cast<signed short>(sum_r);
       }
 
       sample_1 += step_1;
@@ -363,6 +481,7 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
       vol_2    += volume_gradient_2;
       pitch_2  += pitch_gradient_2;
    }
+#endif
 
    *r1 = (sample_1 / tr_1->rate) - position_1;
    *r2 = (sample_2 / tr_2->rate) - position_2;
@@ -404,11 +523,57 @@ void collect_and_mix_players( struct player *pl1, struct player *pl2,
 } // namespace audio
 } // namespace sc
 
-// C API - extern "C" function for use by C code
+// C API - extern "C" functions
 void audio_engine_process( struct sc1000* engine, signed short* pcm, unsigned long frames )
 {
-   sc::audio::collect_and_mix_players(
+   using namespace sc::audio;
+
+   double start_time = get_time_us();
+
+   collect_and_mix_players(
       &(engine->beat_deck.player),
       &(engine->scratch_deck.player),
       pcm, frames, engine->settings);
+
+   double end_time = get_time_us();
+   double process_time = end_time - start_time;
+
+   // Calculate time budget: frames / sample_rate * 1000000 us
+   // At 48kHz, 256 frames = 5333 us budget
+   constexpr double SAMPLE_RATE = 48000.0;
+   double budget_time = (static_cast<double>(frames) / SAMPLE_RATE) * 1000000.0;
+
+   double load = (process_time / budget_time) * 100.0;
+
+   // Update stats with exponential moving average
+   g_dsp_stats.process_time_us = process_time;
+   g_dsp_stats.budget_time_us = budget_time;
+   g_dsp_stats.load_percent = 0.9 * g_dsp_stats.load_percent + 0.1 * load;
+
+   if (load > g_dsp_stats.load_peak) {
+      g_dsp_stats.load_peak = load;
+   }
+
+   if (load > 100.0) {
+      g_dsp_stats.xruns++;
+   }
+}
+
+void audio_engine_get_stats( struct dsp_stats* stats )
+{
+   using namespace sc::audio;
+
+   stats->load_percent = g_dsp_stats.load_percent;
+   stats->load_peak = g_dsp_stats.load_peak;
+   stats->process_time_us = g_dsp_stats.process_time_us;
+   stats->budget_time_us = g_dsp_stats.budget_time_us;
+   stats->xruns = g_dsp_stats.xruns;
+}
+
+void audio_engine_reset_peak( void )
+{
+   using namespace sc::audio;
+
+   g_dsp_stats.load_peak = 0.0;
+   g_dsp_stats.xruns = 0;
 }

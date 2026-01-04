@@ -1,8 +1,54 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 struct mapping;
+
+// Maximum number of audio interfaces and output channels
+#define MAX_AUDIO_INTERFACES 4
+#define MAX_OUTPUT_CHANNELS 8
+
+// Audio interface types
+enum audio_interface_type {
+   AUDIO_TYPE_MAIN = 0,     // Main stereo output (simple, like sun4i-codec)
+   AUDIO_TYPE_USB = 1,      // USB audio device (multi-channel, CV capable)
+   AUDIO_TYPE_CUSTOM = 2    // Custom/other
+};
+
+// Logical output channel types
+enum output_channel_type {
+   OUT_NONE = 0,            // Unmapped/unused
+   OUT_SCRATCH_LEFT,        // Scratch deck left
+   OUT_SCRATCH_RIGHT,       // Scratch deck right
+   OUT_BEAT_LEFT,           // Beat deck left
+   OUT_BEAT_RIGHT,          // Beat deck right
+   OUT_CV1,                 // CV output 1
+   OUT_CV2,                 // CV output 2
+   OUT_CV3,                 // CV output 3
+   OUT_CV4,                 // CV output 4
+   OUT_GATE1,               // Gate output 1
+   OUT_GATE2,               // Gate output 2
+};
+
+// Audio interface configuration
+struct audio_interface {
+   char name[64];                 // Human-readable name, e.g., "Bitwig Connect"
+   char device[64];               // ALSA device name, e.g., "hw:0", "plughw:1"
+   enum audio_interface_type type;
+   int channels;                  // Number of hardware channels
+   int sample_rate;               // Sample rate (48000 default)
+   int period_size;               // Period size (256 default)
+   int buffer_period_factor;      // Buffer = period * factor (4 default)
+   bool enabled;                  // Whether this interface is active
+   bool supports_cv;              // Whether this device can output CV
+   bool supports_recording;       // Whether this device can record
+
+   // Output channel mapping: output_map[hw_channel] = logical_type
+   // e.g., output_map[4] = OUT_CV1 means hardware channel 4 outputs CV1
+   enum output_channel_type output_map[MAX_OUTPUT_CHANNELS];
+   int num_mapped_outputs;        // How many channels are mapped
+};
 
 struct sc_settings
 {
@@ -77,6 +123,10 @@ struct sc_settings
    bool io_remapped;
 
    const char* importer;
+
+   // Audio interfaces
+   struct audio_interface audio_interfaces[MAX_AUDIO_INTERFACES];
+   int num_audio_interfaces;
 };
 
 #ifdef __cplusplus
@@ -86,6 +136,10 @@ struct sc_settings
 #endif
 
 EXTERNC void sc_settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings );
+EXTERNC struct audio_interface* sc_settings_get_audio_interface( struct sc_settings* settings, enum audio_interface_type type );
+EXTERNC void sc_settings_init_default_audio( struct sc_settings* settings );
+EXTERNC int sc_settings_get_output_channel( struct audio_interface* iface, enum output_channel_type logical );
+EXTERNC struct audio_interface* sc_settings_find_cv_interface( struct sc_settings* settings );
 
 #undef EXTERNC
 

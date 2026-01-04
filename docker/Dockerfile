@@ -6,7 +6,7 @@ FROM ubuntu:18.04
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install buildroot dependencies
+# Install buildroot dependencies and cmake
 RUN apt-get update && apt-get install -y \
     build-essential \
     libncurses5-dev \
@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     python \
     file \
     locales \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up locale (buildroot needs this)

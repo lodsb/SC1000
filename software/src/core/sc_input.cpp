@@ -30,6 +30,7 @@
 #include "sc_input.h"
 #include "sc_control_mapping.h"
 #include "../control/actions.h"
+#include "../engine/audio_engine.h"
 
 using namespace sc::platform;
 
@@ -733,14 +734,26 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
     {
         printf("Couldn't init rotary sensor\n");
     }
+    else
+    {
+        printf("Encoder initialized OK, present=%d\n", hw->encoder.present);
+    }
 
     // Initialize PIC input processor on I2C2
     if (!pic_init(&hw->pic))
     {
         printf("Couldn't init input processor\n");
     }
+    else
+    {
+        printf("PIC initialized OK, present=%d\n", hw->pic.present);
+    }
 
     init_io(sc1000_engine);
+
+    // Print settings for debugging
+    printf("Settings: platter_enabled=%d, platter_speed=%d, jog_reverse=%d\n",
+           settings->platter_enabled, settings->platter_speed, settings->jog_reverse);
 
     // Detect SC500 by seeing if G11 is pulled low
     if (hw->gpio.mmap_present)
@@ -777,10 +790,21 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
 
             //printf("\033[H\033[J"); // Clear Screen
 
+            // Get DSP stats
+            struct dsp_stats dsp;
+            audio_engine_get_stats(&dsp);
+
             printf(
-                "\nFPS: %06u - ADCS: %04u, %04u, %04u, %04u, %04u\nButtons: %01u,%01u,%01u,%01u,%01u\nTP: %f, P : %f\n%f -- %f\n",
-                frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3], sc1000_engine->scratch_deck.encoder_angle,
-                buttons[0], buttons[1], buttons[2], buttons[3], cap_is_touched,
+                "\nFPS: %06u - ADCS: %04u, %04u, %04u, %04u\n"
+                "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu)\n"
+                "Enc: %04d (new: %04d) Cap: %d CapTouch: %d\n"
+                "Buttons: %01u,%01u,%01u,%01u\n"
+                "TP: %f, P: %f\nVol: %f -- %f\n",
+                frameCount, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
+                dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
+                sc1000_engine->scratch_deck.encoder_angle, sc1000_engine->scratch_deck.new_encoder_angle,
+                cap_is_touched, sc1000_engine->scratch_deck.player.cap_touch,
+                buttons[0], buttons[1], buttons[2], buttons[3],
                 sc1000_engine->scratch_deck.player.target_position, sc1000_engine->scratch_deck.player.position,
                 sc1000_engine->beat_deck.player.volume, sc1000_engine->scratch_deck.player.volume);
             //dump_maps();

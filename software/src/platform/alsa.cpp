@@ -42,6 +42,7 @@ struct alsa_pcm
    struct pollfd* pe;
    size_t pe_count; /* number of pollfd entries */
 
+   signed short* buf;  /* audio buffer for RW mode */
    int rate;
    snd_pcm_uframes_t period_size;
 };
@@ -49,7 +50,7 @@ struct alsa_pcm
 struct alsa
 {
    struct alsa_pcm capture, playback;
-   bool playing;
+   bool started;
 };
 
 static void alsa_error( const char* msg, int r )
@@ -71,7 +72,8 @@ static bool chk( const char* s, int r )
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-struct audio_interface
+// Internal ALSA device discovery info (not to be confused with sc_settings audio_interface)
+struct alsa_device_info
 {
    bool is_present;
    int device_id;
@@ -88,7 +90,7 @@ struct audio_interface
    unsigned int buffer_period_factor;
 };
 
-static void print_audio_interface_info(struct audio_interface* iface)
+static void print_alsa_device_info(struct alsa_device_info* iface)
 {
    printf("device_id %i\n", iface->device_id);
    printf("subdevice_id %i\n", iface->subdevice_id);
@@ -101,7 +103,7 @@ static void print_audio_interface_info(struct audio_interface* iface)
    printf("period %i\n", iface->period_size);
 }
 
-static struct audio_interface audio_interfaces[] = {
+static struct alsa_device_info alsa_devices[] = {
         {false, -1, -1, 0, 0, false, false, false, 2, 2},
         {false, -1, -1, 0, 0, false, false, false, 2, 2}
 };
@@ -168,18 +170,18 @@ static void fill_audio_interface_info(struct sc_settings* settings)
 
                printf("Card %i = %s\n", card_id, card_name);
 
-               audio_interfaces[ card_id ].is_present = true;
+               alsa_devices[ card_id ].is_present = true;
                if ( strcmp(card_name, "sun4i-codec") == 0 )
                {
-                  audio_interfaces[ card_id ].is_internal = true;
-                  audio_interfaces[ card_id ].period_size = settings->period_size;
-                  audio_interfaces[ card_id ].buffer_period_factor = settings->buffer_period_factor;
+                  alsa_devices[ card_id ].is_internal = true;
+                  alsa_devices[ card_id ].period_size = settings->period_size;
+                  alsa_devices[ card_id ].buffer_period_factor = settings->buffer_period_factor;
                }
                else
                {
-                  audio_interfaces[ card_id ].is_internal = false;
-                  audio_interfaces[ card_id ].period_size = settings->period_size;
-                  audio_interfaces[ card_id ].buffer_period_factor = settings->buffer_period_factor;
+                  alsa_devices[ card_id ].is_internal = false;
+                  alsa_devices[ card_id ].period_size = settings->period_size;
+                  alsa_devices[ card_id ].buffer_period_factor = settings->buffer_period_factor;
                }
 
                unsigned int playback_count = 0;
@@ -207,26 +209,26 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                      {
                         printf("  - Playback supported at %d Hz\n", TARGET_SAMPLE_RATE);
 
-                        audio_interfaces[ card_id ].supports_48k_samplerate = true;
+                        alsa_devices[ card_id ].supports_48k_samplerate = true;
                      }
                      else
                      {
                         printf("  - Playback does NOT support %d Hz\n", TARGET_SAMPLE_RATE);
 
-                        audio_interfaces[ card_id ].supports_48k_samplerate = false;
+                        alsa_devices[ card_id ].supports_48k_samplerate = false;
                      }
 
                      if ( snd_pcm_hw_params_test_format(pcm, params, TARGET_SAMPLE_FORMAT) == 0 )
                      {
                         printf("    - Playback supports 16-bit signed format\n");
 
-                        audio_interfaces[ card_id ].supports_16bit_pcm = true;
+                        alsa_devices[ card_id ].supports_16bit_pcm = true;
                      }
                      else
                      {
                         printf("    - Playback does NOT support 16-bit signed format\n");
 
-                        audio_interfaces[ card_id ].supports_16bit_pcm = false;
+                        alsa_devices[ card_id ].supports_16bit_pcm = false;
                      }
 
                      unsigned int min, max;
@@ -275,11 +277,11 @@ static void fill_audio_interface_info(struct sc_settings* settings)
                      snd_pcm_close(pcm);
                   }
 
-                  audio_interfaces[ card_id ].input_channels = capture_count;
-                  audio_interfaces[ card_id ].output_channels = playback_count;
+                  alsa_devices[ card_id ].input_channels = capture_count;
+                  alsa_devices[ card_id ].output_channels = playback_count;
 
-                  audio_interfaces[ card_id ].device_id = card_id;
-                  audio_interfaces[ card_id ].subdevice_id = 0; // for now
+                  alsa_devices[ card_id ].device_id = card_id;
+                  alsa_devices[ card_id ].subdevice_id = 0; // for now
 
                   printf("I / O %i %i\n", capture_count, playback_count);
                }
@@ -303,7 +305,7 @@ static void fill_audio_interface_info(struct sc_settings* settings)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
-                     snd_pcm_stream_t stream, struct audio_interface* audio_interface, uint8_t num_channels)
+                     snd_pcm_stream_t stream, struct alsa_device_info* device_info, uint8_t num_channels)
 {
    int err, dir;
 
@@ -362,7 +364,7 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
     * likely to be the primary application running, so assume we want
     * the hardware to be giving us immediate wakeups */
 
-   snd_pcm_uframes_t period_size = ( snd_pcm_uframes_t ) audio_interface->period_size;
+   snd_pcm_uframes_t period_size = ( snd_pcm_uframes_t ) device_info->period_size;
    err = snd_pcm_hw_params_set_period_size_near(alsa->pcm, hw_params, &period_size, &dir);
    if (!chk("snd_pcm_hw_params_set_period_size_near", err))
    {
@@ -379,7 +381,9 @@ static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
    alsa->period_size = period_size;
 
    printf("Period size: %lu frames\n", period_size);
-   auto buffer_size = static_cast<snd_pcm_uframes_t>(period_size * audio_interface->buffer_period_factor);
+
+   alsa->buf = nullptr;  /* Not needed for MMAP mode */
+   auto buffer_size = static_cast<snd_pcm_uframes_t>(period_size * device_info->buffer_period_factor);
 
    switch (stream) {
       case SND_PCM_STREAM_CAPTURE:
@@ -415,6 +419,10 @@ static void pcm_close( struct alsa_pcm* alsa )
    if ( snd_pcm_close(alsa->pcm) < 0 )
    {
       abort();
+   }
+   if (alsa->buf) {
+      free(alsa->buf);
+      alsa->buf = nullptr;
    }
 }
 
@@ -526,95 +534,53 @@ static signed short* buffer(const snd_pcm_channel_area_t *area,
    assert(area->first % 8 == 0);
    assert(area->step == 32);  /* 2 channel 16-bit interleaved */
 
-   return static_cast<signed short*>(area->addr) + area->first / 8 + offset * area->step / 8;
+   /* Calculate byte offset, then cast to short* */
+   unsigned int bitofs = area->first + area->step * offset;
+   return reinterpret_cast<signed short*>(static_cast<char*>(area->addr) + bitofs / 8);
 }
 
 
 /* Collect audio from the player and push it into the device's buffer,
- * for playback */
+ * for playback using MMAP for lowest latency */
 
 static int playback( struct sc1000* engine)
 {
+   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   const snd_pcm_channel_area_t *areas;
+   snd_pcm_uframes_t offset, frames;
+   snd_pcm_sframes_t commitres, avail;
+   int err;
 
-   {
-      int err;
-      auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+   /* Check how many frames are available */
+   avail = snd_pcm_avail_update(alsa->playback.pcm);
+   if (avail < 0)
+      return static_cast<int>(avail);
 
-      snd_pcm_sframes_t avail = snd_pcm_avail_update(alsa->playback.pcm);
-      if (avail < 0)
-      {
-         fprintf(stderr,"XRUN detected! Trying to recover... (%ld)\n", avail);
+   if (static_cast<snd_pcm_uframes_t>(avail) < alsa->playback.period_size)
+      return 0;  /* Not enough space yet */
 
-         err = snd_pcm_recover(alsa->playback.pcm, static_cast<int>(avail), 1); // 1 enables silent recovery
-         if (err < 0)
-         {
-            fprintf(stderr,"Error: Unable to recover from XRUN: %s\n", snd_strerror(err));
-            return err;
-         }
+   frames = alsa->playback.period_size;
 
-         // try it again ...
-         avail = snd_pcm_avail_update(alsa->playback.pcm);
-         if (avail < 0)
-         {
-            fprintf(stderr,"Error: Failed again to recover from XRUN: %s == %ld\n", snd_strerror(static_cast<int>(avail)), avail);
-            return static_cast<int>(avail);
-         }
-      }
-      else if(avail == 0)
-      {
-         fprintf(stderr, "Error available frames == %ld\n", avail);
-      }
+   err = snd_pcm_mmap_begin(alsa->playback.pcm, &areas, &offset, &frames);
+   if (err < 0)
+      return err;
 
+   /* Get pointer to the MMAP buffer */
+   signed short* pcm = buffer(&areas[0], offset);
 
-      auto period_size = static_cast<snd_pcm_sframes_t>(alsa->playback.period_size);
+   /* Generate audio directly into MMAP buffer */
+   sc1000_audio_engine_process(engine, pcm, frames);
 
-      if(avail >= period_size)
-      {
-         const snd_pcm_channel_area_t *areas;
-         snd_pcm_uframes_t offset, frames;
-         snd_pcm_sframes_t commit_res;
+   commitres = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
+   if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != frames)
+      return commitres < 0 ? static_cast<int>(commitres) : -EPIPE;
 
-         snd_pcm_sframes_t size = period_size;
-
-         while(size > 0)
-         {
-            frames = static_cast<snd_pcm_uframes_t>(size);
-
-            err = snd_pcm_mmap_begin(alsa->playback.pcm, &areas, &offset, &frames);
-            if ( err < 0 )
-            {
-               fprintf(stderr, "Error snd_pcm_mmap_begin %d\n", err);
-               return err;
-            }
-
-            signed short* pcm = buffer(&areas[ 0 ], offset);
-
-            if ( frames == 0 )
-            {
-               printf("proc players %p %lu\n", static_cast<void*>(pcm), frames);
-            }
-
-            // the main thing...
-            sc1000_audio_engine_process(engine, pcm, frames);
-
-            commit_res = snd_pcm_mmap_commit(alsa->playback.pcm, offset, frames);
-            if ( commit_res < 0 || static_cast<snd_pcm_uframes_t>(commit_res) != frames)
-            {
-               fprintf(stderr, "Error writing pcm data %d\n", err);
-               return commit_res >= 0 ? -EPIPE : static_cast<int>(commit_res);
-            }
-
-            size -= static_cast<snd_pcm_sframes_t>(frames);
-         }
-      }
-
-      if (!alsa->playing) {
-         err = snd_pcm_start(alsa->playback.pcm);
-         if ( err < 0)
-            return err;
-
-         alsa->playing = true;
-      }
+   /* Start PCM on first write */
+   if (!alsa->started) {
+      err = snd_pcm_start(alsa->playback.pcm);
+      if (err < 0)
+         return err;
+      alsa->started = true;
    }
 
    return 0;
@@ -654,7 +620,7 @@ static int handle( struct sc1000* engine )
                return -1;
             }
 
-            alsa->playing = false;
+            alsa->started = false;
 
             /* The device starts when data is written. POLLOUT
              * events are generated in prepared state. */
@@ -697,7 +663,7 @@ static struct sc1000_ops alsa_ops = {
         .clear = clear
 };
 
-static int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interface* audio_interface)
+static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_info* device_info)
 {
    struct alsa* alsa;
 
@@ -708,15 +674,15 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interfa
       return -1;
    }
 
-   print_audio_interface_info(audio_interface);
+   print_alsa_device_info(device_info);
 
-   bool needs_plughw = !audio_interface->supports_16bit_pcm || !audio_interface->supports_48k_samplerate;
+   bool needs_plughw = !device_info->supports_16bit_pcm || !device_info->supports_48k_samplerate;
 
    char device_name[64];
-   create_alsa_device_id_string(device_name, sizeof(device_name), audio_interface->device_id, audio_interface->subdevice_id, needs_plughw);
-   printf("Opening device %s with period size %i...", device_name, audio_interface->period_size);
+   create_alsa_device_id_string(device_name, sizeof(device_name), device_info->device_id, device_info->subdevice_id, needs_plughw);
+   printf("Opening device %s with period size %i...", device_name, device_info->period_size);
 
-   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, audio_interface, DEVICE_CHANNELS) < 0 )
+   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, device_info, DEVICE_CHANNELS) < 0 )
    {
       fputs("Failed to open device for playback.\n", stderr);
       printf(" failed!\n");
@@ -724,6 +690,7 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct audio_interfa
    }
 
    sc1000_engine->audio_hw_context = alsa;
+   alsa->started = false;
 
    // make sure this is really initialized
    alsa_ops.clear       = clear;
@@ -752,18 +719,18 @@ int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
 
    fill_audio_interface_info(settings);
 
-   if(!audio_interfaces[0].is_internal && audio_interfaces[0].is_present)
+   if(!alsa_devices[0].is_internal && alsa_devices[0].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &audio_interfaces[0]);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[0]);
    }
-   else if(!audio_interfaces[1].is_internal && audio_interfaces[1].is_present)
+   else if(!alsa_devices[1].is_internal && alsa_devices[1].is_present)
    {
-      return setup_alsa_device(sc1000_engine, &audio_interfaces[1]);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[1]);
    }
    else
    {
       // must be internal
-      return setup_alsa_device(sc1000_engine, &audio_interfaces[0]);
+      return setup_alsa_device(sc1000_engine, &alsa_devices[0]);
    }
 }
 

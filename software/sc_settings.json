@@ -848,6 +848,7 @@
     "fader_open_point": 5,
     "hamster": 0,
     "hold_time": 100,
+    "initial_volume": 0.125,
     "jog_reverse": 0,
     "midi_init_delay": 5,
     "period_size": 256,
@@ -860,5 +861,35 @@
     "update_rate": 2000,
     "volume_amount": 0.03,
     "volume_amount_held": 0.001
-  }
+  },
+  "audio_devices": [
+    {
+      "name": "Internal Codec",
+      "device": "hw:0",
+      "type": "main",
+      "channels": 2,
+      "enabled": true,
+      "supports_cv": false,
+      "supports_recording": false
+    },
+    {
+      "name": "USB Audio (example)",
+      "device": "hw:1",
+      "type": "usb",
+      "channels": 8,
+      "enabled": false,
+      "supports_cv": true,
+      "supports_recording": true,
+      "output_map": {
+        "scratch_left": 0,
+        "scratch_right": 1,
+        "beat_left": 2,
+        "beat_right": 3,
+        "cv1": 4,
+        "cv2": 5,
+        "cv3": 6,
+        "cv4": 7
+      }
+    }
+  ]
 }

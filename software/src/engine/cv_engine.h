@@ -14,9 +14,8 @@
 // These could be moved to sc_settings.json if runtime configurability is needed
 //
 
-// Gate thresholds (fader position where gates trigger)
-#define CV_GATE_OPEN_THRESHOLD   0.01f   // Gate opens above this
-#define CV_GATE_CLOSE_THRESHOLD  0.99f   // For inverted gate (beat side)
+// Gate threshold (fader position where gates trigger)
+#define CV_GATE_OPEN_THRESHOLD   0.01f   // Gate opens above this (same for both sides)
 
 // Direction detection threshold (avoid triggering on noise near zero)
 #define CV_DIRECTION_THRESHOLD   0.05f

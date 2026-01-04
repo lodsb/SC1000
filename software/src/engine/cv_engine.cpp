@@ -161,11 +161,12 @@ void cv_engine_update(struct cv_state* state, const struct cv_controller_input* 
     state->fader.position = clamp(static_cast<float>(input->fader_volume), 0.0f, 1.0f);
 
     // Gates use instant fader_target for quick response
+    // Both gates use same threshold, Gate B uses inverted fader position
     // Gate A: scratch is open when fader lets scratch through
     state->fader.scratch_open = (input->fader_target > CV_GATE_OPEN_THRESHOLD) ? 1 : 0;
 
-    // Gate B: beat is open when scratch is cut (inverted crossfader logic)
-    state->fader.beat_open = (input->fader_target < CV_GATE_CLOSE_THRESHOLD) ? 1 : 0;
+    // Gate B: beat is open when fader is on beat side (inverted)
+    state->fader.beat_open = ((1.0 - input->fader_target) > CV_GATE_OPEN_THRESHOLD) ? 1 : 0;
 }
 
 void cv_engine_process(

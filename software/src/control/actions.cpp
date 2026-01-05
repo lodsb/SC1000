@@ -45,7 +45,9 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
     }
     else if (map->action_type == NOTE) {
         // Equal temperament: 2^(1/12) per semitone, 0x3C = middle C
-        deck->player.note_pitch = pow(pow(2.0, 1.0 / 12.0), map->parameter - 0x3C);
+        double new_pitch = pow(pow(2.0, 1.0 / 12.0), map->parameter - 0x3C);
+        deck->player.note_pitch = new_pitch;
+        LOG_INFO("NOTE action: note=%d -> pitch=%.3f", map->parameter, new_pitch);
     }
     else if (map->action_type == STARTSTOP) {
         deck->player.stopped = !deck->player.stopped;

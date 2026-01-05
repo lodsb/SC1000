@@ -383,7 +383,12 @@ void process_io(struct sc1000* sc1000_engine)
         EventType edge = midi_shifted ? BUTTON_PRESSED_SHIFTED : BUTTON_PRESSED;
         struct mapping* midi_map = find_midi_mapping(sc1000_engine->mappings, midi_bytes, edge);
         if (midi_map != nullptr) {
+            LOG_DEBUG("MIDI mapping found: action=%d deck=%d param=%d",
+                     midi_map->action_type, midi_map->deck_no, midi_map->parameter);
             io_event(midi_map, midi_bytes, sc1000_engine, settings);
+        } else {
+            LOG_DEBUG("MIDI no mapping for [%02X %02X %02X] shifted=%d",
+                     midi_bytes[0], midi_bytes[1], midi_bytes[2], midi_shifted);
         }
     }
 }

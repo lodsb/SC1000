@@ -77,7 +77,15 @@ int MidiController::add_deck(struct deck* k)
 
 void MidiController::process_midi_message()
 {
-    LOG_DEBUG("MIDI: %x %x %x", midi_buffer_[0], midi_buffer_[1], midi_buffer_[2]);
+    unsigned char status = midi_buffer_[0] & 0xF0;
+    unsigned char channel = midi_buffer_[0] & 0x0F;
+    const char* type = "???";
+    if (status == 0x90) type = "NoteOn";
+    else if (status == 0x80) type = "NoteOff";
+    else if (status == 0xB0) type = "CC";
+    else if (status == 0xE0) type = "PitchBend";
+
+    LOG_INFO("MIDI: %s ch=%d data=[%d, %d]", type, channel, midi_buffer_[1], midi_buffer_[2]);
 
     // Push MIDI event to lock-free queue for processing by input thread
     if (!midi_event_queue_push(midi_buffer_, shifted)) {
@@ -111,6 +119,7 @@ int MidiController::realtime()
             // Note Off, Note On, Control Change, Pitch Bend
             if (command == 0x80 || command == 0x90 || command == 0xB0 || command == 0xE0) {
                 parsing_ = true;
+                parsed_bytes_ = 0;  // Reset counter for new message
                 midi_buffer_[0] = buf;
             } else {
                 parsing_ = false;

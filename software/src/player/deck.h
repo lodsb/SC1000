@@ -100,32 +100,4 @@ struct deck
 #endif
 };
 
-// Legacy C-compatible API (wrappers around member functions)
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int deck_init(struct deck* deck, struct sc_settings* settings);
-void deck_clear(struct deck* deck);
-bool deck_is_locked(const struct deck* deck);
-void deck_recue(struct deck* deck);
-void deck_clone(struct deck* deck, const struct deck* from);
-void deck_unset_cue(struct deck* deck, unsigned int label);
-void deck_cue(struct deck* deck, unsigned int label);
-void deck_punch_in(struct deck* d, unsigned int label);
-void deck_punch_out(struct deck* d);
-void deck_load_folder(struct deck* d, char* folder_name);
-void deck_next_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
-void deck_prev_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
-void deck_next_folder(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
-void deck_prev_folder(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
-void deck_random_file(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
-void deck_goto_loop(struct deck* d, struct sc1000* engine, struct sc_settings* settings);
-void deck_record(struct deck* d);
-bool deck_recall_loop(struct deck* d, struct sc_settings* settings);
-bool deck_has_loop(const struct deck* d);
-
-#ifdef __cplusplus
-}
-#endif
 

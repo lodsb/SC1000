@@ -275,10 +275,10 @@ inline void setup_player_for_block( struct player* pl, unsigned long samples, co
    }
 
    // deal with case where we've released the platter
-   if ( pl->just_play == 1 || // platter is always released on beat deck
+   if ( pl->just_play || // platter is always released on beat deck
         (
-                pl->cap_touch == 0 &&
-                pl->cap_touch_old == 0 // don't do it on the first iteration so we pick up backspins
+                !pl->cap_touch &&
+                !pl->cap_touch_old // don't do it on the first iteration so we pick up backspins
         )
            )
    {

@@ -33,7 +33,7 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
             cuenum = map->midi_command_bytes[1];
         else
             cuenum = (map->gpio_port * 32) + map->pin + 128;
-        deck_cue(deck, cuenum);
+        deck->cue(cuenum);
     }
     else if (map->action_type == DELETECUE) {
         unsigned int cuenum = 0;
@@ -41,7 +41,7 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
             cuenum = map->midi_command_bytes[1];
         else
             cuenum = (map->gpio_port * 32) + map->pin + 128;
-        deck_unset_cue(deck, cuenum);
+        deck->unset_cue(cuenum);
     }
     else if (map->action_type == NOTE) {
         // Equal temperament: 2^(1/12) per semitone, 0x3C = middle C
@@ -59,19 +59,19 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
         shifted = false;
     }
     else if (map->action_type == NEXTFILE) {
-        deck_next_file(deck, engine, settings);
+        deck->next_file(engine, settings);
     }
     else if (map->action_type == PREVFILE) {
-        deck_prev_file(deck, engine, settings);
+        deck->prev_file(engine, settings);
     }
     else if (map->action_type == RANDOMFILE) {
-        deck_random_file(deck, engine, settings);
+        deck->random_file(engine, settings);
     }
     else if (map->action_type == NEXTFOLDER) {
-        deck_next_folder(deck, engine, settings);
+        deck->next_folder(engine, settings);
     }
     else if (map->action_type == PREVFOLDER) {
-        deck_prev_folder(deck, engine, settings);
+        deck->prev_folder(engine, settings);
     }
     else if (map->action_type == VOLUME) {
         deck->player.set_volume = static_cast<double>(midi_buffer[2]) / 128.0;
@@ -147,7 +147,7 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
 
     if (map->action_type == RECORD) {
         // Toggle loop recording for the target deck
-        deck_record(target);
+        target->record();
     }
     else if (map->action_type == LOOPERASE) {
         // Long-hold RECORD erases the loop and navigates to first file
@@ -177,7 +177,7 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
     else if (map->action_type == LOOPRECALL) {
         // Recall the last recorded loop
         LOG_DEBUG("Loop recall triggered on deck %d", map->deck_no);
-        if (deck_recall_loop(target, settings)) {
+        if (target->recall_loop(settings)) {
             target->player.playing_beep = BEEP_RECORDINGSTART;  // Success feedback
         } else {
             target->player.playing_beep = BEEP_RECORDINGERROR;  // No loop to recall

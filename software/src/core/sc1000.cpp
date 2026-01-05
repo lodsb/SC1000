@@ -37,8 +37,8 @@ void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
     sc_settings_print_gpio_mappings(engine->mappings);
 
     // Create two decks, both pointed at the same audio device
-    deck_init(&engine->scratch_deck, settings);
-    deck_init(&engine->beat_deck, settings);
+    engine->scratch_deck.init(settings);
+    engine->beat_deck.init(settings);
 
     // Set deck numbers for loop navigation
     engine->beat_deck.deck_no = 0;
@@ -90,12 +90,12 @@ void sc1000_load_sample_folders(struct sc1000* engine)
     LOG_INFO("Loading beats from: %s", beats_path);
     LOG_INFO("Loading samples from: %s", samples_path);
 
-    deck_load_folder(&engine->beat_deck, beats_path);
-    deck_load_folder(&engine->scratch_deck, samples_path);
+    engine->beat_deck.load_folder(beats_path);
+    engine->scratch_deck.load_folder(samples_path);
 
     if (!engine->scratch_deck.files_present) {
         // Load the default sentence if no sample files found on usb stick
-        player_set_track(&engine->scratch_deck.player,
+        engine->scratch_deck.player.set_track(
                          track_acquire_by_import(engine->scratch_deck.importer, "/var/scratchsentence.mp3"));
         LOG_DEBUG("Set default track ok");
         cues_load_from_file(&engine->scratch_deck.cues, engine->scratch_deck.player.track->path);
@@ -108,8 +108,8 @@ void sc1000_load_sample_folders(struct sc1000* engine)
 
 void sc1000_clear(struct sc1000* engine)
 {
-    deck_clear(&engine->beat_deck);
-    deck_clear(&engine->scratch_deck);
+    engine->beat_deck.clear();
+    engine->scratch_deck.clear();
 
     if (engine->ops->clear != nullptr) {
         engine->ops->clear(engine);

@@ -253,7 +253,7 @@ void process_io(struct sc1000* sc1000_engine)
                     if (first_time && last_map->deck_no == 1 && (last_map->action_type == VOLUP || last_map->action_type
                         == VOLDOWN))
                     {
-                        player_set_track(&sc1000_engine->beat_deck.player,
+                        sc1000_engine->beat_deck.player.set_track(
                                          track_acquire_by_import(sc1000_engine->beat_deck.importer,
                                                                  "/var/os-version.mp3"));
                         cues_load_from_file(&sc1000_engine->beat_deck.cues,
@@ -472,7 +472,7 @@ void process_pic(struct sc1000* sc1000_engine)
 
                 if (first_time)
                 {
-                    player_set_track(&sc1000_engine->beat_deck.player,
+                    sc1000_engine->beat_deck.player.set_track(
                                      track_acquire_by_import(sc1000_engine->beat_deck.importer, "/var/os-version.mp3"));
                     cues_load_from_file(&sc1000_engine->beat_deck.cues, sc1000_engine->beat_deck.player.track->path);
                     buttonState = BUTTONSTATE_WAITING;
@@ -510,24 +510,24 @@ void process_pic(struct sc1000* sc1000_engine)
             }
             else if (totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
-                deck_prev_file(&sc1000_engine->scratch_deck, sc1000_engine, settings);
+                sc1000_engine->scratch_deck.prev_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
-                deck_next_file(&sc1000_engine->scratch_deck, sc1000_engine, settings);
+                sc1000_engine->scratch_deck.next_file(sc1000_engine, settings);
             else if (totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
                 pitch_mode = 2;
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
-                deck_prev_file(&sc1000_engine->beat_deck, sc1000_engine, settings);
+                sc1000_engine->beat_deck.prev_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
-                deck_next_file(&sc1000_engine->beat_deck, sc1000_engine, settings);
+                sc1000_engine->beat_deck.next_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
                 pitch_mode = 1;
             else if (totalbuttons[0] && totalbuttons[1] && totalbuttons[2] && totalbuttons[3])
-                shift_latched = 1;
+                shift_latched = true;
             else
                 LOG_WARN("Unknown action");
 
@@ -538,24 +538,24 @@ void process_pic(struct sc1000* sc1000_engine)
         // Act on whatever buttons are being held down when the timeout happens
         case BUTTONSTATE_ACTING_HELD:
             if (buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.files_present)
-                deck_prev_folder(&sc1000_engine->scratch_deck, sc1000_engine, settings);
+                sc1000_engine->scratch_deck.prev_folder(sc1000_engine, settings);
             else if (!buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.
                 files_present)
-                deck_next_folder(&sc1000_engine->scratch_deck, sc1000_engine, settings);
+                sc1000_engine->scratch_deck.next_folder(sc1000_engine, settings);
             else if (buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.
                 files_present)
-                deck_random_file(&sc1000_engine->scratch_deck, sc1000_engine, settings);
+                sc1000_engine->scratch_deck.random_file(sc1000_engine, settings);
             else if (!buttons[0] && !buttons[1] && buttons[2] && !buttons[3] && sc1000_engine->beat_deck.files_present)
-                deck_prev_folder(&sc1000_engine->beat_deck, sc1000_engine, settings);
+                sc1000_engine->beat_deck.prev_folder(sc1000_engine, settings);
             else if (!buttons[0] && !buttons[1] && !buttons[2] && buttons[3] && sc1000_engine->beat_deck.files_present)
-                deck_next_folder(&sc1000_engine->beat_deck, sc1000_engine, settings);
+                sc1000_engine->beat_deck.next_folder(sc1000_engine, settings);
             else if (!buttons[0] && !buttons[1] && buttons[2] && buttons[3] && sc1000_engine->beat_deck.files_present)
-                deck_random_file(&sc1000_engine->beat_deck, sc1000_engine, settings);
+                sc1000_engine->beat_deck.random_file(sc1000_engine, settings);
             else if (buttons[0] && buttons[1] && buttons[2] && buttons[3])
             {
                 LOG_DEBUG("All buttons held!");
                 if (sc1000_engine->scratch_deck.files_present)
-                    deck_record(&sc1000_engine->beat_deck);
+                    sc1000_engine->beat_deck.record();
             }
             else
                 LOG_WARN("Unknown action");
@@ -659,7 +659,7 @@ void process_rot(struct sc1000* sc1000_engine)
 
                 sc1000_engine->scratch_deck.angle_offset = -sc1000_engine->scratch_deck.encoder_angle;
                 old_pitch_mode = 1;
-                sc1000_engine->scratch_deck.player.cap_touch = 0;
+                sc1000_engine->scratch_deck.player.cap_touch = false;
             }
 
             // Handle wrapping at zero
@@ -704,17 +704,17 @@ void process_rot(struct sc1000* sc1000_engine)
                         LOG_DEBUG("touch!");
                         sc1000_engine->scratch_deck.player.target_position = sc1000_engine->scratch_deck.player.
                             position;
-                        sc1000_engine->scratch_deck.player.cap_touch = 1;
+                        sc1000_engine->scratch_deck.player.cap_touch = true;
                     }
                 }
                 else
                 {
-                    sc1000_engine->scratch_deck.player.cap_touch = 0;
+                    sc1000_engine->scratch_deck.player.cap_touch = false;
                 }
             }
 
             else
-                sc1000_engine->scratch_deck.player.cap_touch = 1;
+                sc1000_engine->scratch_deck.player.cap_touch = true;
 
             /*if (deck[1].player.capTouch) we always want to dump the target position so we can do lasers etc
             {*/
@@ -871,17 +871,17 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
             {
                 picskip = 0;
                 process_pic(sc1000_engine);
-                first_time = 0;
+                first_time = false;
             }
 
             process_rot(sc1000_engine);
         }
         else // couldn't find input processor, just play the tracks
         {
-            sc1000_engine->scratch_deck.player.cap_touch = 1;
+            sc1000_engine->scratch_deck.player.cap_touch = true;
             sc1000_engine->beat_deck.player.fader_target = 0.0;
             sc1000_engine->scratch_deck.player.fader_target = 0.5;
-            sc1000_engine->beat_deck.player.just_play = 1;
+            sc1000_engine->beat_deck.player.just_play = true;
             sc1000_engine->beat_deck.player.pitch = 1;
 
             clock_gettime(CLOCK_MONOTONIC, &ts);

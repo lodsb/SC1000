@@ -91,21 +91,3 @@ struct player
 #endif
 };
 
-// Legacy C-compatible API (wrappers around member functions)
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void player_init(struct player* pl, unsigned int sample_rate,
-                 struct track* track, struct sc_settings* settings);
-void player_clear(struct player* pl);
-void player_set_track(struct player* pl, struct track* track);
-void player_clone(struct player* pl, const struct player* from);
-double player_get_elapsed(struct player* pl);
-bool player_is_active(const struct player* pl);
-void player_seek_to(struct player* pl, double seconds);
-void player_recue(struct player* pl);
-
-#ifdef __cplusplus
-}
-#endif

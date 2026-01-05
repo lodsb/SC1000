@@ -173,6 +173,10 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
 
    // Loop recording settings
    settings->loop_max_seconds = json.value("loop_max_seconds", 60);
+
+   // Crossfader ADC calibration
+   settings->crossfader_adc_min = json.value("crossfader_adc_min", 0);
+   settings->crossfader_adc_max = json.value("crossfader_adc_max", 1023);
 }
 
 void add_midi_mapping_from_json(mapping** mappings, const nlohmann::json& json)

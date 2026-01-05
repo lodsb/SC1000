@@ -442,7 +442,20 @@ void process_pic(struct sc1000* sc1000_engine)
 
     // Crossfader position for CV gates (0.0 = beat side, 1.0 = scratch side)
     // ADCs[0] is inverted: low when scratch side, high when beat side
-    sc1000_engine->crossfader_position = 1.0 - (static_cast<double>(ADCs[0]) / 1024.0);
+    // Use calibration settings to normalize ADC range
+    int adc_range = settings->crossfader_adc_max - settings->crossfader_adc_min;
+    if (adc_range > 0)
+    {
+        int clamped_adc = ADCs[0];
+        if (clamped_adc < settings->crossfader_adc_min) clamped_adc = settings->crossfader_adc_min;
+        if (clamped_adc > settings->crossfader_adc_max) clamped_adc = settings->crossfader_adc_max;
+        double normalized = static_cast<double>(clamped_adc - settings->crossfader_adc_min) / adc_range;
+        sc1000_engine->crossfader_position = 1.0 - normalized;
+    }
+    else
+    {
+        sc1000_engine->crossfader_position = 0.5;  // Fallback if bad config
+    }
 
     if (!settings->disable_pic_buttons)
     {
@@ -824,10 +837,11 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
             audio_engine_get_stats(&dsp);
 
             LOG_STATS(
-                "FPS: %06u - ADCS: %04u, %04u, %04u, %04u | "
+                "FPS: %06u - ADCS: %04u, %04u, %04u, %04u | XF: %.2f | "
                 "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu) | "
                 "Enc: %04d Cap: %d Buttons: %01u,%01u,%01u,%01u\n",
                 frame_count, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
+                sc1000_engine->crossfader_position,
                 dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
                 sc1000_engine->scratch_deck.encoder_angle,
                 sc1000_engine->scratch_deck.player.cap_touch,

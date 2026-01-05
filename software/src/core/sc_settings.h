@@ -138,6 +138,10 @@ struct sc_settings
    // Loop recording settings
    int loop_max_seconds;        // Maximum loop recording duration (default 60)
 
+   // Crossfader ADC calibration (for CV gates)
+   int crossfader_adc_min;      // ADC value at beat side extreme (default 0)
+   int crossfader_adc_max;      // ADC value at scratch side extreme (default 1023)
+
    // Root directory for samples, settings, etc.
    // Default: /media/sda (hardware), can be overridden via --root CLI arg
    char root_path[256];

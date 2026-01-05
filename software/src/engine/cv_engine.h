@@ -10,7 +10,8 @@
 //
 
 // Gate threshold (fader position where gates trigger)
-#define CV_GATE_OPEN_THRESHOLD   0.01f   // Gate opens above this (same for both sides)
+// Increased from 0.01 to 0.05 to avoid chatter from ADC noise
+#define CV_GATE_OPEN_THRESHOLD   0.05f   // Gate opens above this (same for both sides)
 
 // Direction detection threshold (avoid triggering on noise near zero)
 #define CV_DIRECTION_THRESHOLD   0.05f

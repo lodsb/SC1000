@@ -3,7 +3,6 @@
 #pragma once
 
 #include "../core/sc_input.h"
-#include <vector>
 
 struct deck;
 struct sc1000;
@@ -11,6 +10,8 @@ struct sc_settings;
 
 namespace sc {
 namespace control {
+
+class InputState;  // Forward declaration
 
 // Action state - encapsulates globals for shift key and pitch mode
 // These are inherently global (represent hardware input state)
@@ -32,19 +33,6 @@ void perform_action_for_deck(deck* d, mapping* map,
 // Dispatch an input event to the appropriate deck
 void dispatch_event(mapping* map, unsigned char midi_buffer[3],
                     sc1000* engine, sc_settings* settings);
-
-// Find a mapping for a MIDI event
-// Returns pointer to mapping in vector, or nullptr if not found
-mapping* find_midi_mapping(std::vector<mapping>& maps,
-                           unsigned char buf[3],
-                           EventType edge);
-
-// Find a mapping for a GPIO event
-// Returns pointer to mapping in vector, or nullptr if not found
-mapping* find_io_mapping(std::vector<mapping>& mappings,
-                         unsigned char port,
-                         unsigned char pin,
-                         EventType edge);
 
 } // namespace control
 } // namespace sc

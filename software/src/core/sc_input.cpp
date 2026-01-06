@@ -30,6 +30,8 @@
 #include "sc_input.h"
 #include "sc_control_mapping.h"
 #include "../control/actions.h"
+#include "../control/mapping_registry.h"
+#include "../input/midi_command.h"
 #include "../util/log.h"
 #include "../engine/audio_engine.h"
 
@@ -38,8 +40,6 @@ using namespace sc::platform;
 // Use control module functions and state
 using sc::control::shifted;
 using sc::control::pitch_mode;
-using sc::control::find_io_mapping;
-using sc::control::find_midi_mapping;
 using sc::control::dispatch_event;
 
 namespace sc {
@@ -147,7 +147,7 @@ void init_io(struct sc1000* sc1000_engine)
     {
         for (int i = 0; i < 16; i++)
         {
-            map = find_io_mapping(sc1000_engine->mappings, 0, i, EventType::BUTTON_PRESSED);
+            map = sc1000_engine->mappings.find_gpio(0, static_cast<uint8_t>(i), EventType::BUTTON_PRESSED);
 
             // If pin is marked as ground, set as output
             if (map != nullptr && map->action_type == GND)
@@ -176,7 +176,7 @@ void init_io(struct sc1000* sc1000_engine)
         {
             for (int i = 0; i < 28; i++)
             {
-                map = find_io_mapping(sc1000_engine->mappings, j, i, EventType::BUTTON_PRESSED);
+                map = sc1000_engine->mappings.find_gpio(static_cast<uint8_t>(j), static_cast<uint8_t>(i), EventType::BUTTON_PRESSED);
 
                 if (map != nullptr)
                 {
@@ -211,7 +211,7 @@ void process_io(struct sc1000* sc1000_engine)
     // This ensures all mappings for the same button see the same pre-press shifted state
     bool shifted_at_start = shifted;
 
-    for (auto& m : sc1000_engine->mappings)
+    for (auto& m : sc1000_engine->mappings.all())
     {
         // Only digital pins
         if (m.type == IO && (!(m.gpio_port == 0 && !gpio->mcp23017_present)))
@@ -378,7 +378,12 @@ void process_io(struct sc1000* sc1000_engine)
     int midi_shifted;
     while (midi_event_queue_pop(midi_bytes, &midi_shifted)) {
         EventType edge = midi_shifted ? BUTTON_PRESSED_SHIFTED : BUTTON_PRESSED;
-        mapping* midi_map = find_midi_mapping(sc1000_engine->mappings, midi_bytes, edge);
+
+        // Create MidiCommand from bytes and use registry lookup
+        MidiCommand cmd = MidiCommand::from_bytes(midi_bytes);
+        cmd.normalize();  // Note-on with velocity 0 becomes note-off
+
+        mapping* midi_map = sc1000_engine->mappings.find_midi(cmd, edge);
         if (midi_map != nullptr) {
             LOG_DEBUG("MIDI mapping found: action=%d deck=%d param=%d",
                      midi_map->action_type, midi_map->deck_no, midi_map->parameter);

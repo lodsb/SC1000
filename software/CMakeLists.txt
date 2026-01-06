@@ -22,6 +22,7 @@ set(CORE_SOURCES
 
 set(CONTROL_SOURCES
         src/control/actions.cpp
+        src/control/mapping_registry.cpp
 )
 
 set(ENGINE_SOURCES

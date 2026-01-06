@@ -2,8 +2,9 @@
 
 #include "../player/deck.h"
 #include "../platform/crossfader.h"
+#include "../control/mapping_registry.h"
+#include "../control/input_state.h"
 #include "sc_input.h"
-#include <vector>
 #include <memory>
 
 struct sc_settings;
@@ -39,7 +40,12 @@ struct sc1000
     struct deck beat_deck;
 
     std::unique_ptr<sc_settings> settings;
-    std::vector<mapping> mappings;
+
+    // Input mappings (GPIO and MIDI) with indexed lookup
+    sc::control::MappingRegistry mappings;
+
+    // Global input state (shift key, pitch mode)
+    sc::control::InputState input_state;
 
     // Crossfader input (handles ADC conversion and calibration)
     Crossfader crossfader;

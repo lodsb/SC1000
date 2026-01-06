@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+namespace sc { namespace control { class MappingRegistry; } }
+
 // Maximum output channels per interface
 #define MAX_OUTPUT_CHANNELS 16
 
@@ -147,8 +149,8 @@ struct sc_settings
 #include "sc_input.h"
 
 // Settings loading and utility functions
-void sc_settings_load_user_configuration(sc_settings* settings, std::vector<mapping>& mappings);
-void sc_settings_print_gpio_mappings(const std::vector<mapping>& mappings);
+void sc_settings_load_user_configuration(sc_settings* settings, sc::control::MappingRegistry& mappings);
+void sc_settings_print_gpio_mappings(const sc::control::MappingRegistry& mappings);
 audio_interface* sc_settings_get_audio_interface(sc_settings* settings, audio_interface_type type);
 void sc_settings_init_default_audio(sc_settings* settings);
 int sc_settings_get_output_channel(audio_interface* iface, output_channel_type logical);

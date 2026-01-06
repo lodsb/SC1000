@@ -13,6 +13,7 @@
 #include "sc_control_mapping.h"
 #include "sc_settings.h"
 #include "global.h"
+#include "../control/mapping_registry.h"
 #include "../util/log.h"
 
 // JSON serialization for enums - must be in global namespace to match enum definitions
@@ -89,7 +90,7 @@ namespace config {
 // Default importer path
 constexpr const char* DEFAULT_IMPORTER_PATH = "/root/xwax-import";
 
-void add_mapping(std::vector<mapping>& maps, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter)
+void add_mapping(sc::control::MappingRegistry& registry, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter)
 {
    mapping new_map{};
 
@@ -114,7 +115,7 @@ void add_mapping(std::vector<mapping>& maps, IOType type, unsigned char deck_no,
 
    new_map.deck_no = deck_no;
 
-   maps.push_back(new_map);
+   registry.add(new_map);
 }
 
 void settings_from_json(sc_settings* settings, const nlohmann::json& json)
@@ -157,7 +158,7 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->crossfader_adc_max = json.value("crossfader_adc_max", 1023);
 }
 
-void add_midi_mapping_from_json(std::vector<mapping>& mappings, const nlohmann::json& json)
+void add_midi_mapping_from_json(sc::control::MappingRegistry& mappings, const nlohmann::json& json)
 {
    const MIDIStatusType midi_status = json["type"].template get<MIDIStatusType>();
    const EventType event = json["shifted"].template get<bool>() ? EventType::BUTTON_PRESSED_SHIFTED : EventType::BUTTON_PRESSED;
@@ -200,7 +201,7 @@ void add_midi_mapping_from_json(std::vector<mapping>& mappings, const nlohmann::
    }
 }
 
-void add_gpio_mapping_from_json(std::vector<mapping>& mappings, const nlohmann::json& json)
+void add_gpio_mapping_from_json(sc::control::MappingRegistry& mappings, const nlohmann::json& json)
 {
    const EventType event = json["event"].template get<EventType>();
    const unsigned char port = json["port"].template get<unsigned char>();
@@ -215,7 +216,7 @@ void add_gpio_mapping_from_json(std::vector<mapping>& mappings, const nlohmann::
 
 // Note: Legacy sc_settings_old_format() function removed - now using JSON config only
 
-void load_json_config(sc_settings* settings, std::vector<mapping>& mappings)
+void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappings)
 {
    std::ifstream f;
 
@@ -450,12 +451,12 @@ void load_json_config(sc_settings* settings, std::vector<mapping>& mappings)
 } // namespace sc
 
 // C++ API for loading configuration
-void sc_settings_load_user_configuration(sc_settings* settings, std::vector<mapping>& mappings)
+void sc_settings_load_user_configuration(sc_settings* settings, sc::control::MappingRegistry& mappings)
 {
    sc::config::load_json_config(settings, mappings);
 }
 
-void sc_settings_print_gpio_mappings(const std::vector<mapping>& mappings)
+void sc_settings_print_gpio_mappings(const sc::control::MappingRegistry& mappings)
 {
    LOG_INFO("=== GPIO Mappings Loaded ===");
 
@@ -475,7 +476,7 @@ void sc_settings_print_gpio_mappings(const std::vector<mapping>& mappings)
    int gpio_count = 0;
    int midi_count = 0;
 
-   for (const auto& m : mappings)
+   for (const auto& m : mappings.all())
    {
       if (m.type == IOType::IO)
       {
@@ -496,7 +497,7 @@ void sc_settings_print_gpio_mappings(const std::vector<mapping>& mappings)
    // Log pitch bend mappings specifically for debugging
    LOG_INFO("=== Pitch Bend Mappings ===");
    int pb_count = 0;
-   for (const auto& m : mappings)
+   for (const auto& m : mappings.all())
    {
       if (m.type == IOType::MIDI && ((m.midi_command_bytes[0] & 0xF0) == 0xE0))
       {

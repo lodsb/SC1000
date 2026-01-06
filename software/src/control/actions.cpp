@@ -80,18 +80,44 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
     }
     else if (map->action_type == PITCH) {
         if (map->type == MIDI) {
-            double pitch = 0.0;
+            double pitch = 1.0;
+            // Check if parameter specifies semitone range (0 = use global pitch_range percentage)
+            int semitone_range = map->parameter;
+
             // Pitch bend message: use 14-bit accuracy
             if ((midi_buffer[0] & 0xF0) == 0xE0) {
                 unsigned int pval = (static_cast<unsigned int>(midi_buffer[2]) << 7) |
                                     static_cast<unsigned int>(midi_buffer[1]);
-                pitch = ((static_cast<double>(pval) - 8192.0) *
-                        (static_cast<double>(settings->pitch_range) / 819200.0)) + 1.0;
+                // Normalized position: -1.0 to +1.0
+                double normalized = (static_cast<double>(pval) - 8192.0) / 8192.0;
+
+                if (semitone_range > 0) {
+                    // Semitone mode: pitch = 2^(semitones/12)
+                    double semitones = normalized * static_cast<double>(semitone_range);
+                    pitch = std::pow(2.0, semitones / 12.0);
+                    LOG_DEBUG("PITCH action: 14-bit pval=%u norm=%.3f semi=%.1f pitch=%.4f deck=%d",
+                             pval, normalized, semitones, pitch, map->deck_no);
+                } else {
+                    // Legacy percentage mode
+                    pitch = (normalized * (static_cast<double>(settings->pitch_range) / 100.0)) + 1.0;
+                    LOG_DEBUG("PITCH action: 14-bit pval=%u pitch=%.4f range=%d%% deck=%d",
+                             pval, pitch, settings->pitch_range, map->deck_no);
+                }
             }
-            // Otherwise 7-bit
+            // Otherwise 7-bit CC
             else {
-                pitch = ((static_cast<double>(midi_buffer[2]) - 64.0) *
-                        (static_cast<double>(settings->pitch_range) / 6400.0)) + 1.0;
+                double normalized = (static_cast<double>(midi_buffer[2]) - 64.0) / 64.0;
+
+                if (semitone_range > 0) {
+                    double semitones = normalized * static_cast<double>(semitone_range);
+                    pitch = std::pow(2.0, semitones / 12.0);
+                    LOG_DEBUG("PITCH action: 7-bit val=%d semi=%.1f pitch=%.4f deck=%d",
+                             midi_buffer[2], semitones, pitch, map->deck_no);
+                } else {
+                    pitch = (normalized * (static_cast<double>(settings->pitch_range) / 100.0)) + 1.0;
+                    LOG_DEBUG("PITCH action: 7-bit val=%d pitch=%.4f range=%d%% deck=%d",
+                             midi_buffer[2], pitch, settings->pitch_range, map->deck_no);
+                }
             }
             deck->player.fader_pitch = pitch;
         }
@@ -199,12 +225,23 @@ struct mapping* find_midi_mapping(struct mapping* maps,
         buf[0] = 0x80 | (buf[0] & 0x0F);
     }
 
+    // Debug: log pitch bend searches
+    bool is_pitch_bend = ((buf[0] & 0xF0) == 0xE0);
+    if (is_pitch_bend) {
+        LOG_DEBUG("PB search: buf=[%02X %02X %02X] edge=%d",
+                 buf[0], buf[1], buf[2], edge);
+    }
+
     struct mapping* m = maps;
     while (m != nullptr) {
         if (m->type == MIDI && m->edge_type == edge) {
             // Pitch bend messages match on first byte only
             if (((m->midi_command_bytes[0] & 0xF0) == 0xE0) &&
                 m->midi_command_bytes[0] == buf[0]) {
+                if (is_pitch_bend) {
+                    LOG_DEBUG("PB match: map cmd=[%02X] deck=%d action=%d",
+                             m->midi_command_bytes[0], m->deck_no, m->action_type);
+                }
                 return m;
             }
             // Everything else matches on first two bytes
@@ -215,6 +252,12 @@ struct mapping* find_midi_mapping(struct mapping* maps,
         }
         m = m->next;
     }
+
+    // Debug: log pitch bend with no match found
+    if (is_pitch_bend) {
+        LOG_DEBUG("PB no match for buf[0]=%02X", buf[0]);
+    }
+
     return nullptr;
 }
 

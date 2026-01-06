@@ -143,3 +143,24 @@ if(NATIVE)
         message(STATUS "Building desktop test application")
     endif()
 endif()
+
+# Resampler quality test (header-only, no dependencies)
+option(BUILD_RESAMPLER_TEST "Build resampler quality test" OFF)
+
+if(BUILD_RESAMPLER_TEST)
+    add_executable(resampler-test
+            tools/resampler_test.cpp
+    )
+
+    target_compile_options(resampler-test PRIVATE
+            -Wall
+            -Wextra
+            -O2
+    )
+
+    target_include_directories(resampler-test PRIVATE
+            src
+    )
+
+    message(STATUS "Building resampler quality test")
+endif()

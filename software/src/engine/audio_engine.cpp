@@ -13,6 +13,10 @@
 #include "../player/track.h"
 #include "../player/deck.h"
 
+// Interpolation headers (optimized versions with direct track access)
+#include "../dsp/sinc_interpolate_opt.h"
+#include "../dsp/cubic_interpolate_opt.h"
+
 // ARM NEON intrinsics for explicit SIMD
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -23,6 +27,9 @@
 
 namespace sc {
 namespace audio {
+
+// Global interpolation mode (default to sinc for better quality)
+static interpolation_mode_t g_interpolation_mode = INTERP_SINC;
 
 // DSP performance tracking
 static struct {
@@ -51,7 +58,7 @@ constexpr double DECAY_SAMPLES = FADER_DECAY_TIME * 48000;
 constexpr double BASE_VOLUME = 7.0 / 8.0;
 
 #if USE_NEON
-// NEON-optimized cubic interpolation for two stereo samples
+// NEON-optimized Catmull-Rom spline interpolation for two stereo samples
 // Input: t0-t3 are the 4 sample windows {L1, R1, L2, R2} for each position
 // mu1, mu2 are the fractional positions for player 1 and 2
 // Returns interpolated {L1, R1, L2, R2}
@@ -65,22 +72,37 @@ static inline float32x4_t neon_interpolate_cubic(
     float32x4_t mu2_vec = vmulq_f32(mu, mu);        // mu^2
     float32x4_t mu3_vec = vmulq_f32(mu2_vec, mu);   // mu^3
 
-    // Cubic interpolation coefficients:
-    // a0 = t3 - t2 - t0 + t1
-    // a1 = t0 - t1 - a0
-    // a2 = t2 - t0
+    // Catmull-Rom spline coefficients (smoother than simple cubic):
+    // a0 = 0.5 * (-t0 + 3*t1 - 3*t2 + t3)
+    // a1 = 0.5 * (2*t0 - 5*t1 + 4*t2 - t3)
+    // a2 = 0.5 * (-t0 + t2)
     // a3 = t1
     // result = a0*mu^3 + a1*mu^2 + a2*mu + a3
 
-    float32x4_t a0 = vsubq_f32(vsubq_f32(vaddq_f32(t3, t1), t2), t0);
-    float32x4_t a1 = vsubq_f32(vsubq_f32(t0, t1), a0);
-    float32x4_t a2 = vsubq_f32(t2, t0);
+    float32x4_t half = vdupq_n_f32(0.5f);
+    float32x4_t two = vdupq_n_f32(2.0f);
+    float32x4_t three = vdupq_n_f32(3.0f);
+    float32x4_t four = vdupq_n_f32(4.0f);
+    float32x4_t five = vdupq_n_f32(5.0f);
+
+    // a0 = 0.5 * (-t0 + 3*t1 - 3*t2 + t3)
+    float32x4_t a0 = vmulq_f32(half,
+        vaddq_f32(vsubq_f32(vsubq_f32(vmulq_f32(three, t1), vmulq_f32(three, t2)), t0), t3));
+
+    // a1 = 0.5 * (2*t0 - 5*t1 + 4*t2 - t3)
+    float32x4_t a1 = vmulq_f32(half,
+        vsubq_f32(vaddq_f32(vsubq_f32(vmulq_f32(two, t0), vmulq_f32(five, t1)), vmulq_f32(four, t2)), t3));
+
+    // a2 = 0.5 * (-t0 + t2)
+    float32x4_t a2 = vmulq_f32(half, vsubq_f32(t2, t0));
+
+    // a3 = t1
     float32x4_t a3 = t1;
 
-    // Horner's method: ((a0*mu + a1)*mu + a2)*mu + a3
-    float32x4_t result = vmlaq_f32(a1, a0, mu);      // a0*mu + a1
-    result = vmlaq_f32(a2, result, mu);              // (a0*mu + a1)*mu + a2
-    result = vmlaq_f32(a3, result, mu);              // final result
+    // result = a0*mu^3 + a1*mu^2 + a2*mu + a3
+    float32x4_t result = vmlaq_f32(a3, a2, mu);           // a2*mu + a3
+    result = vmlaq_f32(result, a1, mu2_vec);              // a1*mu^2 + (a2*mu + a3)
+    result = vmlaq_f32(result, a0, mu3_vec);              // a0*mu^3 + ...
 
     return result;
 }
@@ -106,20 +128,32 @@ static bool nearly_equal( double val1, double val2, double tolerance )
 
 inline static v4sf interpolate_two_stereo_samples( v4sf t0, v4sf t1, v4sf t2, v4sf t3, float tsp1, float tsp2 )
 {
-
    //
-   // the cubic interpolation of the sample at position 2 + mu
+   // Catmull-Rom spline interpolation (smoother than simple cubic polynomial)
+   // Interpolates between t1 and t2 using t0 and t3 for tangent estimation
    //
 
    v4sf mu = {tsp1, tsp1, tsp2, tsp2};
-   v4sf mu2= mu*mu;
+   v4sf mu2 = mu * mu;
+   v4sf mu3 = mu2 * mu;
+   v4sf half = {0.5f, 0.5f, 0.5f, 0.5f};
+   v4sf two = {2.0f, 2.0f, 2.0f, 2.0f};
+   v4sf three = {3.0f, 3.0f, 3.0f, 3.0f};
+   v4sf four = {4.0f, 4.0f, 4.0f, 4.0f};
+   v4sf five = {5.0f, 5.0f, 5.0f, 5.0f};
 
-   v4sf a0 = t3 - t2 - t0 + t1;
-   v4sf a1 = t0 - t1 - a0;
-   v4sf a2 = t2 - t0;
+   // Catmull-Rom coefficients:
+   // a0 = 0.5 * (-t0 + 3*t1 - 3*t2 + t3)
+   // a1 = 0.5 * (2*t0 - 5*t1 + 4*t2 - t3)
+   // a2 = 0.5 * (-t0 + t2)
+   // a3 = t1
+   v4sf a0 = half * (-t0 + three * t1 - three * t2 + t3);
+   v4sf a1 = half * (two * t0 - five * t1 + four * t2 - t3);
+   v4sf a2 = half * (-t0 + t2);
    v4sf a3 = t1;
 
-   v4sf interpol = (mu * mu2 * a0) + (mu2 * a1) + (mu * a2) + a3;
+   // result = a0*mu^3 + a1*mu^2 + a2*mu + a3
+   v4sf interpol = mu3 * a0 + mu2 * a1 + mu * a2 + a3;
    return interpol;
 }
 
@@ -238,6 +272,40 @@ collect_track_samples_vectorized( track* tr_1, track* tr_2, double sample_1, dou
    t3 = vt3;
 }
 
+// Collect samples for sinc interpolation (16 samples per channel)
+// Returns fractional position and fills sample arrays
+inline static void
+collect_track_samples_sinc(track* tr, double sample_pos, double tr_len,
+                           double& subpos, float* samples_l, float* samples_r)
+{
+   constexpr int NUM_TAPS = sc::dsp::SINC_NUM_TAPS;
+   constexpr int HALF_TAPS = NUM_TAPS / 2;
+
+   int sa = static_cast<int>(sample_pos);
+   if (sample_pos < 0.0) sa--;
+
+   subpos = sample_pos - sa;
+   sa -= HALF_TAPS;  // Center the window
+
+   for (int i = 0; i < NUM_TAPS; i++) {
+      int idx = sa + i;
+
+      // Wrap to track boundary
+      if (tr_len != 0) {
+         idx = idx % static_cast<int>(tr_len);
+      }
+
+      if (idx < 0 || idx >= static_cast<int>(tr_len)) {
+         samples_l[i] = 0.0f;
+         samples_r[i] = 0.0f;
+      } else {
+         signed short* ts = tr->get_sample(idx);
+         samples_l[i] = static_cast<float>(ts[0]);
+         samples_r[i] = static_cast<float>(ts[1]);
+      }
+   }
+}
+
 // Simple scalar clamp - the vector shuffle approach was buggy
 static inline float clamp_scalar(float v, float min_val, float max_val) {
    if (v < min_val) return min_val;
@@ -334,6 +402,10 @@ inline void setup_player_for_block( struct player* pl, unsigned long samples, co
    }
 }
 
+// Cubic interpolation version of process_add_players
+// Uses optimized 4-tap cubic with:
+// - Direct track memory access (avoids per-sample get_sample calls)
+// - NEON SIMD for interpolation
 static inline void process_add_players( signed short *pcm, unsigned samples,
                                         double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
                                         double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2 )
@@ -345,14 +417,14 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
    const float volume_gradient_2 = (end_vol_2 - start_vol_2) * ONE_OVER_SAMPLES;
    const float pitch_gradient_2  = (end_pitch_2 - pitch_2)   * ONE_OVER_SAMPLES;
 
-   const double tr_1_len = tr_1->length;
-   const double tr_2_len = tr_2->length;
+   const int tr_1_len = static_cast<int>(tr_1->length);
+   const int tr_2_len = static_cast<int>(tr_2->length);
 
    const double tr_1_rate = tr_1->rate;
    const double tr_2_rate = tr_2->rate;
 
-   const double dt_rate_1 = sample_dt_1*tr_1_rate;
-   const double dt_rate_2 = sample_dt_2*tr_2_rate;
+   const double dt_rate_1 = sample_dt_1 * tr_1_rate;
+   const double dt_rate_2 = sample_dt_2 * tr_2_rate;
 
    double sample_1 = position_1 * tr_1->rate;
    double sample_2 = position_2 * tr_2->rate;
@@ -360,58 +432,26 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
    float vol_1 = start_vol_1;
    float vol_2 = start_vol_2;
 
-#if USE_NEON
-   // NEON-optimized loop
    for (unsigned s = 0; s < samples; s++)
    {
       double step_1 = dt_rate_1 * pitch_1;
       double step_2 = dt_rate_2 * pitch_2;
 
-      double subpos_1;
-      double subpos_2;
+      // Optimized cubic interpolation with direct track access
+      auto result = sc::dsp::cubic_interpolate_dual_deck_opt(
+         tr_1, sample_1, tr_1_len,
+         tr_2, sample_2, tr_2_len);
 
-      // Collect samples for both tracks
-      float f1l1, f2l1, f3l1, f4l1, f1r1, f2r1, f3r1, f4r1;
-      float f1l2, f2l2, f3l2, f4l2, f1r2, f2r2, f3r2, f4r2;
+      // Apply volume and mix
+      float sum_l = result.l1 * vol_1 + result.l2 * vol_2;
+      float sum_r = result.r1 * vol_1 + result.r2 * vol_2;
 
-      collect_track_samples(tr_1, sample_1, tr_1_len, subpos_1, f1l1, f2l1, f3l1, f4l1, f1r1, f2r1, f3r1, f4r1);
-      collect_track_samples(tr_2, sample_2, tr_2_len, subpos_2, f1l2, f2l2, f3l2, f4l2, f1r2, f2r2, f3r2, f4r2);
+      // Clamp to int16 range
+      sum_l = clamp_scalar(sum_l, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
+      sum_r = clamp_scalar(sum_r, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
 
-      // Load into NEON registers: {L1, R1, L2, R2}
-      float t0_arr[4] = {f1l1, f1r1, f1l2, f1r2};
-      float t1_arr[4] = {f2l1, f2r1, f2l2, f2r2};
-      float t2_arr[4] = {f3l1, f3r1, f3l2, f3r2};
-      float t3_arr[4] = {f4l1, f4r1, f4l2, f4r2};
-
-      float32x4_t t0 = vld1q_f32(t0_arr);
-      float32x4_t t1 = vld1q_f32(t1_arr);
-      float32x4_t t2 = vld1q_f32(t2_arr);
-      float32x4_t t3 = vld1q_f32(t3_arr);
-
-      // Cubic interpolation
-      float32x4_t interpol = neon_interpolate_cubic(t0, t1, t2, t3,
-                                                     static_cast<float>(subpos_1),
-                                                     static_cast<float>(subpos_2));
-
-      // Apply volume: {L1*vol1, R1*vol1, L2*vol2, R2*vol2}
-      float vol_arr[4] = {vol_1, vol_1, vol_2, vol_2};
-      float32x4_t vol_vec = vld1q_f32(vol_arr);
-      float32x4_t res = vmulq_f32(interpol, vol_vec);
-
-      // Extract and mix: L = L1 + L2, R = R1 + R2
-      float res_arr[4];
-      vst1q_f32(res_arr, res);
-      float sum_l = res_arr[0] + res_arr[2];
-      float sum_r = res_arr[1] + res_arr[3];
-
-      // Clamp using NEON min/max
-      float sum_arr[4] = {sum_l, sum_r, 0, 0};
-      float32x4_t sum_vec = vld1q_f32(sum_arr);
-      sum_vec = neon_clamp_s16(sum_vec);
-      vst1q_f32(sum_arr, sum_vec);
-
-      *pcm++ = static_cast<signed short>(sum_arr[0]);
-      *pcm++ = static_cast<signed short>(sum_arr[1]);
+      *pcm++ = static_cast<signed short>(sum_l);
+      *pcm++ = static_cast<signed short>(sum_r);
 
       sample_1 += step_1;
       vol_1    += volume_gradient_1;
@@ -421,42 +461,66 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
       vol_2    += volume_gradient_2;
       pitch_2  += pitch_gradient_2;
    }
-#else
-   // Fallback non-NEON loop (original implementation)
+
+   *r1 = (sample_1 / tr_1->rate) - position_1;
+   *r2 = (sample_2 / tr_2->rate) - position_2;
+}
+
+// Sinc interpolation version of process_add_players
+// Uses optimized 16-tap sinc with:
+// - Direct track memory access (avoids per-sample get_sample calls)
+// - Pre-lerped kernels (computed once per sample)
+// - NEON SIMD for convolution (4 taps per instruction)
+static inline void process_add_players_sinc( signed short *pcm, unsigned samples,
+                                        double sample_dt_1, struct track *tr_1, double position_1, float pitch_1, float end_pitch_1, float start_vol_1, float end_vol_1, double* r1,
+                                        double sample_dt_2, struct track *tr_2, double position_2, float pitch_2, float end_pitch_2, float start_vol_2, float end_vol_2, double* r2 )
+{
+   const float ONE_OVER_SAMPLES = 1.0f / static_cast<float>(samples);
+
+   const float volume_gradient_1 = (end_vol_1 - start_vol_1) * ONE_OVER_SAMPLES;
+   const float pitch_gradient_1  = (end_pitch_1 - pitch_1)   * ONE_OVER_SAMPLES;
+   const float volume_gradient_2 = (end_vol_2 - start_vol_2) * ONE_OVER_SAMPLES;
+   const float pitch_gradient_2  = (end_pitch_2 - pitch_2)   * ONE_OVER_SAMPLES;
+
+   const int tr_1_len = static_cast<int>(tr_1->length);
+   const int tr_2_len = static_cast<int>(tr_2->length);
+
+   const double tr_1_rate = tr_1->rate;
+   const double tr_2_rate = tr_2->rate;
+
+   const double dt_rate_1 = sample_dt_1 * tr_1_rate;
+   const double dt_rate_2 = sample_dt_2 * tr_2_rate;
+
+   double sample_1 = position_1 * tr_1->rate;
+   double sample_2 = position_2 * tr_2->rate;
+
+   float vol_1 = start_vol_1;
+   float vol_2 = start_vol_2;
+
    for (unsigned s = 0; s < samples; s++)
    {
       double step_1 = dt_rate_1 * pitch_1;
       double step_2 = dt_rate_2 * pitch_2;
 
-      double subpos_1;
-      double subpos_2;
+      // Get absolute pitch for bandwidth selection
+      float abs_pitch_1 = std::fabs(pitch_1);
+      float abs_pitch_2 = std::fabs(pitch_2);
 
-      {
-         v4sf t0;
-         v4sf t1;
-         v4sf t2;
-         v4sf t3;
+      // Optimized sinc interpolation with direct track access
+      auto result = sc::dsp::sinc_interpolate_dual_deck_opt(
+         tr_1, sample_1, tr_1_len, abs_pitch_1,
+         tr_2, sample_2, tr_2_len, abs_pitch_2);
 
-         collect_track_samples_vectorized(tr_1, tr_2, sample_1, sample_2, tr_1_len, tr_2_len, subpos_1, subpos_2,
-                                          t0, t1, t2, t3);
+      // Apply volume and mix
+      float sum_l = result.l1 * vol_1 + result.l2 * vol_2;
+      float sum_r = result.r1 * vol_1 + result.r2 * vol_2;
 
-         v4sf interpol = interpolate_two_stereo_samples(t0, t1, t2, t3,
-                                                        static_cast<float>(subpos_1),
-                                                        static_cast<float>(subpos_2));
+      // Clamp to int16 range
+      sum_l = clamp_scalar(sum_l, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
+      sum_r = clamp_scalar(sum_r, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
 
-         v4sf tvol = {vol_1, vol_1, vol_2, vol_2};
-         v4sf res = interpol * tvol;
-
-         // Mix left and right channels from both players, then clamp
-         float sum_l = res[0] + res[2];
-         float sum_r = res[1] + res[3];
-
-         sum_l = clamp_scalar(sum_l, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
-         sum_r = clamp_scalar(sum_r, static_cast<float>(SHRT_MIN), static_cast<float>(SHRT_MAX));
-
-         *pcm++ = static_cast<signed short>(sum_l);
-         *pcm++ = static_cast<signed short>(sum_r);
-      }
+      *pcm++ = static_cast<signed short>(sum_l);
+      *pcm++ = static_cast<signed short>(sum_r);
 
       sample_1 += step_1;
       vol_1    += volume_gradient_1;
@@ -466,7 +530,6 @@ static inline void process_add_players( signed short *pcm, unsigned samples,
       vol_2    += volume_gradient_2;
       pitch_2  += pitch_gradient_2;
    }
-#endif
 
    *r1 = (sample_1 / tr_1->rate) - position_1;
    *r2 = (sample_2 / tr_2->rate) - position_2;
@@ -503,11 +566,20 @@ void collect_and_mix_players( struct sc1000* engine,
 
    if ( spin_try_lock(&pl1->lock) && spin_try_lock(&pl2->lock) )
    {
-      process_add_players(pcm, samples,
-                          pl1->sample_dt, tr1, pl1->position - pl1->offset, pl1->pitch, filtered_pitch_1,
-                          pl1->volume, target_volume_1, &r1,
-                          pl2->sample_dt, tr2, pl2->position - pl2->offset, pl2->pitch, filtered_pitch_2,
-                          pl2->volume, target_volume_2, &r2);
+      // Dispatch based on interpolation mode
+      if (g_interpolation_mode == INTERP_SINC) {
+         process_add_players_sinc(pcm, static_cast<unsigned>(samples),
+                             pl1->sample_dt, tr1, pl1->position - pl1->offset, pl1->pitch, static_cast<float>(filtered_pitch_1),
+                             pl1->volume, static_cast<float>(target_volume_1), &r1,
+                             pl2->sample_dt, tr2, pl2->position - pl2->offset, pl2->pitch, static_cast<float>(filtered_pitch_2),
+                             pl2->volume, static_cast<float>(target_volume_2), &r2);
+      } else {
+         process_add_players(pcm, static_cast<unsigned>(samples),
+                             pl1->sample_dt, tr1, pl1->position - pl1->offset, pl1->pitch, static_cast<float>(filtered_pitch_1),
+                             pl1->volume, static_cast<float>(target_volume_1), &r1,
+                             pl2->sample_dt, tr2, pl2->position - pl2->offset, pl2->pitch, static_cast<float>(filtered_pitch_2),
+                             pl2->volume, static_cast<float>(target_volume_2), &r2);
+      }
 
       pl1->pitch = filtered_pitch_1;
       spin_unlock(&pl1->lock);
@@ -619,4 +691,16 @@ void audio_engine_reset_peak( void )
 
    g_dsp_stats.load_peak = 0.0;
    g_dsp_stats.xruns = 0;
+}
+
+void audio_engine_set_interpolation(interpolation_mode_t mode)
+{
+   using namespace sc::audio;
+   g_interpolation_mode = mode;
+}
+
+interpolation_mode_t audio_engine_get_interpolation(void)
+{
+   using namespace sc::audio;
+   return g_interpolation_mode;
 }

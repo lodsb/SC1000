@@ -663,25 +663,25 @@
     {
       "action": "pitch",
       "channel": 0,
-      "deck": "beats",
+      "deck": "scratch",
       "parameter1": 0,
-      "parameter2": 0,
+      "parameter2": 24,
       "shifted": false,
       "type": "midi_pb"
     },
     {
       "action": "pitch",
       "channel": 1,
-      "deck": "scratch",
+      "deck": "beats",
       "parameter1": 0,
-      "parameter2": 0,
+      "parameter2": 24,
       "shifted": false,
       "type": "midi_pb"
     },
     {
       "action": "cue",
-      "channel": 0,
-      "deck": "beats",
+      "channel": 2,
+      "deck": "scratch",
       "parameter1": 255,
       "parameter2": 0,
       "shifted": false,
@@ -689,8 +689,8 @@
     },
     {
       "action": "cue",
-      "channel": 1,
-      "deck": "scratch",
+      "channel": 3,
+      "deck": "beats",
       "parameter1": 255,
       "parameter2": 0,
       "shifted": false,
@@ -698,8 +698,8 @@
     },
     {
       "action": "delete_cue",
-      "channel": 0,
-      "deck": "beats",
+      "channel": 2,
+      "deck": "scratch",
       "parameter1": 255,
       "parameter2": 0,
       "shifted": true,
@@ -707,8 +707,8 @@
     },
     {
       "action": "delete_cue",
-      "channel": 1,
-      "deck": "scratch",
+      "channel": 3,
+      "deck": "beats",
       "parameter1": 255,
       "parameter2": 0,
       "shifted": true,
@@ -716,8 +716,17 @@
     },
     {
       "action": "note",
-      "channel": 3,
+      "channel": 0,
       "deck": "scratch",
+      "parameter1": 255,
+      "parameter2": 127,
+      "shifted": false,
+      "type": "midi_note_on"
+    },
+    {
+      "action": "note",
+      "channel": 1,
+      "deck": "beats",
       "parameter1": 255,
       "parameter2": 127,
       "shifted": false,

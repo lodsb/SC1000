@@ -40,6 +40,7 @@
 #include "core/sc_input.h"
 #include "core/sc_settings.h"
 #include "core/global.h"
+#include "engine/audio_engine.h"
 
 #include "player/track.h"
 #include "thread/realtime.h"
@@ -62,6 +63,8 @@ static void print_usage(const char* program) {
     fprintf(stderr, "  --log-file-path PATH   Log to specified file path\n");
     fprintf(stderr, "  --log-level LEVEL      Set log level (debug, info, warn, error)\n");
     fprintf(stderr, "  --show-stats           Enable FPS/DSP stats output\n");
+    fprintf(stderr, "  --cubic                Use cubic interpolation (faster, no anti-aliasing)\n");
+    fprintf(stderr, "  --sinc                 Use sinc interpolation (default, anti-aliased)\n");
     fprintf(stderr, "  --help                 Show this help message\n");
 }
 
@@ -82,12 +85,14 @@ static void parse_args(int argc, char* argv[], sc::log::Config* log_config) {
         {"log-file-path",  required_argument, nullptr, 'p'},
         {"log-level",      required_argument, nullptr, 'l'},
         {"show-stats",     no_argument,       nullptr, 's'},
+        {"cubic",          no_argument,       nullptr, 'C'},
+        {"sinc",           no_argument,       nullptr, 'S'},
         {"help",           no_argument,       nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:cfp:l:sh", long_options, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:cfp:l:shCS", long_options, nullptr)) != -1) {
         switch (opt) {
             case 'r':
                 g_root_path = optarg;
@@ -107,6 +112,12 @@ static void parse_args(int argc, char* argv[], sc::log::Config* log_config) {
                 break;
             case 's':
                 log_config->show_stats = true;
+                break;
+            case 'C':
+                audio_engine_set_interpolation(INTERP_CUBIC);
+                break;
+            case 'S':
+                audio_engine_set_interpolation(INTERP_SINC);
                 break;
             case 'h':
                 print_usage(argv[0]);
@@ -137,6 +148,10 @@ int main(int argc, char* argv[])
 
     // Initialize logging system first
     sc::log::init(log_config);
+
+    // Log interpolation mode
+    SC_LOG_INFO("Interpolation mode: %s",
+        audio_engine_get_interpolation() == INTERP_SINC ? "sinc (anti-aliased)" : "cubic (fast)");
 
     if (signal(SIGINT, sig_handler) == SIG_ERR) {
         SC_LOG_ERROR("Can't catch SIGINT");

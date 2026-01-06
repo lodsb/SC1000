@@ -2,8 +2,21 @@
 
 #include "../core/sc1000.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 struct loop_buffer;
+
+/* Interpolation mode selection */
+typedef enum {
+    INTERP_CUBIC = 0,  /* 4-tap Catmull-Rom (fast, no anti-aliasing) */
+    INTERP_SINC = 1    /* 16-tap sinc (slower, proper anti-aliasing) */
+} interpolation_mode_t;
+
+/* Set interpolation mode (call before audio engine starts) */
+void audio_engine_set_interpolation(interpolation_mode_t mode);
+
+/* Get current interpolation mode */
+interpolation_mode_t audio_engine_get_interpolation(void);
 
 /* DSP performance metrics */
 struct dsp_stats {

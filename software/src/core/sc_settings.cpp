@@ -526,6 +526,28 @@ void sc_settings_print_gpio_mappings(mapping* mappings)
    }
 
    LOG_INFO("=== Total: %d GPIO, %d MIDI mappings ===", gpio_count, midi_count);
+
+   // Log pitch bend mappings specifically for debugging
+   LOG_INFO("=== Pitch Bend Mappings ===");
+   m = mappings;
+   int pb_count = 0;
+   while (m != nullptr)
+   {
+      if (m->type == IOType::MIDI && ((m->midi_command_bytes[0] & 0xF0) == 0xE0))
+      {
+         const char* action_str = (m->action_type < 29) ? action_names[m->action_type] : "UNKNOWN";
+         const char* edge_str = (m->edge_type < 6) ? edge_names[m->edge_type] : "UNKNOWN";
+         LOG_INFO("  PB ch=%d deck=%d action=%-12s event=%-16s midi_cmd=[%02X]",
+                  m->midi_command_bytes[0] & 0x0F,
+                  m->deck_no, action_str, edge_str,
+                  m->midi_command_bytes[0]);
+         pb_count++;
+      }
+      m = m->next;
+   }
+   if (pb_count == 0) {
+      LOG_INFO("  (no pitch bend mappings found)");
+   }
 }
 
 audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_interface_type type )

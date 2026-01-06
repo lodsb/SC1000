@@ -253,7 +253,7 @@ void process_io(struct sc1000* sc1000_engine)
                         == VOLDOWN))
                     {
                         sc1000_engine->beat_deck.player.set_track(
-                                         track_acquire_by_import(sc1000_engine->beat_deck.importer,
+                                         track_acquire_by_import(sc1000_engine->beat_deck.importer.c_str(),
                                                                  "/var/os-version.mp3"));
                         cues_load_from_file(&sc1000_engine->beat_deck.cues,
                                             sc1000_engine->beat_deck.player.track->path);
@@ -488,7 +488,7 @@ void process_pic(struct sc1000* sc1000_engine)
                 if (first_time)
                 {
                     sc1000_engine->beat_deck.player.set_track(
-                                     track_acquire_by_import(sc1000_engine->beat_deck.importer, "/var/os-version.mp3"));
+                                     track_acquire_by_import(sc1000_engine->beat_deck.importer.c_str(), "/var/os-version.mp3"));
                     cues_load_from_file(&sc1000_engine->beat_deck.cues, sc1000_engine->beat_deck.player.track->path);
                     buttonState = BUTTONSTATE_WAITING;
                 }

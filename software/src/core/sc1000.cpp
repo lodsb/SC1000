@@ -25,13 +25,12 @@ void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
     engine->mappings.clear();
 
     // Store root path in settings for use by other components
-    strncpy(settings->root_path, root_path, sizeof(settings->root_path) - 1);
-    settings->root_path[sizeof(settings->root_path) - 1] = '\0';
+    settings->root_path = root_path;
 
     sc_settings_load_user_configuration(engine->settings, engine->mappings);
 
     // Verify root_path wasn't corrupted by settings loading
-    LOG_DEBUG("After settings load, root_path = '%s'", settings->root_path);
+    LOG_DEBUG("After settings load, root_path = '%s'", settings->root_path.c_str());
 
     // Print loaded mappings for debugging
     sc_settings_print_gpio_mappings(engine->mappings);
@@ -55,19 +54,15 @@ void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
 
 void sc1000_load_sample_folders(struct sc1000* engine)
 {
-    const char* root = engine->settings->root_path;
-    char samples_path[512];
-    char beats_path[512];
+    const std::string& root = engine->settings->root_path;
+    std::string samples_path = root + "/samples";
+    std::string beats_path = root + "/beats";
 
-    LOG_DEBUG("sc1000_load_sample_folders called, root_path = '%s'", root);
-
-    snprintf(samples_path, sizeof(samples_path), "%s/samples", root);
-    snprintf(beats_path, sizeof(beats_path), "%s/beats", root);
-
-    LOG_DEBUG("samples_path = '%s', beats_path = '%s'", samples_path, beats_path);
+    LOG_DEBUG("sc1000_load_sample_folders called, root_path = '%s'", root.c_str());
+    LOG_DEBUG("samples_path = '%s', beats_path = '%s'", samples_path.c_str(), beats_path.c_str());
 
     // Check for samples folder (only do USB mount dance for default /media/sda)
-    if (strcmp(root, "/media/sda") == 0 && access(samples_path, F_OK) == -1) {
+    if (root == "/media/sda" && access(samples_path.c_str(), F_OK) == -1) {
         // Not there, so presumably the boot script didn't manage to mount the drive
         // Maybe it hasn't initialized yet, or at least wasn't at boot time
         // We have to do it ourselves
@@ -87,16 +82,16 @@ void sc1000_load_sample_folders(struct sc1000* engine)
         }
     }
 
-    LOG_INFO("Loading beats from: %s", beats_path);
-    LOG_INFO("Loading samples from: %s", samples_path);
+    LOG_INFO("Loading beats from: %s", beats_path.c_str());
+    LOG_INFO("Loading samples from: %s", samples_path.c_str());
 
-    engine->beat_deck.load_folder(beats_path);
-    engine->scratch_deck.load_folder(samples_path);
+    engine->beat_deck.load_folder(beats_path.c_str());
+    engine->scratch_deck.load_folder(samples_path.c_str());
 
     if (!engine->scratch_deck.files_present) {
         // Load the default sentence if no sample files found on usb stick
         engine->scratch_deck.player.set_track(
-                         track_acquire_by_import(engine->scratch_deck.importer, "/var/scratchsentence.mp3"));
+                         track_acquire_by_import(engine->scratch_deck.importer.c_str(), "/var/scratchsentence.mp3"));
         LOG_DEBUG("Set default track ok");
         cues_load_from_file(&engine->scratch_deck.cues, engine->scratch_deck.player.track->path);
         LOG_DEBUG("Set cues ok");

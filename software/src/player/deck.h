@@ -43,7 +43,7 @@ struct sc1000;
 
 struct deck
 {
-   const char* importer;
+   std::string importer;
    bool protect;
 
    struct player player;
@@ -84,7 +84,7 @@ struct deck
    void cue(unsigned int label);
    void punch_in(unsigned int label);
    void punch_out();
-   void load_folder(char* folder_name);
+   void load_folder(const char* folder_name);
    void next_file(struct sc1000* engine, struct sc_settings* settings);
    void prev_file(struct sc1000* engine, struct sc_settings* settings);
    void next_folder(struct sc1000* engine, struct sc_settings* settings);

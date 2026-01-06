@@ -189,7 +189,7 @@ void dispatch_event(mapping* map, unsigned char midi_buffer[3],
             sc_file* file = target->playlist->get_file(target->current_folder_idx, 0);
             if (file != nullptr) {
                 // Load the first file in current folder
-                target->player.set_track(track_acquire_by_import(target->importer, file->full_path.c_str()));
+                target->player.set_track(track_acquire_by_import(target->importer.c_str(), file->full_path.c_str()));
                 target->player.position = 0;
                 target->player.target_position = 0;
                 target->player.offset = 0;

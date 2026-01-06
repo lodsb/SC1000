@@ -127,7 +127,7 @@ struct sc_settings
    bool midi_remapped;
    bool io_remapped;
 
-   const char* importer;
+   std::string importer;
 
    // Audio interfaces (listed in priority order)
    std::vector<audio_interface> audio_interfaces;
@@ -141,7 +141,7 @@ struct sc_settings
 
    // Root directory for samples, settings, etc.
    // Default: /media/sda (hardware), can be overridden via --root CLI arg
-   char root_path[256];
+   std::string root_path;
 };
 
 #include "sc_input.h"

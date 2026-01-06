@@ -75,9 +75,6 @@ struct player
    int playing_beep;
    unsigned long beep_pos;
 
-   FILE* recording_file;
-   char  recording_file_name[256];
-
 #ifdef __cplusplus
    // C++ member functions
    void init(unsigned int sample_rate, struct track* track, struct sc_settings* settings);

@@ -1,4 +1,4 @@
-# SC1000
+# SC1000 (v2)
 ## Open-source portable digital scratch instrument
 
 This github holds source code and CAM files for the SC1000.

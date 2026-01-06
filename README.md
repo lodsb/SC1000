@@ -3,11 +3,37 @@
 
 This github holds source code and CAM files for the SC1000.
 
-The SC1000 is a portable digital scratch instrument which loads samples and beats from a USB stick. At less than the size of three stacked DVD cases, it’s probably the smallest integrated portablist solution ever. Despite this, the software and hardware have been carefully tuned and optimised, and it’s responsive enough for even the most complex scratch patterns.
+The SC1000 is a portable digital scratch instrument which loads samples and beats from a USB stick. At less than the size of three stacked DVD cases, it's probably the smallest integrated portablist solution ever. Despite this, the software and hardware have been carefully tuned and optimised, and it's responsive enough for even the most complex scratch patterns.
 
 The device, including its enclosure, uses no custom parts apart from printed circuit boards. It will be possible for anyone with a bit of electronics know-how to build one, and I hope other makers in the portablist scene will be interested in manufacturing some.
 
 The build tutorial video can be found here : https://www.youtube.com/watch?v=t1wy7IFSynY
+
+---
+
+## SC1000 Software v2 (C++ Rewrite)
+
+The software in the `software/` folder has been completely rewritten and modernized. This is a major update from the original C-based xwax fork.
+
+### What's New
+
+- **Loop recording** with punch-in overdub and per-deck control
+- **High-quality sinc interpolation** (16-tap, anti-aliased)
+- **Float-based audio engine** with native 24-bit support
+- **CV outputs** for modular synthesis integration
+- **Multi-device audio routing** with per-device configuration
+- **Extensive logging system** with file output
+- **JSON configuration** for easy customization
+- **CMake build system** with Docker cross-compilation support
+- **C++17 codebase** with modern patterns (RAII, namespaces, smart pointers)
+
+### Compatibility Note
+
+**The new software is a drop-in binary replacement.** It runs on the existing SD card Linux image - no OS update required. Simply copy the new `xwax` binary to the USB stick root or to `/root/xwax` on the SD card.
+
+The original software is preserved in `software/original_version/` for reference.
+
+---
 
 ## Usage ##
 
@@ -22,7 +48,7 @@ Note that you shouldn't touch the jog wheel while you are turning the device on 
 
 The SC1000 expects the USB stick to have two folders on it - **beats** and **samples**. Note that the names of these folders *must* be in all-lowercase letters.
 
-The beats and samples folders should in turn contain a number of subfolders, to organise your files into albums. Each of these subfolders should contain a number of audio files, in **mp3** or **wav** format. For example, you might have a folder layout like : 
+The beats and samples folders should in turn contain a number of subfolders, to organise your files into albums. Each of these subfolders should contain a number of audio files, in **mp3** or **wav** format. For example, you might have a folder layout like :
 
 * beats/Deluxe Shampoo Breaks/beat1.mp3
 * beats/Deluxe Shampoo Breaks/beat2.mp3
@@ -43,7 +69,8 @@ Optionally, you can put an updated version of xwax on the root of the USB stick,
 
 [![Demo Video](https://img.youtube.com/vi/ReuCnZciOf4/0.jpg)](https://www.youtube.com/watch?v=ReuCnZciOf4)
 
-The folders are as follows : 
+## Repository Structure ##
+
 * **Firmware** - Source code for the input processor. This handles the pots, switches and capacitive touch sensor, and passes the information on to the main processor.
 * **OS** - SD card images and buildroot configs for the operating system that runs on the main processor.
 * **Software** - Source code for the modified version of xwax running on the main SoC.
@@ -55,7 +82,7 @@ The folders are as follows :
 The device is based around the Olimex A13-SOM-256 system-on-module, which in turn uses an Allwinner A13 ARM Cortex A8 SoC. The sensing of the scratch wheel is handled by an Austria Microsystems AS5601 magnetic rotary sensor, and the other inputs are processed via a Microchip PIC18LF14K22 MCU. The whole unit is powered via USB, and optionally includes the ability to fit a power bank inside the enclosure.
 
 
-## Build guide : 
+## Build guide :
 
 ### Assembly video ###
 
@@ -96,7 +123,231 @@ A video covering most of this information can be found at https://www.youtube.co
 * **Assemble the enclosure** - drill and tap M3 holes in the aluminium, and screw the whole enclosure together. Make sure the magnet at the end of the jogwheel bolt is suspended directly above the rotary sensor IC.
 
 
+---
 
+## Software Features (v2) ##
+
+### Loop Recording (Memory Sampler)
+
+Record audio input into an in-memory buffer that can be immediately scratched and looped.
+
+**Controls (per deck):**
+| Action | How |
+|--------|-----|
+| Start/Stop Recording | SHIFT + PLAY (release to trigger) |
+| Erase Loop | SHIFT + PLAY (hold ~1 sec) |
+| Recall Loop | After loading another track, recall last recorded loop |
+
+**Recording workflow:**
+1. **First SHIFT+PLAY release**: Starts capturing audio from input
+2. **Second SHIFT+PLAY release**: Stops recording, defines loop length, loads onto deck
+3. **Subsequent SHIFT+PLAY releases**: Punch-in mode - overwrites from current position while preserving loop length
+4. **Hold SHIFT+PLAY (~1 sec)**: Erases the loop, next recording starts fresh
+
+**Behavior:**
+- Recording appears as the first track in the playlist (position 0)
+- While recording, input audio is monitored through the deck's volume control
+- Scratching the deck is possible during both looping and recording
+- Maximum loop duration is configurable in settings (`loop_max_seconds`, default 60 sec)
+
+---
+
+### Audio Engine
+
+The audio engine has been rewritten for quality and performance:
+
+- **Float-based mixing**: All internal processing uses 32-bit float
+- **Native device resolution**: Supports 16-bit, 24-bit, and 32-bit I/O
+- **Automatic dithering**: Applied when outputting to 16-bit (internal audio interface)
+- **Vectorized processing**: Optimized for ARM NEON auto-vectorization
+- **CPU usage**: ~7% with cubic interpolation, ~9% with sinc interpolation
+
+---
+
+### Command-Line Options
+
+```bash
+./sc1000 [OPTIONS]
+
+Options:
+  --root PATH            Root directory for samples/settings (default: /media/sda)
+  --log-console          Log to console (default)
+  --log-file             Log to {root}/sc1000.log
+  --log-file-path PATH   Log to specified file path
+  --log-level LEVEL      Set log level (debug, info, warn, error)
+  --show-stats           Enable DSP load meter output
+  --cubic                Use cubic interpolation (faster, no anti-aliasing)
+  --sinc                 Use sinc interpolation (default, anti-aliased)
+  --help                 Show help message
+```
+
+**Examples:**
+```bash
+# Desktop development with local samples
+./sc1000 --root ~/Music/samples --log-console --log-level debug
+
+# Production with file logging
+./sc1000 --root /media/sda --log-file --log-level info
+
+# Performance testing with cubic interpolation
+./sc1000 --cubic --show-stats
+```
+
+---
+
+### Logging System
+
+Configurable logging with multiple output targets and severity levels.
+
+**Log levels:**
+| Level | Description |
+|-------|-------------|
+| `debug` | Verbose debugging information |
+| `info` | General operational messages |
+| `warn` | Warning conditions |
+| `error` | Error conditions |
+
+**Output targets:**
+- **Console**: Default, logs to stdout
+- **File**: Logs to `{root}/sc1000.log` or custom path
+
+---
+
+### Sinc Interpolation
+
+High-quality 16-tap windowed sinc resampling with anti-aliasing for pitch-shifted playback.
+
+**Anti-aliasing behavior:**
+- Bandwidth automatically adjusts based on playback speed
+- At pitch ≤ 1.0: full bandwidth (no filtering needed)
+- At pitch 1.0-2.0: 0.5 cutoff
+- At pitch > 2.0: aggressive 0.25 cutoff for fast scratching
+
+---
+
+### MIDI Control
+
+Full MIDI controller support with configurable mappings.
+
+**Supported message types:**
+- Note on/off (with velocity)
+- Control Change (CC)
+- Pitch bend (14-bit resolution for fine pitch control)
+
+**NOTE action:** MIDI notes can trigger pitch changes using equal temperament tuning (middle C = 1.0x pitch). Useful for melodic scratching.
+
+---
+
+### Multi-Device Audio Configuration
+
+Per-device settings with flexible routing for inputs, outputs, and CV mappings.
+
+**Device matching:**
+- Devices matched by USB device name
+- Use `"*"` to match any USB audio device
+- Multiple device configurations supported in settings
+
+**Input/Output routing:**
+```json
+{
+  "audio_devices": [{
+    "name": "USB Audio Device",
+    "input_channels": 2,
+    "input_left": 0,
+    "input_right": 1,
+    "output_channels": 2,
+    "output_left": 0,
+    "output_right": 1
+  }]
+}
+```
+
+---
+
+### CV Outputs
+
+Control voltage outputs for modular synthesis integration.
+
+**Available CV signals:**
+| Signal | Description |
+|--------|-------------|
+| Platter Angle | Current rotational position (0-1) |
+| Platter Speed | Playback speed (-1 to +1, with filtering) |
+| Sample Position | Position in current track (0-1) |
+| Crossfader | Crossfader position (0-1) |
+| Gate A | High when scratch deck side is open |
+| Gate B | High when beat deck side is open |
+| Direction Pulse | Trigger pulse on platter direction change |
+
+**Configuration:**
+```json
+{
+  "cv_mapping": {
+    "platter_speed": 2,
+    "platter_angle": 3,
+    "sample_position": 4,
+    "crossfader": 5,
+    "gate_a": 6,
+    "gate_b": 7,
+    "direction_pulse": 8
+  }
+}
+```
+
+---
+
+### JSON Configuration
+
+Settings are stored in JSON format (`sc_settings.json`) for easy editing and extensibility.
+
+Key configuration areas:
+- Audio device routing
+- MIDI controller mappings
+- GPIO button mappings
+- CV output assignments
+- Crossfader calibration and behavior (VCA mode, cut mode, hamster switch)
+- Platter speed/reverse/brake settings
+- Loop recording parameters
+
+---
+
+### Building the Software
+
+**Native build (for development):**
+```bash
+cd software
+cmake -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build cmake-build-debug
+```
+
+**Cross-compilation for SC1000 hardware:**
+
+The device uses uClibc (not glibc), requiring the Buildroot toolchain. A Docker environment is provided for reproducible builds:
+
+```bash
+cd docker
+./build-docker.sh          # One-time: build Docker image with toolchain
+./run-docker.sh            # Enter build environment
+./sc1000/docker/build-sc1000.sh  # Build inside container
+```
+
+Output: `software/build-buildroot/sc1000`
+
+Deploy by copying to device as `/root/xwax` or to USB stick root.
+
+See `docker/README.md` for full details.
+
+---
+
+### Codebase Modernization
+
+The software has been refactored from C to C++17:
+
+- **Modular architecture**: Code organized into `src/core/`, `src/engine/`, `src/platform/`, `src/player/`, `src/control/`
+- **RAII patterns**: Smart pointers for resource management
+- **Namespaces**: `sc::audio`, `sc::config`, `sc::platform`, `sc::control`
+- **CMake build system**: Replaced legacy Makefile, supports native and cross-compilation
+- **Type-safe mappings**: O(1) lookup for MIDI and GPIO events
 
 
 ## License ##
@@ -116,4 +367,3 @@ You should have received a copy of the GNU General Public License
 version 2 along with this program; if not, write to the Free
 Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 MA 02110-1301, USA.
-

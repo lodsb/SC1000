@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2018 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2019 Andrew Tait <rasteri@gmail.com>
+ * Copyright (C) 2024-2026 Niklas Klügel <lodsb@lodsb.org>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License

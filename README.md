@@ -129,7 +129,7 @@ A video covering most of this information can be found at https://www.youtube.co
 
 ### Loop Recording (Memory Sampler)
 
-Record audio input into an in-memory buffer that can be immediately scratched and looped. This feature needs an external audio interface connected to the USB port and a valid device configuration for the input channels, see [Multi-Device Audio Configuration](#multi-device-audio-configuration).
+Record audio input into an in-memory buffer that can be immediately scratched, looped and played via MIDI. This feature needs an external audio interface connected to the USB port and a valid device configuration for the input channels, see [Multi-Device Audio Configuration](#multi-device-audio-configuration).
 
 **Controls (per deck):**
 | Action | How |

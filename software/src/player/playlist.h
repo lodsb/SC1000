@@ -8,13 +8,13 @@
 
 // File entry (beat or sample)
 struct sc_file {
-	char full_path[256];
-	unsigned int global_index;  // Index across all files
+	std::string full_path;
+	unsigned int global_index = 0;  // Index across all files
 };
 
 // Folder containing files
 struct sc_folder {
-	char full_path[256];
+	std::string full_path;
 	std::vector<sc_file> files;
 };
 

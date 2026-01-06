@@ -1,12 +1,10 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+#include <cstdint>
+#include <string>
+#include <vector>
 
-struct mapping;
-
-// Maximum number of audio interfaces and output channels
-#define MAX_AUDIO_INTERFACES 4
+// Maximum output channels per interface
 #define MAX_OUTPUT_CHANNELS 16
 
 // Audio interface types
@@ -37,24 +35,24 @@ enum output_channel_type {
 // Audio interface configuration
 // Devices are listed in priority order - first available match is used
 struct audio_interface {
-   char name[64];                 // Human-readable name, e.g., "Bitwig Connect"
-   char device[64];               // ALSA device name, e.g., "hw:0", "plughw:1"
-   enum audio_interface_type type;
-   int channels;                  // Number of hardware channels
-   int sample_rate;               // Sample rate (48000 default)
-   int period_size;               // Period size (256 default)
-   int buffer_period_factor;      // Buffer = period * factor (4 default)
-   bool supports_cv;              // Whether this device can output CV
+   std::string name;              // Human-readable name, e.g., "Bitwig Connect"
+   std::string device;            // ALSA device name, e.g., "hw:0", "plughw:1"
+   audio_interface_type type = AUDIO_TYPE_MAIN;
+   int channels = 2;              // Number of hardware channels
+   int sample_rate = 48000;       // Sample rate
+   int period_size = 256;         // Period size
+   int buffer_period_factor = 4;  // Buffer = period * factor
+   bool supports_cv = false;      // Whether this device can output CV
 
    // Input channel configuration (for recording)
-   int input_channels;            // Number of capture channels (0 = no capture)
-   int input_left;                // Which capture channel is left (default 0)
-   int input_right;               // Which capture channel is right (default 1)
+   int input_channels = 0;        // Number of capture channels (0 = no capture)
+   int input_left = 0;            // Which capture channel is left
+   int input_right = 1;           // Which capture channel is right
 
    // Output channel mapping: output_map[hw_channel] = logical_type
    // e.g., output_map[4] = OUT_CV1 means hardware channel 4 outputs CV1
-   enum output_channel_type output_map[MAX_OUTPUT_CHANNELS];
-   int num_mapped_outputs;        // How many channels are mapped
+   output_channel_type output_map[MAX_OUTPUT_CHANNELS] = {};
+   int num_mapped_outputs = 0;    // How many channels are mapped
 };
 
 struct sc_settings
@@ -131,9 +129,8 @@ struct sc_settings
 
    const char* importer;
 
-   // Audio interfaces
-   struct audio_interface audio_interfaces[MAX_AUDIO_INTERFACES];
-   int num_audio_interfaces;
+   // Audio interfaces (listed in priority order)
+   std::vector<audio_interface> audio_interfaces;
 
    // Loop recording settings
    int loop_max_seconds;        // Maximum loop recording duration (default 60)
@@ -147,18 +144,13 @@ struct sc_settings
    char root_path[256];
 };
 
-#ifdef __cplusplus
-#define EXTERNC extern "C"
-#else
-#define EXTERNC
-#endif
+#include "sc_input.h"
 
-EXTERNC void sc_settings_load_user_configuration( struct sc_settings* settings, struct mapping** mappings );
-EXTERNC void sc_settings_print_gpio_mappings( struct mapping* mappings );
-EXTERNC struct audio_interface* sc_settings_get_audio_interface( struct sc_settings* settings, enum audio_interface_type type );
-EXTERNC void sc_settings_init_default_audio( struct sc_settings* settings );
-EXTERNC int sc_settings_get_output_channel( struct audio_interface* iface, enum output_channel_type logical );
-EXTERNC struct audio_interface* sc_settings_find_cv_interface( struct sc_settings* settings );
-
-#undef EXTERNC
+// Settings loading and utility functions
+void sc_settings_load_user_configuration(sc_settings* settings, std::vector<mapping>& mappings);
+void sc_settings_print_gpio_mappings(const std::vector<mapping>& mappings);
+audio_interface* sc_settings_get_audio_interface(sc_settings* settings, audio_interface_type type);
+void sc_settings_init_default_audio(sc_settings* settings);
+int sc_settings_get_output_channel(audio_interface* iface, output_channel_type logical);
+audio_interface* sc_settings_find_cv_interface(sc_settings* settings);
 

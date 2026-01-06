@@ -32,19 +32,16 @@ bool Playlist::load(const char* base_folder_path)
 			continue;
 		}
 
-		char subfolder_path[512];
-		snprintf(subfolder_path, sizeof(subfolder_path), "%s/%s",
-		         base_folder_path, dir_list[d]->d_name);
+		std::string subfolder_path = std::string(base_folder_path) + "/" + dir_list[d]->d_name;
 
-		int num_files = scandir(subfolder_path, &file_list, nullptr, alphasort);
+		int num_files = scandir(subfolder_path.c_str(), &file_list, nullptr, alphasort);
 		if (num_files <= 0) {
 			free(dir_list[d]);
 			continue;
 		}
 
 		sc_folder folder;
-		snprintf(folder.full_path, sizeof(folder.full_path), "%s/%s",
-		         base_folder_path, dir_list[d]->d_name);
+		folder.full_path = subfolder_path;
 
 		for (int f = 0; f < num_files; f++) {
 			// Skip hidden files and .cue files
@@ -55,12 +52,11 @@ bool Playlist::load(const char* base_folder_path)
 			}
 
 			sc_file file;
-			snprintf(file.full_path, sizeof(file.full_path), "%s/%s",
-			         subfolder_path, file_list[f]->d_name);
+			file.full_path = subfolder_path + "/" + file_list[f]->d_name;
 			file.global_index = static_cast<unsigned int>(total_files_);
 			total_files_++;
 
-			folder.files.push_back(file);
+			folder.files.push_back(std::move(file));
 			free(file_list[f]);
 		}
 		free(file_list);
@@ -149,7 +145,7 @@ void Playlist::dump() const
 {
 	for (const auto& folder : folders_) {
 		for (const auto& file : folder.files) {
-			LOG_DEBUG("%s - %s", folder.full_path, file.full_path);
+			LOG_DEBUG("%s - %s", folder.full_path.c_str(), file.full_path.c_str());
 		}
 	}
 }

@@ -17,15 +17,13 @@
 namespace sc {
 namespace control {
 
-// Global shift state
-bool shifted = false;
+// Static member definitions for ActionState
+bool ActionState::shifted = false;
+int ActionState::pitch_mode = 0;
 
-// Pitch mode: 0=off, 1=beat deck, 2=scratch deck
-int pitch_mode = 0;
-
-void perform_action_for_deck(struct deck* deck, struct mapping* map,
+void perform_action_for_deck(deck* deck, mapping* map,
                              const unsigned char midi_buffer[3],
-                             struct sc1000* engine, struct sc_settings* settings)
+                             sc1000* engine, sc_settings* settings)
 {
     if (map->action_type == CUE) {
         unsigned int cuenum = 0;
@@ -163,13 +161,13 @@ void perform_action_for_deck(struct deck* deck, struct mapping* map,
     }
 }
 
-void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
-                    struct sc1000* engine, struct sc_settings* settings)
+void dispatch_event(mapping* map, unsigned char midi_buffer[3],
+                    sc1000* engine, sc_settings* settings)
 {
     if (map == nullptr) return;
 
     // Determine target deck from mapping (0=beat, 1=scratch)
-    struct deck* target = (map->deck_no == 0)
+    deck* target = (map->deck_no == 0)
         ? &engine->beat_deck
         : &engine->scratch_deck;
 
@@ -191,7 +189,7 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
             sc_file* file = target->playlist->get_file(target->current_folder_idx, 0);
             if (file != nullptr) {
                 // Load the first file in current folder
-                target->player.set_track(track_acquire_by_import(target->importer, file->full_path));
+                target->player.set_track(track_acquire_by_import(target->importer, file->full_path.c_str()));
                 target->player.position = 0;
                 target->player.target_position = 0;
                 target->player.offset = 0;
@@ -216,9 +214,9 @@ void dispatch_event(struct mapping* map, unsigned char midi_buffer[3],
     }
 }
 
-struct mapping* find_midi_mapping(struct mapping* maps,
-                                  unsigned char buf[3],
-                                  enum EventType edge)
+mapping* find_midi_mapping(std::vector<mapping>& maps,
+                           unsigned char buf[3],
+                           EventType edge)
 {
     // Interpret zero-velocity notes as note-off commands
     if (((buf[0] & 0xF0) == 0x90) && (buf[2] == 0x00)) {
@@ -229,28 +227,26 @@ struct mapping* find_midi_mapping(struct mapping* maps,
     bool is_pitch_bend = ((buf[0] & 0xF0) == 0xE0);
     if (is_pitch_bend) {
         LOG_DEBUG("PB search: buf=[%02X %02X %02X] edge=%d",
-                 buf[0], buf[1], buf[2], edge);
+                 buf[0], buf[1], buf[2], static_cast<int>(edge));
     }
 
-    struct mapping* m = maps;
-    while (m != nullptr) {
-        if (m->type == MIDI && m->edge_type == edge) {
+    for (auto& m : maps) {
+        if (m.type == MIDI && m.edge_type == edge) {
             // Pitch bend messages match on first byte only
-            if (((m->midi_command_bytes[0] & 0xF0) == 0xE0) &&
-                m->midi_command_bytes[0] == buf[0]) {
+            if (((m.midi_command_bytes[0] & 0xF0) == 0xE0) &&
+                m.midi_command_bytes[0] == buf[0]) {
                 if (is_pitch_bend) {
                     LOG_DEBUG("PB match: map cmd=[%02X] deck=%d action=%d",
-                             m->midi_command_bytes[0], m->deck_no, m->action_type);
+                             m.midi_command_bytes[0], m.deck_no, static_cast<int>(m.action_type));
                 }
-                return m;
+                return &m;
             }
             // Everything else matches on first two bytes
-            if (m->midi_command_bytes[0] == buf[0] &&
-                m->midi_command_bytes[1] == buf[1]) {
-                return m;
+            if (m.midi_command_bytes[0] == buf[0] &&
+                m.midi_command_bytes[1] == buf[1]) {
+                return &m;
             }
         }
-        m = m->next;
     }
 
     // Debug: log pitch bend with no match found
@@ -261,45 +257,21 @@ struct mapping* find_midi_mapping(struct mapping* maps,
     return nullptr;
 }
 
-struct mapping* find_io_mapping(struct mapping* mappings,
-                                unsigned char port,
-                                unsigned char pin,
-                                enum EventType edge)
+mapping* find_io_mapping(std::vector<mapping>& mappings,
+                         unsigned char port,
+                         unsigned char pin,
+                         EventType edge)
 {
-    struct mapping* m = mappings;
-    while (m != nullptr) {
-        if (m->type == IO &&
-            m->pin == pin &&
-            m->edge_type == edge &&
-            m->gpio_port == port) {
-            return m;
+    for (auto& m : mappings) {
+        if (m.type == IO &&
+            m.pin == pin &&
+            m.edge_type == edge &&
+            m.gpio_port == port) {
+            return &m;
         }
-        m = m->next;
     }
     return nullptr;
 }
 
 } // namespace control
 } // namespace sc
-
-// C-compatible wrappers
-void io_event(struct mapping* map, unsigned char midi_buffer[3],
-              struct sc1000* sc1000_engine, struct sc_settings* settings)
-{
-    sc::control::dispatch_event(map, midi_buffer, sc1000_engine, settings);
-}
-
-struct mapping* find_midi_mapping_c(struct mapping* maps,
-                                    unsigned char buf[3],
-                                    enum EventType edge)
-{
-    return sc::control::find_midi_mapping(maps, buf, edge);
-}
-
-struct mapping* find_io_mapping_c(struct mapping* mappings,
-                                  unsigned char port,
-                                  unsigned char pin,
-                                  enum EventType edge)
-{
-    return sc::control::find_io_mapping(mappings, port, pin, edge);
-}

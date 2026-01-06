@@ -1,8 +1,6 @@
 #pragma once
 
-#pragma once
-
-#include <stdbool.h>
+#include <array>
 
 #define CONTROL_NOTE 1
 #define CONTROL_CC 2
@@ -70,28 +68,26 @@ enum ActionType
 struct mapping {
 
    // Event type (MIDI or IO)
-   enum IOType type;
+   IOType type = IOType::MIDI;
 
    // IO event info
-   unsigned char pin;               // IO Pin Number
-   bool pullup;                     // Whether or not to pull the pin up
-   enum EventType edge_type;         // Edge (1 for unpressed-to-pressed)
+   unsigned char pin = 0;            // IO Pin Number
+   bool pullup = false;              // Whether or not to pull the pin up
+   EventType edge_type = EventType::BUTTON_PRESSED;  // Edge (1 for unpressed-to-pressed)
 
    // GPIO event info
-   unsigned char gpio_port;         // GPIO port number
+   unsigned char gpio_port = 0;      // GPIO port number
 
    // MIDI event info
-   unsigned char midi_command_bytes[3];
+   std::array<unsigned char, 3> midi_command_bytes = {0, 0, 0};
 
    // Action
-   unsigned char   deck_no;     // Which deck to apply this action to
-   enum ActionType action_type; // The action to take - cue, shift etc
-   unsigned char   parameter;   // for example the output note
+   unsigned char   deck_no = 0;      // Which deck to apply this action to
+   ActionType action_type = ActionType::NOTHING;  // The action to take - cue, shift etc
+   unsigned char   parameter = 0;    // for example the output note
 
-   int debounce;
-   bool shifted_at_press;  // Latched shift state when button was pressed
-
-   struct mapping *next;
+   int debounce = 0;
+   bool shifted_at_press = false;    // Latched shift state when button was pressed
 };
 
 #ifdef __cplusplus

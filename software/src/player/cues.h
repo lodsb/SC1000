@@ -19,33 +19,55 @@
 
 #pragma once
 
-#include <math.h>
+#include <cmath>
+#include <map>
+#include <optional>
+#include <string>
 
-#define MAX_CUES 512
-#define CUE_UNSET (HUGE_VAL)
+// Sentinel value for unset cue points (used for backward compatibility)
+constexpr double CUE_UNSET = HUGE_VAL;
 
-/*
- * A set of cue points
- */
+// Cue points manager
+// Stores labeled cue positions in a sample, with file persistence
+class Cues {
+public:
+    Cues() = default;
 
-struct cues {
-    double position[MAX_CUES];
+    // Set a cue point at the given position
+    void set(unsigned int label, double position);
+
+    // Get a cue point position, returns nullopt if not set
+    std::optional<double> get(unsigned int label) const;
+
+    // Get cue position with legacy sentinel (CUE_UNSET if not found)
+    double get_or_unset(unsigned int label) const;
+
+    // Remove a cue point
+    void unset(unsigned int label);
+
+    // Clear all cue points
+    void reset();
+
+    // Check if a cue point is set
+    bool is_set(unsigned int label) const;
+
+    // File I/O
+    void load_from_file(const char* pathname);
+    void save_to_file(const char* pathname) const;
+
+private:
+    std::map<unsigned int, double> positions_;
 };
 
+// Legacy C-compatible wrapper (for struct cues compatibility during transition)
+struct cues {
+    Cues impl;
+};
 
-#ifdef __cplusplus
-#define EXTERNC extern "C"
-#else
-#define EXTERNC
-#endif
-
-EXTERNC void cues_reset(struct cues *q);
-
-EXTERNC void cues_unset(struct cues *q, unsigned int label);
-EXTERNC void cues_set(struct cues *q, unsigned int label, double position);
-EXTERNC double cues_get(const struct cues *q, unsigned int label);
-
-EXTERNC void cues_load_from_file(struct cues *q, char const* pathname);
-EXTERNC void cues_save_to_file(struct cues *q, char const* pathname);
-
-#undef EXTERNC
+// Legacy free functions that delegate to the class
+inline void cues_reset(cues* q) { q->impl.reset(); }
+inline void cues_unset(cues* q, unsigned int label) { q->impl.unset(label); }
+inline void cues_set(cues* q, unsigned int label, double position) { q->impl.set(label, position); }
+inline double cues_get(const cues* q, unsigned int label) { return q->impl.get_or_unset(label); }
+inline void cues_load_from_file(cues* q, const char* pathname) { q->impl.load_from_file(pathname); }
+inline void cues_save_to_file(cues* q, const char* pathname) { q->impl.save_to_file(pathname); }

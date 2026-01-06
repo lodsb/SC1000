@@ -1,9 +1,10 @@
 #pragma once
 
 #include "../player/deck.h"
+#include "sc_input.h"
+#include <vector>
 
 struct sc_settings;
-struct mapping;
 
 struct sc1000
 {
@@ -11,7 +12,7 @@ struct sc1000
    struct deck     beat_deck;
 
    struct sc_settings* settings;
-   struct mapping*     mappings;
+   std::vector<mapping> mappings;
 
    // Crossfader position for CV output (0.0 = beat side, 1.0 = scratch side)
    double crossfader_position;

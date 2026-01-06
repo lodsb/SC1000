@@ -881,7 +881,7 @@ static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_i
    {
       cv_engine_init(&alsa->cv, TARGET_SAMPLE_RATE);
       cv_engine_set_mapping(&alsa->cv, config);
-      LOG_INFO("CV engine initialized for %s", config->name);
+      LOG_INFO("CV engine initialized for %s", config->name.c_str());
    }
 
    // make sure this is really initialized
@@ -933,8 +933,8 @@ static struct alsa_device_info* find_matching_device(struct audio_interface* con
    // Method 1: Parse the device string to get card number
    // Config device is like "hw:0" or "hw:1" or "plughw:1"
    int card_num = -1;
-   if (sscanf(config->device, "hw:%d", &card_num) == 1 ||
-       sscanf(config->device, "plughw:%d", &card_num) == 1)
+   if (sscanf(config->device.c_str(), "hw:%d", &card_num) == 1 ||
+       sscanf(config->device.c_str(), "plughw:%d", &card_num) == 1)
    {
       if (card_num >= 0 && card_num < MAX_ALSA_DEVICES && alsa_devices[card_num].is_present)
       {
@@ -950,18 +950,18 @@ static struct alsa_device_info* find_matching_device(struct audio_interface* con
       if (!alsa_devices[i].is_present) continue;
 
       // Try matching config->device against card name (substring, case-insensitive)
-      if (contains_substring_ci(alsa_devices[i].card_name, config->device))
+      if (contains_substring_ci(alsa_devices[i].card_name, config->device.c_str()))
       {
          LOG_DEBUG("Matched by device substring: '%s' contains '%s'",
-                   alsa_devices[i].card_name, config->device);
+                   alsa_devices[i].card_name, config->device.c_str());
          return &alsa_devices[i];
       }
 
       // Try matching config->name against card name
-      if (contains_substring_ci(alsa_devices[i].card_name, config->name))
+      if (contains_substring_ci(alsa_devices[i].card_name, config->name.c_str()))
       {
          LOG_DEBUG("Matched by name substring: '%s' contains '%s'",
-                   alsa_devices[i].card_name, config->name);
+                   alsa_devices[i].card_name, config->name.c_str());
          return &alsa_devices[i];
       }
    }
@@ -978,19 +978,18 @@ int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
    fill_audio_interface_info(settings);
 
    // Try to match config entries with detected devices (in priority order)
-   for (int i = 0; i < settings->num_audio_interfaces; i++)
+   for (auto& config : settings->audio_interfaces)
    {
-      struct audio_interface* config = &settings->audio_interfaces[i];
-      struct alsa_device_info* device = find_matching_device(config);
+      struct alsa_device_info* device = find_matching_device(&config);
 
       if (device)
       {
-         LOG_INFO("Matched config '%s' to device %s", config->name, config->device);
-         return setup_alsa_device(sc1000_engine, device, config, config->channels, settings);
+         LOG_INFO("Matched config '%s' to device %s", config.name.c_str(), config.device.c_str());
+         return setup_alsa_device(sc1000_engine, device, &config, config.channels, settings);
       }
       else
       {
-         LOG_DEBUG("Config '%s' (%s) - device not found", config->name, config->device);
+         LOG_DEBUG("Config '%s' (%s) - device not found", config.name.c_str(), config.device.c_str());
       }
    }
 

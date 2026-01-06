@@ -89,54 +89,32 @@ namespace config {
 // Default importer path
 constexpr const char* DEFAULT_IMPORTER_PATH = "/root/xwax-import";
 
-void add_mapping_to_list( struct mapping **maps, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter )
+void add_mapping(std::vector<mapping>& maps, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter)
 {
-   auto* new_map = static_cast<struct mapping*>(malloc(sizeof(struct mapping)));
+   mapping new_map{};
 
-   new_map->next = nullptr;
+   new_map.type      = type;
+   new_map.pin       = pin;
+   new_map.gpio_port = port;
+   new_map.pullup    = pullup;
 
-   new_map->type      = type;
-   new_map->pin       = pin;
-   new_map->gpio_port = port;
-   new_map->pullup    = pullup;
+   new_map.debounce = 0;
+   new_map.shifted_at_press = false;
 
-   new_map->debounce = 0;
-   new_map->shifted_at_press = false;
-
-   if (buf == nullptr)
+   if (buf != nullptr)
    {
-      new_map->midi_command_bytes[0] = 0x00;
-      new_map->midi_command_bytes[1] = 0x00;
-      new_map->midi_command_bytes[2] = 0x00;
-   }
-   else
-   {
-      new_map->midi_command_bytes[0] = buf[0];
-      new_map->midi_command_bytes[1] = buf[1];
-      new_map->midi_command_bytes[2] = buf[2];
+      new_map.midi_command_bytes[0] = buf[0];
+      new_map.midi_command_bytes[1] = buf[1];
+      new_map.midi_command_bytes[2] = buf[2];
    }
 
-   new_map->edge_type = edge_type;
-   new_map->action_type = action;
-   new_map->parameter = parameter;
+   new_map.edge_type = edge_type;
+   new_map.action_type = action;
+   new_map.parameter = parameter;
 
-   new_map->deck_no = deck_no;
+   new_map.deck_no = deck_no;
 
-   if (*maps == nullptr)
-   {
-      *maps = new_map;
-   }
-   else
-   {
-      struct mapping *last_map = *maps;
-
-      while (last_map->next != nullptr)
-      {
-         last_map = last_map->next;
-      }
-
-      last_map->next = new_map;
-   }
+   maps.push_back(new_map);
 }
 
 void settings_from_json(sc_settings* settings, const nlohmann::json& json)
@@ -179,7 +157,7 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->crossfader_adc_max = json.value("crossfader_adc_max", 1023);
 }
 
-void add_midi_mapping_from_json(mapping** mappings, const nlohmann::json& json)
+void add_midi_mapping_from_json(std::vector<mapping>& mappings, const nlohmann::json& json)
 {
    const MIDIStatusType midi_status = json["type"].template get<MIDIStatusType>();
    const EventType event = json["shifted"].template get<bool>() ? EventType::BUTTON_PRESSED_SHIFTED : EventType::BUTTON_PRESSED;
@@ -204,11 +182,11 @@ void add_midi_mapping_from_json(mapping** mappings, const nlohmann::json& json)
 
          if (action == ActionType::NOTE)
          {
-            add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, note_number);
+            add_mapping(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, note_number);
          }
          else
          {
-            add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, 0);
+            add_mapping(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, 0);
          }
       }
    }
@@ -218,11 +196,11 @@ void add_midi_mapping_from_json(mapping** mappings, const nlohmann::json& json)
       midi_command[ 1 ] = parameter1;
       midi_command[ 2 ] = 0;
 
-      add_mapping_to_list(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, parameter2);
+      add_mapping(mappings, IOType::MIDI, deck_no, midi_command, 0, 0, false, event, action, parameter2);
    }
 }
 
-void add_gpio_mapping_from_json(mapping** mappings, const nlohmann::json& json)
+void add_gpio_mapping_from_json(std::vector<mapping>& mappings, const nlohmann::json& json)
 {
    const EventType event = json["event"].template get<EventType>();
    const unsigned char port = json["port"].template get<unsigned char>();
@@ -232,12 +210,12 @@ void add_gpio_mapping_from_json(mapping** mappings, const nlohmann::json& json)
    const unsigned char deck_no = deck_string == "beats" ? 0 : 1;
    ActionType action = json["action"].template get<ActionType>();
 
-   add_mapping_to_list(mappings, IOType::IO, deck_no, nullptr, port, pin, pull_up, event, action, 0);
+   add_mapping(mappings, IOType::IO, deck_no, nullptr, port, pin, pull_up, event, action, 0);
 }
 
 // Note: Legacy sc_settings_old_format() function removed - now using JSON config only
 
-void load_json_config( sc_settings* settings, mapping** mappings )
+void load_json_config(sc_settings* settings, std::vector<mapping>& mappings)
 {
    std::ifstream f;
 
@@ -308,27 +286,17 @@ void load_json_config( sc_settings* settings, mapping** mappings )
       // Load audio devices if present
       if (json_main.contains("audio_devices") && json_main["audio_devices"].is_array())
       {
-         settings->num_audio_interfaces = 0;
+         settings->audio_interfaces.clear();
          for (const auto& dev : json_main["audio_devices"])
          {
-            if (settings->num_audio_interfaces >= MAX_AUDIO_INTERFACES)
-            {
-               std::cerr << "Warning: Maximum audio interfaces reached, ignoring additional" << std::endl;
-               break;
-            }
-
             try {
-               auto& iface = settings->audio_interfaces[settings->num_audio_interfaces];
+               audio_interface iface{};
 
                // Human-readable name
-               std::string friendly_name = dev.value("name", "Audio Device");
-               strncpy(iface.name, friendly_name.c_str(), sizeof(iface.name) - 1);
-               iface.name[sizeof(iface.name) - 1] = '\0';
+               iface.name = dev.value("name", "Audio Device");
 
                // ALSA device identifier
-               std::string alsa_device = dev.value("device", "hw:0");
-               strncpy(iface.device, alsa_device.c_str(), sizeof(iface.device) - 1);
-               iface.device[sizeof(iface.device) - 1] = '\0';
+               iface.device = dev.value("device", "hw:0");
 
                // Type
                iface.type = dev.value("type", AUDIO_TYPE_MAIN);
@@ -420,8 +388,6 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                   }
                }
 
-               settings->num_audio_interfaces++;
-
                std::cout << "Audio config: " << iface.name
                          << " (" << iface.device << ")"
                          << " out_ch=" << iface.channels
@@ -452,6 +418,8 @@ void load_json_config( sc_settings* settings, mapping** mappings )
                   }
                }
 
+               settings->audio_interfaces.push_back(std::move(iface));
+
             } catch (const nlohmann::json::exception& e) {
                std::cerr << "Warning: Invalid audio device entry: " << e.what() << std::endl;
             }
@@ -481,13 +449,13 @@ void load_json_config( sc_settings* settings, mapping** mappings )
 } // namespace config
 } // namespace sc
 
-// C API - extern "C" functions for use by C code
-void sc_settings_load_user_configuration( sc_settings* settings, mapping** mappings )
+// C++ API for loading configuration
+void sc_settings_load_user_configuration(sc_settings* settings, std::vector<mapping>& mappings)
 {
    sc::config::load_json_config(settings, mappings);
 }
 
-void sc_settings_print_gpio_mappings(mapping* mappings)
+void sc_settings_print_gpio_mappings(const std::vector<mapping>& mappings)
 {
    LOG_INFO("=== GPIO Mappings Loaded ===");
 
@@ -507,43 +475,39 @@ void sc_settings_print_gpio_mappings(mapping* mappings)
    int gpio_count = 0;
    int midi_count = 0;
 
-   mapping* m = mappings;
-   while (m != nullptr)
+   for (const auto& m : mappings)
    {
-      if (m->type == IOType::IO)
+      if (m.type == IOType::IO)
       {
-         const char* action_str = (m->action_type < 29) ? action_names[m->action_type] : "UNKNOWN";
-         const char* edge_str = (m->edge_type < 6) ? edge_names[m->edge_type] : "UNKNOWN";
+         const char* action_str = (m.action_type < 29) ? action_names[m.action_type] : "UNKNOWN";
+         const char* edge_str = (m.edge_type < 6) ? edge_names[m.edge_type] : "UNKNOWN";
          LOG_DEBUG("  GPIO port=%d pin=%2d deck=%d action=%-12s event=%-16s",
-                   m->gpio_port, m->pin, m->deck_no, action_str, edge_str);
+                   m.gpio_port, m.pin, m.deck_no, action_str, edge_str);
          gpio_count++;
       }
       else
       {
          midi_count++;
       }
-      m = m->next;
    }
 
    LOG_INFO("=== Total: %d GPIO, %d MIDI mappings ===", gpio_count, midi_count);
 
    // Log pitch bend mappings specifically for debugging
    LOG_INFO("=== Pitch Bend Mappings ===");
-   m = mappings;
    int pb_count = 0;
-   while (m != nullptr)
+   for (const auto& m : mappings)
    {
-      if (m->type == IOType::MIDI && ((m->midi_command_bytes[0] & 0xF0) == 0xE0))
+      if (m.type == IOType::MIDI && ((m.midi_command_bytes[0] & 0xF0) == 0xE0))
       {
-         const char* action_str = (m->action_type < 29) ? action_names[m->action_type] : "UNKNOWN";
-         const char* edge_str = (m->edge_type < 6) ? edge_names[m->edge_type] : "UNKNOWN";
+         const char* action_str = (m.action_type < 29) ? action_names[m.action_type] : "UNKNOWN";
+         const char* edge_str = (m.edge_type < 6) ? edge_names[m.edge_type] : "UNKNOWN";
          LOG_INFO("  PB ch=%d deck=%d action=%-12s event=%-16s midi_cmd=[%02X]",
-                  m->midi_command_bytes[0] & 0x0F,
-                  m->deck_no, action_str, edge_str,
-                  m->midi_command_bytes[0]);
+                  m.midi_command_bytes[0] & 0x0F,
+                  m.deck_no, action_str, edge_str,
+                  m.midi_command_bytes[0]);
          pb_count++;
       }
-      m = m->next;
    }
    if (pb_count == 0) {
       LOG_INFO("  (no pitch bend mappings found)");
@@ -552,11 +516,11 @@ void sc_settings_print_gpio_mappings(mapping* mappings)
 
 audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_interface_type type )
 {
-   for (int i = 0; i < settings->num_audio_interfaces; i++)
+   for (auto& iface : settings->audio_interfaces)
    {
-      if (settings->audio_interfaces[i].type == type)
+      if (iface.type == type)
       {
-         return &settings->audio_interfaces[i];
+         return &iface;
       }
    }
    return nullptr;
@@ -564,11 +528,11 @@ audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_i
 
 void sc_settings_init_default_audio( sc_settings* settings )
 {
-   settings->num_audio_interfaces = 1;
+   settings->audio_interfaces.clear();
 
-   auto& iface = settings->audio_interfaces[0];
-   strncpy(iface.name, "Internal Codec", sizeof(iface.name));
-   strncpy(iface.device, "hw:0", sizeof(iface.device));
+   audio_interface iface{};
+   iface.name = "Internal Codec";
+   iface.device = "hw:0";
    iface.type = AUDIO_TYPE_MAIN;
    iface.channels = 2;
    iface.sample_rate = settings->sample_rate;
@@ -579,12 +543,11 @@ void sc_settings_init_default_audio( sc_settings* settings )
    iface.input_left = 0;
    iface.input_right = 1;
 
-   // Default stereo mapping
-   for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++) {
-      iface.output_map[i] = OUT_NONE;
-   }
+   // Default stereo mapping (output_map already zeroed by default initialization)
    iface.output_map[0] = OUT_AUDIO;
    iface.num_mapped_outputs = 2;  // Audio is stereo
+
+   settings->audio_interfaces.push_back(std::move(iface));
 }
 
 int sc_settings_get_output_channel( audio_interface* iface, output_channel_type logical )
@@ -603,11 +566,11 @@ int sc_settings_get_output_channel( audio_interface* iface, output_channel_type 
 
 audio_interface* sc_settings_find_cv_interface( sc_settings* settings )
 {
-   for (int i = 0; i < settings->num_audio_interfaces; i++)
+   for (auto& iface : settings->audio_interfaces)
    {
-      if (settings->audio_interfaces[i].supports_cv)
+      if (iface.supports_cv)
       {
-         return &settings->audio_interfaces[i];
+         return &iface;
       }
    }
    return nullptr;

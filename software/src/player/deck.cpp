@@ -189,7 +189,7 @@ void deck::load_folder(char* folder_name)
 		LOG_DEBUG("deck_load_folder");
 
 		sc_file* file = playlist->get_file(0, 0);
-		player.set_track(track_acquire_by_import(importer, file->full_path));
+		player.set_track(track_acquire_by_import(importer, file->full_path.c_str()));
 		LOG_DEBUG("deck_load_folder set track ok");
 		cues_load_from_file(&cues, player.track->path);
 		LOG_DEBUG("deck_load_folder set cues_load_from_file ok");
@@ -215,7 +215,7 @@ void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 		sc_file* file = playlist->get_file(current_folder_idx, 0);
 		if (file != nullptr)
 		{
-			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path.c_str()), settings);
 			LOG_DEBUG("deck %d next_file: loaded file 0", deck_no);
 		}
 		else
@@ -229,7 +229,7 @@ void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 		sc_file* file = playlist->get_file(current_folder_idx, static_cast<size_t>(current_file_idx));
 		if (file != nullptr)
 		{
-			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path.c_str()), settings);
 			LOG_DEBUG("deck %d next_file: loaded file %d", deck_no, current_file_idx);
 		}
 	}
@@ -268,7 +268,7 @@ void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 		sc_file* file = playlist->get_file(current_folder_idx, static_cast<size_t>(current_file_idx));
 		if (file != nullptr)
 		{
-			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path.c_str()), settings);
 			LOG_DEBUG("deck %d prev_file: loaded file %d", deck_no, current_file_idx);
 		}
 	}
@@ -295,7 +295,7 @@ void deck::next_folder(struct sc1000* engine, struct sc_settings* settings)
 		current_folder_idx++;
 		current_file_idx = 0;
 		sc_file* file = playlist->get_file(current_folder_idx, 0);
-		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+		load_track_internal(this, track_acquire_by_import(importer, file->full_path.c_str()), settings);
 		LOG_DEBUG("Deck %d: next_folder to %zu, file 0", deck_no, current_folder_idx);
 	}
 }
@@ -321,7 +321,7 @@ void deck::prev_folder(struct sc1000* engine, struct sc_settings* settings)
 		current_folder_idx--;
 		current_file_idx = 0;
 		sc_file* file = playlist->get_file(current_folder_idx, 0);
-		load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+		load_track_internal(this, track_acquire_by_import(importer, file->full_path.c_str()), settings);
 		LOG_DEBUG("Deck %d: prev_folder to %zu, file 0", deck_no, current_folder_idx);
 	}
 }
@@ -340,7 +340,7 @@ void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 			player.use_loop = false;
 			// We don't update current_file_idx here since random doesn't fit folder navigation
 			// Just load the track
-			load_track_internal(this, track_acquire_by_import(importer, file->full_path), settings);
+			load_track_internal(this, track_acquire_by_import(importer, file->full_path.c_str()), settings);
 		}
 	}
 }

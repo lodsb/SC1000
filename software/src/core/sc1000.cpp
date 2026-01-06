@@ -19,16 +19,16 @@ void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
 {
     LOG_INFO("SC1000 engine init (root: %s)", root_path);
 
-    auto* settings = static_cast<struct sc_settings*>(malloc(sizeof(struct sc_settings)));
+    auto* settings = new sc_settings{};  // Use C++ allocation with value initialization
 
     engine->settings = settings;
-    engine->mappings = nullptr;
+    engine->mappings.clear();
 
     // Store root path in settings for use by other components
     strncpy(settings->root_path, root_path, sizeof(settings->root_path) - 1);
     settings->root_path[sizeof(settings->root_path) - 1] = '\0';
 
-    sc_settings_load_user_configuration(engine->settings, &engine->mappings);
+    sc_settings_load_user_configuration(engine->settings, engine->mappings);
 
     // Verify root_path wasn't corrupted by settings loading
     LOG_DEBUG("After settings load, root_path = '%s'", settings->root_path);
@@ -114,6 +114,10 @@ void sc1000_clear(struct sc1000* engine)
     if (engine->ops->clear != nullptr) {
         engine->ops->clear(engine);
     }
+
+    // Clean up settings
+    delete engine->settings;
+    engine->settings = nullptr;
 }
 
 void sc1000_audio_engine_init(struct sc1000* engine, struct sc1000_ops* ops)

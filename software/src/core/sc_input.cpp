@@ -40,6 +40,7 @@ using sc::control::shifted;
 using sc::control::pitch_mode;
 using sc::control::find_io_mapping;
 using sc::control::find_midi_mapping;
+using sc::control::dispatch_event;
 
 namespace sc {
 namespace input {
@@ -210,21 +211,19 @@ void process_io(struct sc1000* sc1000_engine)
     // This ensures all mappings for the same button see the same pre-press shifted state
     bool shifted_at_start = shifted;
 
-    struct mapping* last_map = sc1000_engine->mappings;
-
-    while (last_map != nullptr)
+    for (auto& m : sc1000_engine->mappings)
     {
         // Only digital pins
-        if (last_map->type == IO && (!(last_map->gpio_port == 0 && !gpio->mcp23017_present)))
+        if (m.type == IO && (!(m.gpio_port == 0 && !gpio->mcp23017_present)))
         {
             bool pin_value = false;
-            if (last_map->gpio_port == 0 && gpio->mcp23017_present) // port 0, I2C GPIO expander
+            if (m.gpio_port == 0 && gpio->mcp23017_present) // port 0, I2C GPIO expander
             {
-                pin_value = (mcp_pins >> last_map->pin) & 0x01;
+                pin_value = (mcp_pins >> m.pin) & 0x01;
             }
             else if (gpio->mmap_present) // Ports 1-6, A13 GPIO
             {
-                pin_value = gpio_a13_read_pin(gpio, last_map->gpio_port, last_map->pin);
+                pin_value = gpio_a13_read_pin(gpio, m.gpio_port, m.pin);
             }
             else
             {
@@ -239,18 +238,18 @@ void process_io(struct sc1000* sc1000_engine)
             // > -scsettings.debounce_time and < 0 when debouncing negative edge
 
             // Button not pressed, check for button
-            if (last_map->debounce == 0)
+            if (m.debounce == 0)
             {
                 if (pin_value)
                 {
                     // Debug: log all button presses with their mapping details
-                    if (last_map->action_type == RECORD || last_map->action_type == LOOPERASE)
+                    if (m.action_type == RECORD || m.action_type == LOOPERASE)
                     {
                         LOG_DEBUG("Button port=%d pin=%d pressed, shifted=%d, edge_type=%d, action=%d",
-                                  last_map->gpio_port, last_map->pin, shifted, last_map->edge_type, last_map->action_type);
+                                  m.gpio_port, m.pin, shifted, m.edge_type, m.action_type);
                     }
-                    LOG_DEBUG("Button %d pressed", last_map->pin);
-                    if (first_time && last_map->deck_no == 1 && (last_map->action_type == VOLUP || last_map->action_type
+                    LOG_DEBUG("Button %d pressed", m.pin);
+                    if (first_time && m.deck_no == 1 && (m.action_type == VOLUP || m.action_type
                         == VOLDOWN))
                     {
                         sc1000_engine->beat_deck.player.set_track(
@@ -265,115 +264,113 @@ void process_io(struct sc1000* sc1000_engine)
                         // IMPORTANT: Use the shifted state captured at start of process_io()
                         // This ensures ALL mappings for the same button see the same pre-press state
                         // (prevents SHIFTON from affecting SHIFTOFF's latch value)
-                        last_map->shifted_at_press = shifted_at_start;
+                        m.shifted_at_press = shifted_at_start;
 
                         // Debug: show when mapping check happens for nav buttons
-                        if (last_map->action_type == NEXTFILE || last_map->action_type == PREVFILE ||
-                            last_map->action_type == RANDOMFILE || last_map->action_type == JOGPIT)
+                        if (m.action_type == NEXTFILE || m.action_type == PREVFILE ||
+                            m.action_type == RANDOMFILE || m.action_type == JOGPIT)
                         {
                             LOG_DEBUG("Checking mapping port=%d pin=%d action=%d edge=%d shifted=%d will_fire=%d",
-                                      last_map->gpio_port, last_map->pin, last_map->action_type,
-                                      last_map->edge_type, shifted,
-                                      ((!shifted && last_map->edge_type == BUTTON_PRESSED) ||
-                                       (shifted && last_map->edge_type == BUTTON_PRESSED_SHIFTED)) ? 1 : 0);
+                                      m.gpio_port, m.pin, m.action_type,
+                                      m.edge_type, shifted,
+                                      ((!shifted && m.edge_type == BUTTON_PRESSED) ||
+                                       (shifted && m.edge_type == BUTTON_PRESSED_SHIFTED)) ? 1 : 0);
                         }
 
-                        if ((!shifted && last_map->edge_type == BUTTON_PRESSED) || (shifted && last_map->edge_type ==
+                        if ((!shifted && m.edge_type == BUTTON_PRESSED) || (shifted && m.edge_type ==
                             BUTTON_PRESSED_SHIFTED))
                         {
                             // Show which action fires
-                            if (last_map->action_type == NEXTFILE || last_map->action_type == PREVFILE ||
-                                last_map->action_type == RANDOMFILE || last_map->action_type == JOGPIT)
+                            if (m.action_type == NEXTFILE || m.action_type == PREVFILE ||
+                                m.action_type == RANDOMFILE || m.action_type == JOGPIT)
                             {
                                 LOG_DEBUG("FIRING action=%d for port=%d pin=%d deck=%d",
-                                          last_map->action_type, last_map->gpio_port, last_map->pin, last_map->deck_no);
+                                          m.action_type, m.gpio_port, m.pin, m.deck_no);
                             }
-                            io_event(last_map, NULL, sc1000_engine, settings);
+                            dispatch_event(&m, nullptr, sc1000_engine, settings);
                         }
 
                         // start the counter
-                        last_map->debounce++;
+                        m.debounce++;
                     }
                 }
             }
 
             // Debouncing positive edge, increment value
-            else if (last_map->debounce > 0 && last_map->debounce < settings->debounce_time)
+            else if (m.debounce > 0 && m.debounce < settings->debounce_time)
             {
-                last_map->debounce++;
+                m.debounce++;
             }
 
             // debounce finished, keep incrementing until hold reached
-            else if (last_map->debounce >= settings->debounce_time && last_map->debounce < settings->hold_time)
+            else if (m.debounce >= settings->debounce_time && m.debounce < settings->hold_time)
             {
                 // check to see if unpressed
                 if (!pin_value)
                 {
-                    LOG_DEBUG("Button %d released", last_map->pin);
+                    LOG_DEBUG("Button %d released", m.pin);
                     // Use latched shifted state for release detection
-                    if ((!last_map->shifted_at_press && last_map->edge_type == BUTTON_RELEASED) ||
-                        (last_map->shifted_at_press && last_map->edge_type == BUTTON_RELEASED_SHIFTED))
-                        io_event(last_map, NULL, sc1000_engine, settings);
+                    if ((!m.shifted_at_press && m.edge_type == BUTTON_RELEASED) ||
+                        (m.shifted_at_press && m.edge_type == BUTTON_RELEASED_SHIFTED))
+                        dispatch_event(&m, nullptr, sc1000_engine, settings);
                     // start the counter
-                    last_map->debounce = -settings->debounce_time;
+                    m.debounce = -settings->debounce_time;
                 }
 
                 else
-                    last_map->debounce++;
+                    m.debounce++;
             }
             // Button has been held for a while
-            else if (last_map->debounce == settings->hold_time)
+            else if (m.debounce == settings->hold_time)
             {
                 // Debug: log all hold events
                 LOG_DEBUG("Button port=%d pin=%d HELD, shifted_at_press=%d, edge_type=%d, action=%d",
-                          last_map->gpio_port, last_map->pin, last_map->shifted_at_press,
-                          last_map->edge_type, last_map->action_type);
+                          m.gpio_port, m.pin, m.shifted_at_press,
+                          m.edge_type, m.action_type);
                 // Use latched shifted state from when button was first pressed
-                if ((!last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING) ||
-                    (last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING_SHIFTED))
+                if ((!m.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
+                    (m.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
                 {
                     LOG_DEBUG("Triggering held action for port=%d pin=%d action=%d",
-                              last_map->gpio_port, last_map->pin, last_map->action_type);
-                    io_event(last_map, NULL, sc1000_engine, settings);
+                              m.gpio_port, m.pin, m.action_type);
+                    dispatch_event(&m, nullptr, sc1000_engine, settings);
                 }
-                last_map->debounce++;
+                m.debounce++;
             }
 
             // Button still holding, check for release
-            else if (last_map->debounce > settings->hold_time)
+            else if (m.debounce > settings->hold_time)
             {
                 if (pin_value)
                 {
-                    if (last_map->action_type == VOLUHOLD || last_map->action_type == VOLDHOLD)
+                    if (m.action_type == VOLUHOLD || m.action_type == VOLDHOLD)
                     {
                         // keep running the vol up/down actions if they're held
                         // Use latched shifted state from when button was first pressed
-                        if ((!last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING) ||
-                            (last_map->shifted_at_press && last_map->edge_type == BUTTON_HOLDING_SHIFTED))
-                            io_event(last_map, NULL, sc1000_engine, settings);
+                        if ((!m.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
+                            (m.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
+                            dispatch_event(&m, nullptr, sc1000_engine, settings);
                     }
                 }
                 // check to see if unpressed
                 else
                 {
-                    LOG_DEBUG("Button %d released", last_map->pin);
+                    LOG_DEBUG("Button %d released", m.pin);
                     // Note: After hold time, release events don't fire (button was held too long)
                     // Only unshifted BUTTON_RELEASED fires here (for legacy compatibility)
-                    if (last_map->edge_type == BUTTON_RELEASED && !last_map->shifted_at_press)
-                        io_event(last_map, NULL, sc1000_engine, settings);
+                    if (m.edge_type == BUTTON_RELEASED && !m.shifted_at_press)
+                        dispatch_event(&m, nullptr, sc1000_engine, settings);
                     // start the counter
-                    last_map->debounce = -settings->debounce_time;
+                    m.debounce = -settings->debounce_time;
                 }
             }
 
             // Debouncing negative edge, increment value - will reset when zero is reached
-            else if (last_map->debounce < 0)
+            else if (m.debounce < 0)
             {
-                last_map->debounce++;
+                m.debounce++;
             }
         }
-
-        last_map = last_map->next;
     }
 
     // Process MIDI events from the lock-free queue
@@ -381,11 +378,11 @@ void process_io(struct sc1000* sc1000_engine)
     int midi_shifted;
     while (midi_event_queue_pop(midi_bytes, &midi_shifted)) {
         EventType edge = midi_shifted ? BUTTON_PRESSED_SHIFTED : BUTTON_PRESSED;
-        struct mapping* midi_map = find_midi_mapping(sc1000_engine->mappings, midi_bytes, edge);
+        mapping* midi_map = find_midi_mapping(sc1000_engine->mappings, midi_bytes, edge);
         if (midi_map != nullptr) {
             LOG_DEBUG("MIDI mapping found: action=%d deck=%d param=%d",
                      midi_map->action_type, midi_map->deck_no, midi_map->parameter);
-            io_event(midi_map, midi_bytes, sc1000_engine, settings);
+            dispatch_event(midi_map, midi_bytes, sc1000_engine, settings);
         } else {
             LOG_DEBUG("MIDI no mapping for [%02X %02X %02X] shifted=%d",
                      midi_bytes[0], midi_bytes[1], midi_bytes[2], midi_shifted);

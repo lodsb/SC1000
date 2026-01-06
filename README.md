@@ -19,13 +19,13 @@ The software in the `software/` folder has been completely rewritten and moderni
 
 - **Loop recording** with punch-in overdub and per-deck control (via external audio interface)
 - **High-quality sinc interpolation** (16-tap, anti-aliased)
-- **Float-based audio engine** with native 24-bit support
+- **Float-based audio engine** with native device bit-depth support for I/O
 - **CV outputs** for modular synthesis integration (via external audio interface)
 - **Multi-device audio routing** with per-device configuration
-- **Extensive logging system** with file output
+- **Extensive logging system** with file output, DSP load to terminal etc
 - **JSON configuration** for easy customization
 - **CMake build system** with Docker cross-compilation support
-- **C++17 codebase** with modern patterns (RAII, namespaces, smart pointers)
+- **C++17 codebase** with modern patterns (RAII, namespaces, smart pointers, hardware abstraction)
 
 For more info see below (section [Software Features Version 2](#software-features-version-2))
 
@@ -148,7 +148,7 @@ Record audio input into an in-memory buffer that can be immediately scratched an
 - Recording appears as the first track in the playlist (position 0)
 - While recording, input audio is monitored through the deck's volume control
 - Scratching the deck is possible during both looping and recording
-- Maximum loop duration is configurable in settings (`loop_max_seconds`, default 60 sec)
+- Maximum loop duration is configurable in settings (`loop_max_seconds`, default 60 sec), this is pre-allocated per deck at initialization
 
 ---
 
@@ -294,7 +294,7 @@ Options:
 
 ### Logging System
 
-Configurable logging with multiple output targets and severity levels.
+Configurable logging with multiple output targets and severity levels. You can also monitor the DSP/CPU use by enabling the flag `--show-stats`
 
 **Log levels:**
 | Level | Description |

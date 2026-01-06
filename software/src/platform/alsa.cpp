@@ -27,1105 +27,697 @@
 #include <alsa/asoundlib.h>
 
 #include "../util/log.h"
-#include "../core/global.h"
 #include "../core/sc1000.h"
 #include "../core/sc_settings.h"
 #include "../engine/audio_engine.h"
 #include "../engine/cv_engine.h"
-#include "../engine/loop_buffer.h"
 #include "../player/player.h"
 #include "../player/track.h"
 
 #include "alsa.h"
 
+//
+// Constants
+//
+static constexpr int TARGET_SAMPLE_RATE = 48000;
+static constexpr int DEVICE_CHANNELS = 2;
+static constexpr snd_pcm_format_t TARGET_SAMPLE_FORMAT = SND_PCM_FORMAT_S16_LE;
 
-/* This structure doesn't have corresponding functions to be an
- * abstraction of the ALSA calls; it is merely a container for these
- * variables. */
-
-struct alsa_pcm
-{
-   snd_pcm_t* pcm;
-
-   struct pollfd* pe;
-   size_t pe_count; /* number of pollfd entries */
-
-   signed short* buf;  /* audio buffer for RW mode */
-   int rate;
-   snd_pcm_uframes_t period_size;
+//
+// Internal PCM state
+//
+struct alsa_pcm {
+    snd_pcm_t* pcm = nullptr;
+    struct pollfd* pe = nullptr;
+    size_t pe_count = 0;
+    signed short* buf = nullptr;
+    int rate = 0;
+    snd_pcm_uframes_t period_size = 0;
 };
 
-struct alsa
-{
-   struct alsa_pcm capture, playback;
-   bool started;
-   bool capture_enabled;                // Whether capture device is open
-   int num_channels;                    // Number of output channels (2 for stereo, 12 for Bitwig Connect, etc.)
-   int capture_channels;                // Number of input channels
-   int capture_left;                    // Which capture channel is left (default 0)
-   int capture_right;                   // Which capture channel is right (default 1)
-   struct audio_interface* config;      // Pointer to the matched config (for output_map)
-   struct cv_state cv;                  // CV engine state
-   struct loop_buffer loop[2];          // Loop buffer per deck (0=beat, 1=scratch)
-   int active_recording_deck;           // Which deck is currently recording (-1 = none)
+//
+// ALSA device info (for discovery)
+//
+struct alsa_device_info {
+    bool is_present = false;
+    int device_id = -1;
+    int subdevice_id = -1;
+    unsigned int input_channels = 0;
+    unsigned int output_channels = 0;
+    bool is_internal = false;
+    bool supports_48k_samplerate = false;
+    bool supports_16bit_pcm = false;
+    unsigned int period_size = 256;
+    unsigned int buffer_period_factor = 2;
+    char card_name[128] = {};
 };
 
-static void alsa_error( const char* msg, int r )
-{
-   LOG_ERROR("ALSA %s: %s", msg, snd_strerror(r));
-}
+static constexpr int MAX_ALSA_DEVICES = 8;
+static alsa_device_info alsa_devices[MAX_ALSA_DEVICES];
 
-static bool chk( const char* s, int r )
-{
-   if ( r < 0 )
-   {
-      alsa_error(s, r);
-      return false;
-   }
-   else
-   {
-      return true;
-   }
-}
+//
+// AlsaAudio class - implements AudioHardware interface
+//
+class AlsaAudio : public AudioHardware {
+public:
+    AlsaAudio(sc1000* engine) : engine_(engine) {}
+    ~AlsaAudio() override;
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Internal ALSA device discovery info (not to be confused with sc_settings audio_interface)
-struct alsa_device_info
-{
-   bool is_present;
-   int device_id;
-   int subdevice_id;
+    // AudioHardware interface
+    ssize_t pollfds(struct pollfd* pe, size_t z) override;
+    int handle() override;
+    unsigned int sample_rate() const override { return playback_.rate; }
+    void start() override {}  // PCM started on first write
+    void stop() override {}
 
-   unsigned int input_channels;
-   unsigned int output_channels;
+    // Recording control (delegated to audio engine)
+    bool start_recording(int deck, double playback_position) override;
+    void stop_recording(int deck) override;
+    bool is_recording(int deck) const override;
+    bool has_loop(int deck) const override;
+    bool has_capture() const override { return capture_enabled_; }
+    void reset_loop(int deck) override;
+    struct track* get_loop_track(int deck) override;
+    struct track* peek_loop_track(int deck) override;
 
-   bool is_internal;
-   bool supports_48k_samplerate;
-   bool supports_16bit_pcm;
+    // Setup (called by factory)
+    bool setup(alsa_device_info* device_info, audio_interface* config, int num_channels, sc_settings* settings);
 
-   unsigned int period_size;
-   unsigned int buffer_period_factor;
+private:
+    sc1000* engine_;
+    alsa_pcm capture_{};
+    alsa_pcm playback_{};
+    bool started_ = false;
+    bool capture_enabled_ = false;
+    int num_channels_ = 2;
+    int capture_channels_ = 0;
+    int capture_left_ = 0;
+    int capture_right_ = 1;
+    audio_interface* config_ = nullptr;
+    cv_state cv_{};
+    snd_pcm_format_t playback_format_ = SND_PCM_FORMAT_S16_LE;
+    snd_pcm_format_t capture_format_ = SND_PCM_FORMAT_S16_LE;
+    std::unique_ptr<sc::audio::AudioEngineBase> audio_engine_;
 
-   char card_name[128];  // ALSA card name for matching
+    int process_audio();
+    static ssize_t pcm_pollfds(alsa_pcm* pcm, struct pollfd* pe, size_t z);
+    static int pcm_revents(alsa_pcm* pcm, unsigned short* revents);
+    static void pcm_close(alsa_pcm* pcm);
 };
 
-static void print_alsa_device_info(struct alsa_device_info* iface)
-{
-   LOG_INFO("Device info: card='%s' dev=%d sub=%d present=%d internal=%d in=%d out=%d 48k=%d 16bit=%d period=%d",
-            iface->card_name, iface->device_id, iface->subdevice_id,
-            iface->is_present, iface->is_internal,
-            iface->input_channels, iface->output_channels,
-            iface->supports_48k_samplerate, iface->supports_16bit_pcm,
-            iface->period_size);
+//
+// Helper functions
+//
+static void alsa_error(const char* msg, int r) {
+    LOG_ERROR("ALSA %s: %s", msg, snd_strerror(r));
 }
 
-#define MAX_ALSA_DEVICES 8
-
-static struct alsa_device_info alsa_devices[MAX_ALSA_DEVICES] = {
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""},
-        {false, -1, -1, 0, 0, false, false, false, 2, 2, ""}
-};
-
-static void create_alsa_device_id_string(char* str, unsigned int size, int dev, int subdev, bool is_plughw)
-{
-   if(!is_plughw)
-   {
-      snprintf(str, size, "hw:%d,%d", dev, subdev);
-   }
-   else
-   {
-      snprintf(str, size, "plughw:%d,%d", dev, subdev);
-   }
+static bool chk(const char* s, int r) {
+    if (r < 0) {
+        alsa_error(s, r);
+        return false;
+    }
+    return true;
 }
 
-static void fill_audio_interface_info(struct sc_settings* settings)
-{
-   int err;
-   int card_id, last_card_id = -1;
-
-   char str[64];
-   char pcm_name[32];
-
-   snd_pcm_format_mask_t* fmask;
-   snd_pcm_format_mask_alloca(&fmask);
-
-   LOG_INFO("Scanning ALSA audio interfaces");
-
-   // force alsa to init some state
-   while ((err = snd_card_next(&card_id)) >= 0 && card_id < 0) {
-      LOG_DEBUG("First call returned -1, retrying...");
-   }
-
-   if(card_id >= 0)
-   {
-      do
-      {
-         LOG_DEBUG("card_id %d, last_card_id %d", card_id, last_card_id);
-
-         snd_ctl_t* card_handle;
-
-         sprintf(str, "hw:%i", card_id);
-
-         LOG_DEBUG("Open card %d: %s", card_id, str);
-
-         if ( (err = snd_ctl_open(&card_handle, str, 0)) < 0 )
-         {
-            LOG_WARN("Can't open card %d: %s", card_id, snd_strerror(err));
-         }
-         else
-         {
-            snd_ctl_card_info_t* card_info = nullptr;
-
-            snd_ctl_card_info_alloca(&card_info);
-
-            if ( (err = snd_ctl_card_info(card_handle, card_info)) < 0 )
-            {
-               LOG_WARN("Can't get info for card %d: %s", card_id, snd_strerror(err));
-            }
-            else
-            {
-               const char* card_name = snd_ctl_card_info_get_name(card_info);
-
-               LOG_INFO("Card %d = %s", card_id, card_name);
-
-               if (card_id >= MAX_ALSA_DEVICES) {
-                  LOG_WARN("Skipping card %d (max %d devices supported)", card_id, MAX_ALSA_DEVICES);
-                  snd_ctl_close(card_handle);
-                  continue;
-               }
-
-               alsa_devices[ card_id ].is_present = true;
-               strncpy(alsa_devices[card_id].card_name, card_name, sizeof(alsa_devices[card_id].card_name) - 1);
-               alsa_devices[card_id].card_name[sizeof(alsa_devices[card_id].card_name) - 1] = '\0';
-               if ( strcmp(card_name, "sun4i-codec") == 0 )
-               {
-                  alsa_devices[ card_id ].is_internal = true;
-                  alsa_devices[ card_id ].period_size = settings->period_size;
-                  alsa_devices[ card_id ].buffer_period_factor = settings->buffer_period_factor;
-               }
-               else
-               {
-                  alsa_devices[ card_id ].is_internal = false;
-                  alsa_devices[ card_id ].period_size = settings->period_size;
-                  alsa_devices[ card_id ].buffer_period_factor = settings->buffer_period_factor;
-               }
-
-               unsigned int playback_count = 0;
-               unsigned int capture_count = 0;
-
-               int device_id = -1;
-
-               while ( snd_ctl_pcm_next_device(card_handle, &device_id) >= 0 && device_id >= 0 )
-               {
-                  create_alsa_device_id_string(pcm_name, sizeof(pcm_name), card_id, device_id, false);
-
-                  LOG_DEBUG("Checking PCM device: %s", pcm_name);
-
-                  snd_pcm_t* pcm;
-
-                  // Try opening in playback mode
-                  if ( snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_PLAYBACK, 0) >= 0 )
-                  {
-                     snd_pcm_hw_params_t* params;
-                     snd_pcm_hw_params_alloca(&params);
-                     snd_pcm_hw_params_any(pcm, params);
-
-                     // Check if sample rate is supported
-                     if ( snd_pcm_hw_params_test_rate(pcm, params, TARGET_SAMPLE_RATE, 0) == 0 )
-                     {
-                        LOG_DEBUG("  - Playback supported at %d Hz", TARGET_SAMPLE_RATE);
-
-                        alsa_devices[ card_id ].supports_48k_samplerate = true;
-                     }
-                     else
-                     {
-                        LOG_DEBUG("  - Playback does NOT support %d Hz", TARGET_SAMPLE_RATE);
-
-                        alsa_devices[ card_id ].supports_48k_samplerate = false;
-                     }
-
-                     if ( snd_pcm_hw_params_test_format(pcm, params, TARGET_SAMPLE_FORMAT) == 0 )
-                     {
-                        LOG_DEBUG("  - Playback supports 16-bit signed format");
-
-                        alsa_devices[ card_id ].supports_16bit_pcm = true;
-                     }
-                     else
-                     {
-                        LOG_DEBUG("  - Playback does NOT support 16-bit signed format");
-
-                        alsa_devices[ card_id ].supports_16bit_pcm = false;
-                     }
-
-                     unsigned int min, max;
-                     err = snd_pcm_hw_params_get_channels_min(params, &min);
-                     if ( err >= 0 )
-                     {
-                        err = snd_pcm_hw_params_get_channels_max(params, &max);
-                        if ( err >= 0 )
-                        {
-                           if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
-                           {
-                              LOG_DEBUG("Outputs: %u", max);
-                              playback_count = max;
-                           }
-                        }
-                     }
-
-                     snd_pcm_hw_params_get_format_mask(params, fmask);
-
-                     snd_pcm_close(pcm);
-                  }
-
-                  // Try opening in capture mode
-                  if ( snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_CAPTURE, 0) >= 0 )
-                  {
-                     snd_pcm_hw_params_t* params;
-                     snd_pcm_hw_params_alloca(&params);
-                     snd_pcm_hw_params_any(pcm, params);
-
-                     unsigned int min, max;
-                     err = snd_pcm_hw_params_get_channels_min(params, &min);
-                     if ( err >= 0 )
-                     {
-                        err = snd_pcm_hw_params_get_channels_max(params, &max);
-                        if ( err >= 0 )
-                        {
-                           if ( !snd_pcm_hw_params_test_channels(pcm, params, max) )
-                           {
-                              LOG_DEBUG("Inputs: %u", max);
-                              capture_count = max;
-                           }
-                        }
-                     }
-
-                     snd_pcm_close(pcm);
-                  }
-
-                  alsa_devices[ card_id ].input_channels = capture_count;
-                  alsa_devices[ card_id ].output_channels = playback_count;
-
-                  alsa_devices[ card_id ].device_id = card_id;
-                  alsa_devices[ card_id ].subdevice_id = 0; // for now
-
-                  LOG_DEBUG("I/O channels: %d/%d", capture_count, playback_count);
-               }
-
-               snd_ctl_close(card_handle);
-            }
-         }
-
-         last_card_id = card_id;
-      } while ( (err = snd_card_next(&card_id)) >= 0 && card_id >= 0 );
-   }
-
-   LOG_DEBUG("Last card id %d %d", card_id, last_card_id);
-
-   //ALSA allocates some mem to load its config file when we call some of the
-   //above functions. Now that we're done getting the info, let's tell ALSA
-   //to unload the info and free up that mem
-   snd_config_update_free_global();
+static void create_alsa_device_id_string(char* str, unsigned int size, int dev, int subdev, bool is_plughw) {
+    if (!is_plughw) {
+        snprintf(str, size, "hw:%d,%d", dev, subdev);
+    } else {
+        snprintf(str, size, "plughw:%d,%d", dev, subdev);
+    }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-static int pcm_open( struct alsa_pcm* alsa, const char* device_name,
-                     snd_pcm_stream_t stream, struct alsa_device_info* device_info, uint8_t num_channels)
-{
-   int err, dir;
-
-   snd_pcm_hw_params_t *hw_params;
-   snd_pcm_uframes_t frames;
-
-   err = snd_pcm_open(&alsa->pcm, device_name, stream, SND_PCM_NONBLOCK);
-   if (!chk("open", err))
-      return -1;
-
-   snd_pcm_hw_params_alloca(&hw_params);
-
-   err = snd_pcm_hw_params_any(alsa->pcm, hw_params);
-   if (!chk("hw_params_any", err))
-      return -1;
-
-   err = snd_pcm_hw_params_set_access(alsa->pcm, hw_params,
-                                      SND_PCM_ACCESS_MMAP_INTERLEAVED);
-   if (!chk("hw_params_set_access", err))
-      return -1;
-
-   err = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, SND_PCM_FORMAT_S16);
-   if (!chk("hw_params_set_format", err)) {
-      LOG_ERROR("16-bit signed format is not available. You may need to use a 'plughw' device.");
-      return -1;
-   }
-
-   /* Prevent accidentally introducing excess resamplers. There is
-    * already one on the signal path to handle pitch adjustments.
-    * This is even if a 'plug' device is used, which effectively lets
-    * the user unknowingly select any sample rate. */
-
-   err = snd_pcm_hw_params_set_rate_resample(alsa->pcm, hw_params, 0);
-   if (!chk("hw_params_set_rate_resample", err))
-      return -1;
-
-   err = snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, TARGET_SAMPLE_RATE, 0);
-   if (!chk("hw_params_set_rate", err)) {
-      LOG_ERROR("Sample rate of %dHz is not implemented by the hardware.", TARGET_SAMPLE_RATE);
-      return -1;
-   }
-
-   alsa->rate = TARGET_SAMPLE_RATE;
-
-   err = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, num_channels);
-   if (!chk("hw_params_set_channels", err))
-   {
-      LOG_ERROR("%d channel audio not available on this device.", num_channels);
-      return -1;
-   }
-
-   /* This is fundamentally a latency-sensitive application that is
-    * likely to be the primary application running, so assume we want
-    * the hardware to be giving us immediate wakeups */
-
-   snd_pcm_uframes_t period_size = ( snd_pcm_uframes_t ) device_info->period_size;
-   err = snd_pcm_hw_params_set_period_size_near(alsa->pcm, hw_params, &period_size, &dir);
-   if (!chk("snd_pcm_hw_params_set_period_size_near", err))
-   {
-      return -1;
-   }
-
-   err = snd_pcm_hw_params_get_period_size(hw_params, &period_size, nullptr);
-   if (!chk("snd_pcm_hw_params_get_period_size", err))
-   {
-      LOG_ERROR("Error getting period size: %s", snd_strerror(err));
-      return -1;
-   }
-
-   alsa->period_size = period_size;
-
-   LOG_INFO("Period size: %lu frames", period_size);
-
-   alsa->buf = nullptr;  /* Not needed for MMAP mode */
-   auto buffer_size = static_cast<snd_pcm_uframes_t>(period_size * device_info->buffer_period_factor);
-
-   switch (stream) {
-      case SND_PCM_STREAM_CAPTURE:
-         /* Maximum buffer to minimise drops */
-         err = snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames);
-         if (!chk("hw_params_set_buffer_size_last", err))
-            return -1;
-         break;
-
-      case SND_PCM_STREAM_PLAYBACK:
-         /* Smallest possible buffer to keep latencies low */
-         err = snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size);
-         if (!chk("hw_params_set_buffer_size", err)) {
-            LOG_ERROR("Buffer of %lu samples is probably too small; try increasing period size or buffer_period_factor",
-                      buffer_size);
-            return -1;
-         }
-         break;
-
-      default:
-         abort();
-   }
-
-   err = snd_pcm_hw_params(alsa->pcm, hw_params);
-   if (!chk("hw_params", err))
-      return -1;
-
-   return 0;
+static void print_alsa_device_info(alsa_device_info* iface) {
+    LOG_INFO("Device info: card='%s' dev=%d sub=%d present=%d internal=%d in=%d out=%d 48k=%d 16bit=%d period=%d",
+             iface->card_name, iface->device_id, iface->subdevice_id,
+             iface->is_present, iface->is_internal,
+             iface->input_channels, iface->output_channels,
+             iface->supports_48k_samplerate, iface->supports_16bit_pcm,
+             iface->period_size);
 }
 
-static void pcm_close( struct alsa_pcm* alsa )
-{
-   if ( snd_pcm_close(alsa->pcm) < 0 )
-   {
-      abort();
-   }
-   if (alsa->buf) {
-      free(alsa->buf);
-      alsa->buf = nullptr;
-   }
+static int format_bytes_per_sample(snd_pcm_format_t fmt) {
+    switch (fmt) {
+        case SND_PCM_FORMAT_S16_LE:    return 2;
+        case SND_PCM_FORMAT_S24_3LE:   return 3;
+        case SND_PCM_FORMAT_S24_LE:    return 4;
+        case SND_PCM_FORMAT_S32_LE:    return 4;
+        case SND_PCM_FORMAT_FLOAT_LE:  return 4;
+        default:                       return 2;
+    }
 }
 
-static ssize_t pcm_pollfds( struct alsa_pcm* alsa, struct pollfd* pe,
-                            size_t z )
-{
-   int r;
+static snd_pcm_format_t select_best_format(snd_pcm_t* pcm, snd_pcm_hw_params_t* hw_params) {
+    static const snd_pcm_format_t formats[] = {
+        SND_PCM_FORMAT_S16_LE,
+        SND_PCM_FORMAT_S24_3LE,
+        SND_PCM_FORMAT_S24_LE,
+        SND_PCM_FORMAT_S32_LE,
+        SND_PCM_FORMAT_FLOAT_LE
+    };
 
-   int count = snd_pcm_poll_descriptors_count(alsa->pcm);
-   auto ucount = static_cast<unsigned int>(count);
+    for (auto fmt : formats) {
+        if (snd_pcm_hw_params_test_format(pcm, hw_params, fmt) == 0) {
+            LOG_INFO("Selected audio format: %s", snd_pcm_format_name(fmt));
+            return fmt;
+        }
+    }
 
-   LOG_DEBUG("poll %d", count);
-
-   if ( ucount > z )
-   {
-      return -1;
-   }
-
-   if ( ucount == 0 )
-   {
-      alsa->pe = nullptr;
-   }
-   else
-   {
-      r = snd_pcm_poll_descriptors(alsa->pcm, pe, ucount);
-      if ( r < 0 )
-      {
-         alsa_error("poll_descriptors", r);
-         return -1;
-      }
-      alsa->pe = pe;
-   }
-
-   alsa->pe_count = ucount;
-   return count;
+    LOG_ERROR("No supported audio format found");
+    return SND_PCM_FORMAT_UNKNOWN;
 }
 
-static int pcm_revents( struct alsa_pcm* alsa, unsigned short* revents )
-{
-   int r;
-
-   r = snd_pcm_poll_descriptors_revents(alsa->pcm, alsa->pe, alsa->pe_count,
-                                        revents);
-   if ( r < 0 )
-   {
-      alsa_error("poll_descriptors_revents", r);
-      return -1;
-   }
-
-   return 0;
-}
-
-/* Start the audio device capture and playback */
-
-static void start( struct sc1000* dv )
-{
-   (void)dv;
-   // Currently no-op - PCM is started on first write
-}
-
-static void stop( struct sc1000* dv )
-{
-   (void)dv;
-   // Currently no-op
-}
-
-/* Register this device's interest in a set of pollfd file
- * descriptors */
-
-static ssize_t pollfds( struct sc1000* engine, struct pollfd* pe, size_t z )
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-
-   /* Only poll playback - capture is handled opportunistically in process_audio() */
-   ssize_t r = pcm_pollfds(&alsa->playback, pe, z);
-   if ( r < 0 )
-   {
-      return -1;
-   }
-
-   return r;
-}
-
-/* Access the interleaved area presented by the ALSA library.  The
- * device is opened SND_PCM_FORMAT_S16 which is in the local endianess
- * and therefore is "signed short" */
-
-static signed short* buffer(const snd_pcm_channel_area_t *area,
+static void* buffer_generic(const snd_pcm_channel_area_t* area,
                             snd_pcm_uframes_t offset,
-                            int num_channels)
-{
-   assert(area->first % 8 == 0);
-   // step = num_channels * 16 bits per sample
-   unsigned int expected_step = num_channels * 16;
-   assert(area->step == expected_step);
-
-   /* Calculate byte offset, then cast to short* */
-   unsigned int bitofs = area->first + area->step * offset;
-   return reinterpret_cast<signed short*>(static_cast<char*>(area->addr) + bitofs / 8);
+                            int num_channels,
+                            int bytes_per_sample) {
+    assert(area->first % 8 == 0);
+    unsigned int expected_step = num_channels * bytes_per_sample * 8;
+    assert(area->step == expected_step);
+    unsigned int bitofs = area->first + area->step * offset;
+    return static_cast<char*>(area->addr) + bitofs / 8;
 }
 
+//
+// Device discovery
+//
+static void fill_audio_interface_info(sc_settings* settings) {
+    int err;
+    int card_id, last_card_id = -1;
+    char str[64];
+    char pcm_name[32];
 
-/* Combined capture and playback processing using MMAP for lowest latency.
- * Gets both capture and playback mmap buffers, calls audio_engine with both,
- * then commits both. This enables zero-latency monitoring during recording. */
+    snd_pcm_format_mask_t* fmask;
+    snd_pcm_format_mask_alloca(&fmask);
 
-static int process_audio( struct sc1000* engine)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   const snd_pcm_channel_area_t *playback_areas;
-   const snd_pcm_channel_area_t *capture_areas = nullptr;
-   snd_pcm_uframes_t playback_offset, playback_frames;
-   snd_pcm_uframes_t capture_offset = 0, capture_frames = 0;
-   snd_pcm_sframes_t commitres, avail;
-   int err;
+    LOG_INFO("Scanning ALSA audio interfaces");
 
-   /* Handle recording start/stop state changes for both decks */
-   sc1000_handle_deck_recording(engine);
+    while ((err = snd_card_next(&card_id)) >= 0 && card_id < 0) {
+        LOG_DEBUG("First call returned -1, retrying...");
+    }
 
-   /* Check how many playback frames are available */
-   avail = snd_pcm_avail_update(alsa->playback.pcm);
-   if (avail < 0)
-      return static_cast<int>(avail);
+    if (card_id >= 0) {
+        do {
+            LOG_DEBUG("card_id %d, last_card_id %d", card_id, last_card_id);
+            snd_ctl_t* card_handle;
+            sprintf(str, "hw:%i", card_id);
 
-   if (static_cast<snd_pcm_uframes_t>(avail) < alsa->playback.period_size)
-      return 0;  /* Not enough space yet */
+            if ((err = snd_ctl_open(&card_handle, str, 0)) < 0) {
+                LOG_WARN("Can't open card %d: %s", card_id, snd_strerror(err));
+            } else {
+                snd_ctl_card_info_t* card_info = nullptr;
+                snd_ctl_card_info_alloca(&card_info);
 
-   playback_frames = alsa->playback.period_size;
+                if ((err = snd_ctl_card_info(card_handle, card_info)) < 0) {
+                    LOG_WARN("Can't get info for card %d: %s", card_id, snd_strerror(err));
+                } else {
+                    const char* card_name = snd_ctl_card_info_get_name(card_info);
+                    LOG_INFO("Card %d = %s", card_id, card_name);
 
-   /* Get playback mmap buffer */
-   err = snd_pcm_mmap_begin(alsa->playback.pcm, &playback_areas, &playback_offset, &playback_frames);
-   if (err < 0)
-      return err;
+                    if (card_id >= MAX_ALSA_DEVICES) {
+                        LOG_WARN("Skipping card %d (max %d devices supported)", card_id, MAX_ALSA_DEVICES);
+                        snd_ctl_close(card_handle);
+                        continue;
+                    }
 
-   signed short* playback_pcm = buffer(&playback_areas[0], playback_offset, alsa->num_channels);
+                    alsa_devices[card_id].is_present = true;
+                    strncpy(alsa_devices[card_id].card_name, card_name, sizeof(alsa_devices[card_id].card_name) - 1);
 
-   /* For multi-channel: clear entire buffer first (zeros for unused channels) */
-   if (alsa->num_channels > 2)
-   {
-      memset(playback_pcm, 0, playback_frames * alsa->num_channels * sizeof(signed short));
-   }
+                    if (strcmp(card_name, "sun4i-codec") == 0) {
+                        alsa_devices[card_id].is_internal = true;
+                    }
+                    alsa_devices[card_id].period_size = settings->period_size;
+                    alsa_devices[card_id].buffer_period_factor = settings->buffer_period_factor;
 
-   /* Get capture mmap buffer if capture is enabled and has data */
-   const signed short* capture_pcm = nullptr;
-   bool capture_valid = false;
+                    unsigned int playback_count = 0;
+                    unsigned int capture_count = 0;
+                    int device_id = -1;
 
-   if (alsa->capture_enabled)
-   {
-      snd_pcm_sframes_t capture_avail = snd_pcm_avail_update(alsa->capture.pcm);
-      if (capture_avail >= static_cast<snd_pcm_sframes_t>(alsa->capture.period_size))
-      {
-         capture_frames = alsa->capture.period_size;
-         err = snd_pcm_mmap_begin(alsa->capture.pcm, &capture_areas, &capture_offset, &capture_frames);
-         if (err >= 0)
-         {
-            capture_pcm = buffer(&capture_areas[0], capture_offset, alsa->capture_channels);
-            capture_valid = true;
-         }
-      }
-      else if (capture_avail < 0 && capture_avail == -EPIPE)
-      {
-         // Capture overrun - recover
-         snd_pcm_prepare(alsa->capture.pcm);
-         snd_pcm_start(alsa->capture.pcm);
-      }
-   }
+                    while (snd_ctl_pcm_next_device(card_handle, &device_id) >= 0 && device_id >= 0) {
+                        create_alsa_device_id_string(pcm_name, sizeof(pcm_name), card_id, device_id, false);
 
-   /* Build capture info struct for audio_engine */
-   struct audio_capture capture_info = {};
-   if (capture_valid && capture_pcm)
-   {
-      capture_info.buffer = capture_pcm;
-      capture_info.channels = alsa->capture_channels;
-      capture_info.left_channel = alsa->capture_left;
-      capture_info.right_channel = alsa->capture_right;
-      capture_info.loop[0] = &alsa->loop[0];
-      capture_info.loop[1] = &alsa->loop[1];
-      capture_info.recording_deck = alsa->active_recording_deck;
-      // Monitoring volume matches playback volume so levels are consistent
-      // Playback uses: fabs(pitch) * BASE_VOLUME * fader_volume
-      // For monitoring we assume pitch ~= 1.0, BASE_VOLUME = 0.875
-      constexpr float BASE_VOLUME = 7.0f / 8.0f;
-      if (alsa->active_recording_deck == 0) {
-         capture_info.monitoring_volume = BASE_VOLUME * static_cast<float>(engine->beat_deck.player.fader_volume);
-      } else if (alsa->active_recording_deck == 1) {
-         capture_info.monitoring_volume = BASE_VOLUME * static_cast<float>(engine->scratch_deck.player.fader_volume);
-      } else {
-         capture_info.monitoring_volume = 0.0f;
-      }
-   }
+                        snd_pcm_t* pcm;
+                        if (snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_PLAYBACK, 0) >= 0) {
+                            snd_pcm_hw_params_t* params;
+                            snd_pcm_hw_params_alloca(&params);
+                            snd_pcm_hw_params_any(pcm, params);
 
-   /* Process audio - stereo output to playback buffer */
-   if (alsa->num_channels == 2)
-   {
-      /* Simple stereo case - write directly */
-      audio_engine_process(engine, capture_valid ? &capture_info : nullptr, playback_pcm, 2, playback_frames);
-   }
-   else
-   {
-      /* Multi-channel: use temporary stereo buffer, then copy to channels 0-1 */
-      static signed short stereo_buf[1024 * 2];  /* Max period size * 2 channels */
-      audio_engine_process(engine, capture_valid ? &capture_info : nullptr, stereo_buf, 2, playback_frames);
+                            alsa_devices[card_id].supports_48k_samplerate =
+                                (snd_pcm_hw_params_test_rate(pcm, params, TARGET_SAMPLE_RATE, 0) == 0);
+                            alsa_devices[card_id].supports_16bit_pcm =
+                                (snd_pcm_hw_params_test_format(pcm, params, TARGET_SAMPLE_FORMAT) == 0);
 
-      /* Copy stereo to first 2 channels of multi-channel buffer */
-      for (unsigned long i = 0; i < playback_frames; i++)
-      {
-         playback_pcm[i * alsa->num_channels + 0] = stereo_buf[i * 2 + 0];  /* Left */
-         playback_pcm[i * alsa->num_channels + 1] = stereo_buf[i * 2 + 1];  /* Right */
-      }
+                            unsigned int min, max;
+                            if (snd_pcm_hw_params_get_channels_min(params, &min) >= 0 &&
+                                snd_pcm_hw_params_get_channels_max(params, &max) >= 0) {
+                                if (!snd_pcm_hw_params_test_channels(pcm, params, max)) {
+                                    playback_count = max;
+                                }
+                            }
+                            snd_pcm_close(pcm);
+                        }
 
-      /* Process CV outputs if configured */
-      if (alsa->config && alsa->config->supports_cv)
-      {
-         struct player* pl = &engine->scratch_deck.player;
+                        if (snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_CAPTURE, 0) >= 0) {
+                            snd_pcm_hw_params_t* params;
+                            snd_pcm_hw_params_alloca(&params);
+                            snd_pcm_hw_params_any(pcm, params);
 
-         /* Gather raw controller state - cv_engine handles all processing */
-         struct cv_controller_input cv_input = {
-            .pitch = pl->pitch,
-            .encoder_angle = engine->scratch_deck.encoder_angle,
-            .sample_position = pl->position,
-            .sample_length = pl->track ? pl->track->length : 0,
-            .fader_volume = pl->fader_volume,
-            .fader_target = pl->fader_target,
-            .crossfader_position = engine->crossfader_position
-         };
+                            unsigned int min, max;
+                            if (snd_pcm_hw_params_get_channels_min(params, &min) >= 0 &&
+                                snd_pcm_hw_params_get_channels_max(params, &max) >= 0) {
+                                if (!snd_pcm_hw_params_test_channels(pcm, params, max)) {
+                                    capture_count = max;
+                                }
+                            }
+                            snd_pcm_close(pcm);
+                        }
 
-         cv_engine_update(&alsa->cv, &cv_input);
-         cv_engine_process(&alsa->cv, playback_pcm, alsa->num_channels, playback_frames);
-      }
-   }
-
-   /* Commit capture buffer first (if we got one) */
-   if (capture_valid)
-   {
-      commitres = snd_pcm_mmap_commit(alsa->capture.pcm, capture_offset, capture_frames);
-      if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != capture_frames)
-      {
-         if (commitres == -EPIPE)
-         {
-            snd_pcm_prepare(alsa->capture.pcm);
-            snd_pcm_start(alsa->capture.pcm);
-         }
-         // Don't return error, continue with playback commit
-      }
-   }
-
-   /* Commit playback buffer */
-   commitres = snd_pcm_mmap_commit(alsa->playback.pcm, playback_offset, playback_frames);
-   if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != playback_frames)
-      return commitres < 0 ? static_cast<int>(commitres) : -EPIPE;
-
-   /* Start PCM on first write */
-   if (!alsa->started) {
-      err = snd_pcm_start(alsa->playback.pcm);
-      if (err < 0)
-         return err;
-      alsa->started = true;
-   }
-
-   return 0;
-}
-
-/* Note: capture is now handled inside process_audio() together with playback
- * to enable zero-latency monitoring during recording. */
-
-/* After poll() has returned, instruct a device to do all it can at
- * the present time. Return zero if success, otherwise -1 */
-
-static int handle( struct sc1000* engine )
-{
-   int r;
-   unsigned short revents;
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-
-   /* Check the output buffer for playback - combined processing handles capture too */
-   r = pcm_revents(&alsa->playback, &revents);
-   if ( r < 0 )
-   {
-      return -1;
-   }
-
-   if ( revents & POLLOUT )
-   {
-      r = process_audio(engine);
-
-      if ( r < 0 )
-      {
-         if ( r == -EPIPE )
-         {
-            LOG_WARN("ALSA: playback xrun");
-
-            r = snd_pcm_prepare(alsa->playback.pcm);
-            if ( r < 0 )
-            {
-               alsa_error("prepare", r);
-               return -1;
+                        alsa_devices[card_id].input_channels = capture_count;
+                        alsa_devices[card_id].output_channels = playback_count;
+                        alsa_devices[card_id].device_id = card_id;
+                        alsa_devices[card_id].subdevice_id = 0;
+                    }
+                    snd_ctl_close(card_handle);
+                }
             }
+            last_card_id = card_id;
+        } while ((err = snd_card_next(&card_id)) >= 0 && card_id >= 0);
+    }
 
-            alsa->started = false;
+    snd_config_update_free_global();
+}
 
-            /* The device starts when data is written. POLLOUT
-             * events are generated in prepared state. */
-         }
-         else
-         {
-            alsa_error("playback", r);
+static bool contains_substring_ci(const char* haystack, const char* needle) {
+    if (!haystack || !needle) return false;
+    if (needle[0] == '\0') return true;
+
+    size_t haylen = strlen(haystack);
+    size_t needlelen = strlen(needle);
+    if (needlelen > haylen) return false;
+
+    for (size_t i = 0; i <= haylen - needlelen; i++) {
+        bool match = true;
+        for (size_t j = 0; j < needlelen; j++) {
+            char h = haystack[i + j];
+            char n = needle[j];
+            if (h >= 'A' && h <= 'Z') h = static_cast<char>(h + ('a' - 'A'));
+            if (n >= 'A' && n <= 'Z') n = static_cast<char>(n + ('a' - 'A'));
+            if (h != n) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+static alsa_device_info* find_matching_device(audio_interface* config) {
+    int card_num = -1;
+    if (sscanf(config->device.c_str(), "hw:%d", &card_num) == 1 ||
+        sscanf(config->device.c_str(), "plughw:%d", &card_num) == 1) {
+        if (card_num >= 0 && card_num < MAX_ALSA_DEVICES && alsa_devices[card_num].is_present) {
+            return &alsa_devices[card_num];
+        }
+    }
+
+    for (int i = 0; i < MAX_ALSA_DEVICES; i++) {
+        if (!alsa_devices[i].is_present) continue;
+        if (contains_substring_ci(alsa_devices[i].card_name, config->device.c_str()) ||
+            contains_substring_ci(alsa_devices[i].card_name, config->name.c_str())) {
+            return &alsa_devices[i];
+        }
+    }
+    return nullptr;
+}
+
+//
+// PCM open helper
+//
+static int pcm_open(alsa_pcm* alsa, const char* device_name,
+                    snd_pcm_stream_t stream, alsa_device_info* device_info,
+                    uint8_t num_channels, snd_pcm_format_t* out_format = nullptr) {
+    int err, dir;
+    snd_pcm_hw_params_t* hw_params;
+    snd_pcm_uframes_t frames;
+
+    err = snd_pcm_open(&alsa->pcm, device_name, stream, SND_PCM_NONBLOCK);
+    if (!chk("open", err)) return -1;
+
+    snd_pcm_hw_params_alloca(&hw_params);
+    if (!chk("hw_params_any", snd_pcm_hw_params_any(alsa->pcm, hw_params))) return -1;
+    if (!chk("hw_params_set_access", snd_pcm_hw_params_set_access(alsa->pcm, hw_params, SND_PCM_ACCESS_MMAP_INTERLEAVED))) return -1;
+
+    snd_pcm_format_t format = select_best_format(alsa->pcm, hw_params);
+    if (format == SND_PCM_FORMAT_UNKNOWN) return -1;
+    if (!chk("hw_params_set_format", snd_pcm_hw_params_set_format(alsa->pcm, hw_params, format))) return -1;
+    if (out_format) *out_format = format;
+
+    if (!chk("hw_params_set_rate_resample", snd_pcm_hw_params_set_rate_resample(alsa->pcm, hw_params, 0))) return -1;
+    if (!chk("hw_params_set_rate", snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, TARGET_SAMPLE_RATE, 0))) return -1;
+    alsa->rate = TARGET_SAMPLE_RATE;
+
+    if (!chk("hw_params_set_channels", snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, num_channels))) return -1;
+
+    snd_pcm_uframes_t period_size = device_info->period_size;
+    if (!chk("hw_params_set_period_size_near", snd_pcm_hw_params_set_period_size_near(alsa->pcm, hw_params, &period_size, &dir))) return -1;
+    if (!chk("hw_params_get_period_size", snd_pcm_hw_params_get_period_size(hw_params, &period_size, nullptr))) return -1;
+    alsa->period_size = period_size;
+    LOG_INFO("Period size: %lu frames", period_size);
+
+    auto buffer_size = static_cast<snd_pcm_uframes_t>(period_size * device_info->buffer_period_factor);
+    if (stream == SND_PCM_STREAM_CAPTURE) {
+        if (!chk("hw_params_set_buffer_size_last", snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames))) return -1;
+    } else {
+        if (!chk("hw_params_set_buffer_size", snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size))) return -1;
+    }
+
+    if (!chk("hw_params", snd_pcm_hw_params(alsa->pcm, hw_params))) return -1;
+    return 0;
+}
+
+//
+// AlsaAudio implementation
+//
+AlsaAudio::~AlsaAudio() {
+    audio_engine_.reset();
+    if (capture_enabled_) pcm_close(&capture_);
+    pcm_close(&playback_);
+}
+
+void AlsaAudio::pcm_close(alsa_pcm* pcm) {
+    if (pcm->pcm) {
+        snd_pcm_close(pcm->pcm);
+        pcm->pcm = nullptr;
+    }
+    if (pcm->buf) {
+        free(pcm->buf);
+        pcm->buf = nullptr;
+    }
+}
+
+ssize_t AlsaAudio::pcm_pollfds(alsa_pcm* pcm, struct pollfd* pe, size_t z) {
+    int count = snd_pcm_poll_descriptors_count(pcm->pcm);
+    auto ucount = static_cast<unsigned int>(count);
+    if (ucount > z) return -1;
+    if (ucount == 0) {
+        pcm->pe = nullptr;
+    } else {
+        int r = snd_pcm_poll_descriptors(pcm->pcm, pe, ucount);
+        if (r < 0) {
+            alsa_error("poll_descriptors", r);
             return -1;
-         }
-      }
-   }
-
-   return 0;
+        }
+        pcm->pe = pe;
+    }
+    pcm->pe_count = ucount;
+    return count;
 }
 
-static unsigned int sample_rate( struct sc1000* engine )
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-
-   return alsa->playback.rate;
+int AlsaAudio::pcm_revents(alsa_pcm* pcm, unsigned short* revents) {
+    int r = snd_pcm_poll_descriptors_revents(pcm->pcm, pcm->pe, static_cast<unsigned int>(pcm->pe_count), revents);
+    if (r < 0) {
+        alsa_error("poll_descriptors_revents", r);
+        return -1;
+    }
+    return 0;
 }
 
-/* Close ALSA device and clear any allocations */
-
-static void clear(struct sc1000* engine )
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-
-   loop_buffer_clear(&alsa->loop[0]);
-   loop_buffer_clear(&alsa->loop[1]);
-   if (alsa->capture_enabled)
-   {
-      pcm_close(&alsa->capture);
-   }
-   pcm_close(&alsa->playback);
-   free(engine->audio_hw_context);
+ssize_t AlsaAudio::pollfds(struct pollfd* pe, size_t z) {
+    return pcm_pollfds(&playback_, pe, z);
 }
 
-static struct sc1000_ops alsa_ops = {
-        .pollfds = pollfds,
-        .handle = handle,
-        .sample_rate = sample_rate,
-        .start = start,
-        .stop = stop,
-        .clear = clear
-};
+int AlsaAudio::handle() {
+    unsigned short revents;
+    if (pcm_revents(&playback_, &revents) < 0) return -1;
 
-static int setup_alsa_device( struct sc1000* sc1000_engine, struct alsa_device_info* device_info,
-                               struct audio_interface* config, int num_channels,
-                               struct sc_settings* settings)
-{
-   struct alsa* alsa;
-
-   alsa = static_cast<struct alsa*>(malloc(sizeof *alsa));
-   if ( alsa == nullptr )
-   {
-      LOG_ERROR("malloc failed for alsa struct");
-      return -1;
-   }
-
-   print_alsa_device_info(device_info);
-
-   bool needs_plughw = !device_info->supports_16bit_pcm || !device_info->supports_48k_samplerate;
-
-   char device_name[64];
-   create_alsa_device_id_string(device_name, sizeof(device_name), device_info->device_id, device_info->subdevice_id, needs_plughw);
-   LOG_INFO("Opening device %s with %d channels, period size %d...", device_name, num_channels, device_info->period_size);
-
-   if ( pcm_open(&alsa->playback, device_name, SND_PCM_STREAM_PLAYBACK, device_info, num_channels) < 0 )
-   {
-      LOG_ERROR("Failed to open device for playback");
-      free(alsa);
-      return -1;
-   }
-
-   sc1000_engine->audio_hw_context = alsa;
-   alsa->started = false;
-   alsa->num_channels = num_channels;
-   alsa->config = config;
-
-   // Initialize capture if device has input channels
-   alsa->capture_enabled = false;
-   alsa->capture_channels = 0;
-   // Get input channel mapping from config (user settings), with defaults
-   alsa->capture_left = config ? config->input_left : 0;
-   alsa->capture_right = config ? config->input_right : 1;
-
-   // Use config->input_channels if specified, otherwise detect from hardware
-   int available_inputs = config && config->input_channels > 0
-                          ? config->input_channels
-                          : static_cast<int>(device_info->input_channels);
-
-   if (available_inputs >= 2)
-   {
-      LOG_INFO("Opening capture with %d channels (left=%d, right=%d)...",
-               available_inputs, alsa->capture_left, alsa->capture_right);
-
-      if ( pcm_open(&alsa->capture, device_name, SND_PCM_STREAM_CAPTURE, device_info,
-                    static_cast<uint8_t>(available_inputs)) >= 0 )
-      {
-         alsa->capture_enabled = true;
-         alsa->capture_channels = available_inputs;
-         LOG_INFO("Capture device opened successfully");
-
-         // Start capture immediately
-         if (snd_pcm_start(alsa->capture.pcm) < 0)
-         {
-            LOG_WARN("Failed to start capture PCM");
-         }
-      }
-      else
-      {
-         LOG_WARN("Failed to open capture device, recording disabled");
-      }
-   }
-   else
-   {
-      LOG_INFO("No input channels available, recording disabled");
-   }
-
-   // Initialize loop buffers for both decks
-   int loop_max = settings ? settings->loop_max_seconds : 60;
-   loop_buffer_init(&alsa->loop[0], TARGET_SAMPLE_RATE, loop_max);  // Beat deck
-   loop_buffer_init(&alsa->loop[1], TARGET_SAMPLE_RATE, loop_max);  // Scratch deck
-   alsa->active_recording_deck = -1;  // No recording active
-
-   // Initialize CV engine if CV is supported
-   if (config && config->supports_cv)
-   {
-      cv_engine_init(&alsa->cv, TARGET_SAMPLE_RATE);
-      cv_engine_set_mapping(&alsa->cv, config);
-      LOG_INFO("CV engine initialized for %s", config->name.c_str());
-   }
-
-   // make sure this is really initialized
-   alsa_ops.clear       = clear;
-   alsa_ops.pollfds     = pollfds;
-   alsa_ops.handle      = handle;
-   alsa_ops.sample_rate = sample_rate;
-   alsa_ops.start       = start;
-   alsa_ops.stop        = stop;
-
-   sc1000_audio_engine_init(sc1000_engine, &alsa_ops);
-
-   LOG_INFO("ALSA device setup complete");
-
-   return 0;
+    if (revents & POLLOUT) {
+        int r = process_audio();
+        if (r < 0) {
+            if (r == -EPIPE) {
+                LOG_WARN("ALSA: playback xrun");
+                if (snd_pcm_prepare(playback_.pcm) < 0) return -1;
+                started_ = false;
+            } else {
+                alsa_error("playback", r);
+                return -1;
+            }
+        }
+    }
+    return 0;
 }
 
-// Case-insensitive substring search
-static bool contains_substring_ci(const char* haystack, const char* needle)
-{
-   if (!haystack || !needle) return false;
-   if (needle[0] == '\0') return true;
+int AlsaAudio::process_audio() {
+    const snd_pcm_channel_area_t* playback_areas;
+    const snd_pcm_channel_area_t* capture_areas = nullptr;
+    snd_pcm_uframes_t playback_offset, playback_frames;
+    snd_pcm_uframes_t capture_offset = 0, capture_frames = 0;
+    snd_pcm_sframes_t commitres, avail;
+    int err;
 
-   size_t haylen = strlen(haystack);
-   size_t needlelen = strlen(needle);
+    sc1000_handle_deck_recording(engine_);
 
-   if (needlelen > haylen) return false;
+    avail = snd_pcm_avail_update(playback_.pcm);
+    if (avail < 0) return static_cast<int>(avail);
+    if (static_cast<snd_pcm_uframes_t>(avail) < playback_.period_size) return 0;
 
-   for (size_t i = 0; i <= haylen - needlelen; i++)
-   {
-      bool match = true;
-      for (size_t j = 0; j < needlelen; j++)
-      {
-         char h = haystack[i + j];
-         char n = needle[j];
-         // Simple ASCII case-insensitive compare
-         if (h >= 'A' && h <= 'Z') h = static_cast<char>(h + ('a' - 'A'));
-         if (n >= 'A' && n <= 'Z') n = static_cast<char>(n + ('a' - 'A'));
-         if (h != n) { match = false; break; }
-      }
-      if (match) return true;
-   }
-   return false;
+    playback_frames = playback_.period_size;
+    err = snd_pcm_mmap_begin(playback_.pcm, &playback_areas, &playback_offset, &playback_frames);
+    if (err < 0) return err;
+
+    int bytes_per_sample = format_bytes_per_sample(playback_format_);
+    void* playback_pcm = buffer_generic(&playback_areas[0], playback_offset, num_channels_, bytes_per_sample);
+
+    if (num_channels_ > 2) {
+        memset(playback_pcm, 0, playback_frames * num_channels_ * bytes_per_sample);
+    }
+
+    const void* capture_pcm = nullptr;
+    int capture_bps = 0;
+    bool capture_valid = false;
+
+    if (capture_enabled_) {
+        snd_pcm_sframes_t capture_avail = snd_pcm_avail_update(capture_.pcm);
+        if (capture_avail >= static_cast<snd_pcm_sframes_t>(capture_.period_size)) {
+            capture_frames = capture_.period_size;
+            err = snd_pcm_mmap_begin(capture_.pcm, &capture_areas, &capture_offset, &capture_frames);
+            if (err >= 0) {
+                capture_bps = format_bytes_per_sample(capture_format_);
+                capture_pcm = buffer_generic(&capture_areas[0], capture_offset, capture_channels_, capture_bps);
+                capture_valid = true;
+            }
+        } else if (capture_avail == -EPIPE) {
+            snd_pcm_prepare(capture_.pcm);
+            snd_pcm_start(capture_.pcm);
+        }
+    }
+
+    audio_capture capture_info = {};
+    if (capture_valid && capture_pcm) {
+        capture_info.buffer = capture_pcm;
+        capture_info.format = static_cast<int>(capture_format_);
+        capture_info.bytes_per_sample = capture_bps;
+        capture_info.channels = capture_channels_;
+        capture_info.left_channel = capture_left_;
+        capture_info.right_channel = capture_right_;
+
+        constexpr float BASE_VOLUME = 7.0f / 8.0f;
+        int rec_deck = audio_engine_->recording_deck();
+        if (rec_deck == 0) {
+            audio_engine_->set_monitoring_volume(BASE_VOLUME * static_cast<float>(engine_->beat_deck.player.fader_volume));
+        } else if (rec_deck == 1) {
+            audio_engine_->set_monitoring_volume(BASE_VOLUME * static_cast<float>(engine_->scratch_deck.player.fader_volume));
+        } else {
+            audio_engine_->set_monitoring_volume(0.0f);
+        }
+    }
+
+    if (num_channels_ == 2) {
+        audio_engine_->process(engine_, capture_valid ? &capture_info : nullptr, playback_pcm, 2, playback_frames);
+        audio_engine_update_global_stats(audio_engine_.get());
+    } else {
+        alignas(16) static uint8_t stereo_buf[1024 * 4 * 2];
+        audio_engine_->process(engine_, capture_valid ? &capture_info : nullptr, stereo_buf, 2, playback_frames);
+        audio_engine_update_global_stats(audio_engine_.get());
+
+        uint8_t* out = static_cast<uint8_t*>(playback_pcm);
+        int frame_stride = num_channels_ * bytes_per_sample;
+        int stereo_stride = 2 * bytes_per_sample;
+        for (unsigned long i = 0; i < playback_frames; i++) {
+            memcpy(out + i * frame_stride, stereo_buf + i * stereo_stride, bytes_per_sample);
+            memcpy(out + i * frame_stride + bytes_per_sample, stereo_buf + i * stereo_stride + bytes_per_sample, bytes_per_sample);
+        }
+
+        if (config_ && config_->supports_cv && playback_format_ == SND_PCM_FORMAT_S16_LE) {
+            player* pl = &engine_->scratch_deck.player;
+            cv_controller_input cv_input = {
+                .pitch = pl->pitch,
+                .encoder_angle = engine_->scratch_deck.encoder_angle,
+                .sample_position = pl->position,
+                .sample_length = pl->track ? pl->track->length : 0,
+                .fader_volume = pl->fader_volume,
+                .fader_target = pl->fader_target,
+                .crossfader_position = engine_->crossfader.position()
+            };
+            cv_engine_update(&cv_, &cv_input);
+            cv_engine_process(&cv_, static_cast<int16_t*>(playback_pcm), num_channels_, playback_frames);
+        }
+    }
+
+    if (capture_valid) {
+        commitres = snd_pcm_mmap_commit(capture_.pcm, capture_offset, capture_frames);
+        if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != capture_frames) {
+            if (commitres == -EPIPE) {
+                snd_pcm_prepare(capture_.pcm);
+                snd_pcm_start(capture_.pcm);
+            }
+        }
+    }
+
+    commitres = snd_pcm_mmap_commit(playback_.pcm, playback_offset, playback_frames);
+    if (commitres < 0 || static_cast<snd_pcm_uframes_t>(commitres) != playback_frames) {
+        return commitres < 0 ? static_cast<int>(commitres) : -EPIPE;
+    }
+
+    if (!started_) {
+        err = snd_pcm_start(playback_.pcm);
+        if (err < 0) return err;
+        started_ = true;
+    }
+
+    return 0;
 }
 
-// Match a config entry to a detected ALSA device
-static struct alsa_device_info* find_matching_device(struct audio_interface* config)
-{
-   // Method 1: Parse the device string to get card number
-   // Config device is like "hw:0" or "hw:1" or "plughw:1"
-   int card_num = -1;
-   if (sscanf(config->device.c_str(), "hw:%d", &card_num) == 1 ||
-       sscanf(config->device.c_str(), "plughw:%d", &card_num) == 1)
-   {
-      if (card_num >= 0 && card_num < MAX_ALSA_DEVICES && alsa_devices[card_num].is_present)
-      {
-         return &alsa_devices[card_num];
-      }
-   }
-
-   // Method 2: Substring match against card name
-   // This allows matching by partial name, e.g., "USB" matches "USB Audio Device"
-   // Also try matching the config 'name' field against card name
-   for (int i = 0; i < MAX_ALSA_DEVICES; i++)
-   {
-      if (!alsa_devices[i].is_present) continue;
-
-      // Try matching config->device against card name (substring, case-insensitive)
-      if (contains_substring_ci(alsa_devices[i].card_name, config->device.c_str()))
-      {
-         LOG_DEBUG("Matched by device substring: '%s' contains '%s'",
-                   alsa_devices[i].card_name, config->device.c_str());
-         return &alsa_devices[i];
-      }
-
-      // Try matching config->name against card name
-      if (contains_substring_ci(alsa_devices[i].card_name, config->name.c_str()))
-      {
-         LOG_DEBUG("Matched by name substring: '%s' contains '%s'",
-                   alsa_devices[i].card_name, config->name.c_str());
-         return &alsa_devices[i];
-      }
-   }
-
-   return nullptr;
+bool AlsaAudio::start_recording(int deck, double playback_position) {
+    if (!capture_enabled_) {
+        LOG_WARN("Recording not available: no capture device");
+        return false;
+    }
+    return audio_engine_->start_recording(deck, playback_position);
 }
 
-int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings)
-{
-   LOG_INFO("ALSA init starting");
-
-   sleep(settings->audio_init_delay);
-
-   fill_audio_interface_info(settings);
-
-   // Try to match config entries with detected devices (in priority order)
-   for (auto& config : settings->audio_interfaces)
-   {
-      struct alsa_device_info* device = find_matching_device(&config);
-
-      if (device)
-      {
-         LOG_INFO("Matched config '%s' to device %s", config.name.c_str(), config.device.c_str());
-         return setup_alsa_device(sc1000_engine, device, &config, config.channels, settings);
-      }
-      else
-      {
-         LOG_DEBUG("Config '%s' (%s) - device not found", config.name.c_str(), config.device.c_str());
-      }
-   }
-
-   // Fallback: use first available device with stereo
-   LOG_INFO("No config match, using fallback");
-   for (int i = 0; i < MAX_ALSA_DEVICES; i++)
-   {
-      if (alsa_devices[i].is_present)
-      {
-         LOG_INFO("Using fallback device %d (%s)", i, alsa_devices[i].card_name);
-         return setup_alsa_device(sc1000_engine, &alsa_devices[i], nullptr, DEVICE_CHANNELS, settings);
-      }
-   }
-
-   LOG_ERROR("No audio device found!");
-   return -1;
+void AlsaAudio::stop_recording(int deck) {
+    audio_engine_->stop_recording(deck);
 }
 
-/* ALSA caches information when devices are open. Provide a call
- * to clear these caches so that valgrind output is clean. */
+bool AlsaAudio::is_recording(int deck) const {
+    return audio_engine_->is_recording(deck);
+}
 
-void alsa_clear_config_cache( void )
-{
-   int r;
+bool AlsaAudio::has_loop(int deck) const {
+    return audio_engine_->has_loop(deck);
+}
 
-   r = snd_config_update_free_global();
-   if ( r < 0 )
-   {
-      alsa_error("config_update_free_global", r);
-   }
+void AlsaAudio::reset_loop(int deck) {
+    audio_engine_->reset_loop(deck);
+}
+
+track* AlsaAudio::get_loop_track(int deck) {
+    return audio_engine_->get_loop_track(deck);
+}
+
+track* AlsaAudio::peek_loop_track(int deck) {
+    return audio_engine_->peek_loop_track(deck);
+}
+
+bool AlsaAudio::setup(alsa_device_info* device_info, audio_interface* config, int num_channels, sc_settings* settings) {
+    print_alsa_device_info(device_info);
+
+    bool needs_plughw = !device_info->supports_48k_samplerate;
+    char device_name[64];
+    create_alsa_device_id_string(device_name, sizeof(device_name), device_info->device_id, device_info->subdevice_id, needs_plughw);
+    LOG_INFO("Opening device %s with %d channels, period size %d...", device_name, num_channels, device_info->period_size);
+
+    if (pcm_open(&playback_, device_name, SND_PCM_STREAM_PLAYBACK, device_info, num_channels, &playback_format_) < 0) {
+        LOG_ERROR("Failed to open device for playback");
+        return false;
+    }
+
+    auto interp_mode = audio_engine_get_interpolation() == INTERP_SINC
+                       ? sc::audio::InterpolationMode::Sinc
+                       : sc::audio::InterpolationMode::Cubic;
+    audio_engine_ = sc::audio::AudioEngineBase::create(interp_mode, playback_format_);
+    if (!audio_engine_) {
+        LOG_ERROR("Failed to create audio engine for format %s", snd_pcm_format_name(playback_format_));
+        return false;
+    }
+    LOG_INFO("Audio engine created: %s interpolation, %s format",
+             interp_mode == sc::audio::InterpolationMode::Sinc ? "sinc" : "cubic",
+             snd_pcm_format_name(playback_format_));
+
+    num_channels_ = num_channels;
+    config_ = config;
+    capture_left_ = config ? config->input_left : 0;
+    capture_right_ = config ? config->input_right : 1;
+
+    int hw_input_channels = static_cast<int>(device_info->input_channels);
+    if (hw_input_channels >= 2) {
+        LOG_INFO("Opening capture with %d channels (using left=%d, right=%d)...",
+                 hw_input_channels, capture_left_, capture_right_);
+        if (pcm_open(&capture_, device_name, SND_PCM_STREAM_CAPTURE, device_info,
+                     static_cast<uint8_t>(hw_input_channels), &capture_format_) >= 0) {
+            capture_enabled_ = true;
+            capture_channels_ = hw_input_channels;
+            LOG_INFO("Capture device opened successfully (format: %s)", snd_pcm_format_name(capture_format_));
+            if (snd_pcm_start(capture_.pcm) < 0) {
+                LOG_WARN("Failed to start capture PCM");
+            }
+        } else {
+            LOG_WARN("Failed to open capture device, recording disabled");
+        }
+    }
+
+    int loop_max = settings ? settings->loop_max_seconds : 60;
+    audio_engine_->init_loop_buffers(TARGET_SAMPLE_RATE, loop_max);
+
+    if (config && config->supports_cv) {
+        cv_engine_init(&cv_, TARGET_SAMPLE_RATE);
+        cv_engine_set_mapping(&cv_, config);
+        LOG_INFO("CV engine initialized for %s", config->name.c_str());
+    }
+
+    LOG_INFO("ALSA device setup complete");
+    return true;
 }
 
 //
-// Loop recording control functions
+// Factory function
 //
+std::unique_ptr<AudioHardware> alsa_create(sc1000* engine, sc_settings* settings) {
+    LOG_INFO("ALSA init starting");
+    sleep(settings->audio_init_delay);
+    fill_audio_interface_info(settings);
 
-bool alsa_start_recording(struct sc1000* engine, int deck_no)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
+    for (auto& config : settings->audio_interfaces) {
+        alsa_device_info* device = find_matching_device(&config);
+        if (device) {
+            LOG_INFO("Matched config '%s' to device %s", config.name.c_str(), config.device.c_str());
+            auto alsa = std::make_unique<AlsaAudio>(engine);
+            if (alsa->setup(device, &config, config.channels, settings)) {
+                return alsa;
+            }
+            return nullptr;
+        }
+        LOG_DEBUG("Config '%s' (%s) - device not found", config.name.c_str(), config.device.c_str());
+    }
 
-   if (!alsa->capture_enabled)
-   {
-      LOG_WARN("Recording not available: no capture device");
-      return false;
-   }
+    LOG_INFO("No config match, using fallback");
+    for (int i = 0; i < MAX_ALSA_DEVICES; i++) {
+        if (alsa_devices[i].is_present) {
+            LOG_INFO("Using fallback device %d (%s)", i, alsa_devices[i].card_name);
+            auto alsa = std::make_unique<AlsaAudio>(engine);
+            if (alsa->setup(&alsa_devices[i], nullptr, DEVICE_CHANNELS, settings)) {
+                return alsa;
+            }
+            return nullptr;
+        }
+    }
 
-   if (deck_no < 0 || deck_no > 1)
-   {
-      LOG_ERROR("Invalid deck number: %d", deck_no);
-      return false;
-   }
-
-   // Only one deck can record at a time
-   if (alsa->active_recording_deck >= 0 && alsa->active_recording_deck != deck_no)
-   {
-      LOG_WARN("Deck %d already recording", alsa->active_recording_deck);
-      return false;
-   }
-
-   // For punch-in, sync write position to current playback position
-   struct loop_buffer* lb = &alsa->loop[deck_no];
-   if (loop_buffer_has_loop(lb))
-   {
-      struct player* pl = (deck_no == 0) ? &engine->beat_deck.player : &engine->scratch_deck.player;
-      // Convert player position (seconds) to samples
-      double pos_seconds = pl->position;
-      if (pos_seconds < 0) pos_seconds = 0;
-      unsigned int pos_samples = static_cast<unsigned int>(pos_seconds * lb->sample_rate);
-      loop_buffer_set_position(lb, pos_samples);
-      LOG_DEBUG("Punch-in: synced write_pos to playback position %.2f sec (%u samples)", pos_seconds, pos_samples);
-   }
-
-   if (loop_buffer_start(&alsa->loop[deck_no]))
-   {
-      alsa->active_recording_deck = deck_no;
-      LOG_INFO("Started recording on deck %d", deck_no);
-      return true;
-   }
-   return false;
+    LOG_ERROR("No audio device found!");
+    return nullptr;
 }
 
-void alsa_stop_recording(struct sc1000* engine, int deck_no)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   if (deck_no >= 0 && deck_no <= 1)
-   {
-      loop_buffer_stop(&alsa->loop[deck_no]);
-      if (alsa->active_recording_deck == deck_no)
-      {
-         alsa->active_recording_deck = -1;
-      }
-      LOG_INFO("Stopped recording on deck %d", deck_no);
-   }
-}
-
-bool alsa_is_recording(struct sc1000* engine, int deck_no)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   if (deck_no < 0 || deck_no > 1) return false;
-   return loop_buffer_is_recording(&alsa->loop[deck_no]);
-}
-
-struct track* alsa_get_loop_track(struct sc1000* engine, int deck_no)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   if (deck_no < 0 || deck_no > 1) return nullptr;
-   return loop_buffer_get_track(&alsa->loop[deck_no]);
-}
-
-struct track* alsa_peek_loop_track(struct sc1000* engine, int deck_no)
-{
-   // RT-safe: just returns the pointer, no ref count change
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   if (deck_no < 0 || deck_no > 1) return nullptr;
-   return alsa->loop[deck_no].track;
-}
-
-bool alsa_has_capture(struct sc1000* engine)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   return alsa->capture_enabled;
-}
-
-bool alsa_has_loop(struct sc1000* engine, int deck_no)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   if (deck_no < 0 || deck_no > 1) return false;
-   return loop_buffer_has_loop(&alsa->loop[deck_no]);
-}
-
-void alsa_reset_loop(struct sc1000* engine, int deck_no)
-{
-   auto* alsa = static_cast<struct alsa*>(engine->audio_hw_context);
-   if (deck_no >= 0 && deck_no <= 1)
-   {
-      loop_buffer_reset(&alsa->loop[deck_no]);
-      LOG_INFO("Reset loop on deck %d", deck_no);
-   }
+void alsa_clear_config_cache() {
+    int r = snd_config_update_free_global();
+    if (r < 0) {
+        alsa_error("config_update_free_global", r);
+    }
 }

@@ -17,26 +17,17 @@
  *
  */
 
-#ifndef ALSA_H
-#define ALSA_H
+#pragma once
 
-#include "../core/sc1000.h"
-#include <stdbool.h>
+#include <memory>
 
-struct track;
+struct sc1000;
+struct sc_settings;
+class AudioHardware;
 
-int alsa_init( struct sc1000* sc1000_engine, struct sc_settings* settings);
+// Factory: creates ALSA audio hardware instance
+// Returns nullptr on failure
+std::unique_ptr<AudioHardware> alsa_create(sc1000* engine, sc_settings* settings);
 
-void alsa_clear_config_cache(void);
-
-// Loop recording control (deck_no: 0=beat, 1=scratch)
-bool alsa_start_recording(struct sc1000* engine, int deck_no);
-void alsa_stop_recording(struct sc1000* engine, int deck_no);
-bool alsa_is_recording(struct sc1000* engine, int deck_no);
-struct track* alsa_get_loop_track(struct sc1000* engine, int deck_no);
-struct track* alsa_peek_loop_track(struct sc1000* engine, int deck_no);  // RT-safe: no ref count change
-bool alsa_has_capture(struct sc1000* engine);
-bool alsa_has_loop(struct sc1000* engine, int deck_no);
-void alsa_reset_loop(struct sc1000* engine, int deck_no);
-
-#endif
+// Clear ALSA config cache (call after device setup to free memory)
+void alsa_clear_config_cache();

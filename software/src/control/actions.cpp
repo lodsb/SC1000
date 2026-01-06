@@ -179,7 +179,7 @@ void dispatch_event(mapping* map, unsigned char midi_buffer[3],
         // Long-hold RECORD erases the loop and navigates to first file
         LOG_DEBUG("LOOPERASE triggered on deck %d, was use_loop=%d, was current_file_idx=%d",
                   map->deck_no, target->player.use_loop, target->current_file_idx);
-        alsa_reset_loop(engine, map->deck_no);
+        if (engine->audio) engine->audio->reset_loop(map->deck_no);
         target->player.use_loop = false;
 
         // Navigate to first file (position 1, index 0)

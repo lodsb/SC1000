@@ -1,0 +1,34 @@
+#pragma once
+
+//
+// Crossfader - hardware crossfader input handling
+//
+// Reads raw ADC value from PIC and converts to normalized position.
+// Position: 0.0 = beat side, 1.0 = scratch side
+//
+
+class Crossfader {
+public:
+    Crossfader() = default;
+
+    // Set calibration range (ADC values at extremes)
+    void set_calibration(int adc_min, int adc_max);
+
+    // Update from raw ADC reading (called from input thread)
+    // adc_value: raw 10-bit ADC (0-1023), inverted (low = scratch side)
+    void update(int adc_value);
+
+    // Get current position (0.0 = beat, 1.0 = scratch)
+    double position() const { return position_; }
+
+    // Get raw ADC value (for debugging/calibration)
+    int raw_adc() const { return raw_adc_; }
+
+private:
+    double position_ = 0.5;  // Default to center
+    int raw_adc_ = 512;
+
+    // Calibration
+    int adc_min_ = 0;
+    int adc_max_ = 1023;
+};

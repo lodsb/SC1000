@@ -32,6 +32,7 @@ set(ENGINE_SOURCES
 
 set(PLATFORM_SOURCES
         src/platform/alsa.cpp
+        src/platform/crossfader.cpp
         src/platform/midi.cpp
         src/platform/gpio.cpp
         src/platform/i2c.cpp

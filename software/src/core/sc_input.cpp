@@ -197,7 +197,7 @@ void init_io(struct sc1000* sc1000_engine)
 
 void process_io(struct sc1000* sc1000_engine)
 {
-    struct sc_settings* settings = sc1000_engine->settings;
+    struct sc_settings* settings = sc1000_engine->settings.get();
     GpioState* gpio = &g_input_ctx.hw.gpio;
 
     // Read all MCP23017 pins at once (already inverted by platform layer)
@@ -394,7 +394,7 @@ void process_io(struct sc1000* sc1000_engine)
 
 void process_pic(struct sc1000* sc1000_engine)
 {
-    struct sc_settings* settings = sc1000_engine->settings;
+    struct sc_settings* settings = sc1000_engine->settings.get();
 
     unsigned int i;
 
@@ -442,22 +442,8 @@ void process_pic(struct sc1000* sc1000_engine)
     sc1000_engine->beat_deck.player.fader_target = fadertarget0;
     sc1000_engine->scratch_deck.player.fader_target = fadertarget1;
 
-    // Crossfader position for CV gates (0.0 = beat side, 1.0 = scratch side)
-    // ADCs[0] is inverted: low when scratch side, high when beat side
-    // Use calibration settings to normalize ADC range
-    int adc_range = settings->crossfader_adc_max - settings->crossfader_adc_min;
-    if (adc_range > 0)
-    {
-        int clamped_adc = ADCs[0];
-        if (clamped_adc < settings->crossfader_adc_min) clamped_adc = settings->crossfader_adc_min;
-        if (clamped_adc > settings->crossfader_adc_max) clamped_adc = settings->crossfader_adc_max;
-        double normalized = static_cast<double>(clamped_adc - settings->crossfader_adc_min) / adc_range;
-        sc1000_engine->crossfader_position = 1.0 - normalized;
-    }
-    else
-    {
-        sc1000_engine->crossfader_position = 0.5;  // Fallback if bad config
-    }
+    // Update crossfader from ADC (handles calibration and normalization)
+    sc1000_engine->crossfader.update(ADCs[0]);
 
     if (!settings->disable_pic_buttons)
     {
@@ -604,7 +590,7 @@ void process_pic(struct sc1000* sc1000_engine)
 
 void process_rot(struct sc1000* sc1000_engine)
 {
-    struct sc_settings* settings = sc1000_engine->settings;
+    struct sc_settings* settings = sc1000_engine->settings.get();
 
     int8_t crossed_zero;
     // 0 when we haven't crossed zero, -1 when we've crossed in anti-clockwise direction, 1 when crossed in clockwise
@@ -765,7 +751,7 @@ void process_rot(struct sc1000* sc1000_engine)
 
 void* run_sc_input_thread(struct sc1000* sc1000_engine)
 {
-    struct sc_settings* settings = sc1000_engine->settings;
+    struct sc_settings* settings = sc1000_engine->settings.get();
     HardwareState* hw = &g_input_ctx.hw;
 
     unsigned char picskip = 0;
@@ -798,6 +784,11 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
     // Print settings for debugging
     LOG_INFO("Settings: platter_enabled=%d, platter_speed=%d, jog_reverse=%d",
            settings->platter_enabled, settings->platter_speed, settings->jog_reverse);
+
+    // Initialize crossfader calibration
+    sc1000_engine->crossfader.set_calibration(
+        settings->crossfader_adc_min,
+        settings->crossfader_adc_max);
 
     // Detect SC500 by seeing if G11 is pulled low
     if (hw->gpio.mmap_present)
@@ -843,7 +834,7 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
                 "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu) | "
                 "Enc: %04d Cap: %d Buttons: %01u,%01u,%01u,%01u\n",
                 frame_count, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
-                sc1000_engine->crossfader_position,
+                sc1000_engine->crossfader.position(),
                 dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
                 sc1000_engine->scratch_deck.encoder_angle,
                 sc1000_engine->scratch_deck.player.cap_touch,

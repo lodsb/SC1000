@@ -21,12 +21,13 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 
 #include "cues.h"
 #include "player.h"
 
 #ifdef __cplusplus
-class Playlist;
+#include "playlist.h"
 class Controller;
 #else
 struct Playlist;
@@ -61,7 +62,7 @@ struct deck
 
    // Playlist navigation (index-based for O(1) access)
    // current_file_idx: -1 = loop track (position 0), 0+ = file tracks (position 1+)
-   Playlist* playlist;
+   std::unique_ptr<Playlist> playlist;
    size_t current_folder_idx;
    int current_file_idx;
    bool files_present;
@@ -75,6 +76,7 @@ struct deck
 
 #ifdef __cplusplus
    // C++ member functions
+   ~deck();  // Destructor defined in .cpp where Playlist is complete
    int init(struct sc_settings* settings);
    void clear();
    bool is_locked() const;

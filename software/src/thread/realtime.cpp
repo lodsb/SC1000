@@ -103,7 +103,7 @@ static void rt_main(struct rt* rt)
             controller_handle(rt->ctl[n]);
         }
 
-        sc1000_audio_engine_handle(rt->engine);
+        sc1000_audio_handle(rt->engine);
     }
 }
 
@@ -145,7 +145,7 @@ int rt_set_sc1000(struct rt* rt, struct sc1000* engine)
 
     debug("%p adding device %p", rt, engine);
 
-    z = sc1000_audio_engine_pollfds(engine, &rt->pt[rt->npt], sizeof(rt->pt) - rt->npt);
+    z = sc1000_audio_pollfds(engine, &rt->pt[rt->npt], sizeof(rt->pt) - rt->npt);
     if (z == -1) {
         LOG_ERROR("Device failed to return file descriptors");
         return -1;
@@ -230,7 +230,7 @@ int rt_start(struct rt* rt, int priority)
         }
     }
 
-    sc1000_audio_engine_start(rt->engine);
+    sc1000_audio_start(rt->engine);
 
     return 0;
 }
@@ -242,7 +242,7 @@ void rt_stop(struct rt* rt)
 {
     rt->finished = true;
 
-    sc1000_audio_engine_stop(rt->engine);
+    sc1000_audio_stop(rt->engine);
 
     if (rt->npt > 0) {
         if (pthread_join(rt->ph, nullptr) != 0) {

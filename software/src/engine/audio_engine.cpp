@@ -15,7 +15,6 @@
 #include "loop_buffer.h"
 #include "../core/sc_settings.h"
 #include "../core/sc1000.h"
-#include "../platform/alsa.h"
 
 #include "../player/track.h"
 #include "../player/deck.h"
@@ -62,6 +61,94 @@ namespace audio {
 //
 // AudioEngine template implementation
 //
+
+template<typename InterpPolicy, typename FormatPolicy>
+AudioEngine<InterpPolicy, FormatPolicy>::AudioEngine() {
+    // Loop buffers are zero-initialized, will be set up by init_loop_buffers()
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+AudioEngine<InterpPolicy, FormatPolicy>::~AudioEngine() {
+    if (loop_buffers_initialized_) {
+        loop_buffer_clear(&loop_[0]);
+        loop_buffer_clear(&loop_[1]);
+    }
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+void AudioEngine<InterpPolicy, FormatPolicy>::init_loop_buffers(int sample_rate, int max_seconds) {
+    if (loop_buffers_initialized_) {
+        loop_buffer_clear(&loop_[0]);
+        loop_buffer_clear(&loop_[1]);
+    }
+    loop_buffer_init(&loop_[0], sample_rate, max_seconds);
+    loop_buffer_init(&loop_[1], sample_rate, max_seconds);
+    loop_buffers_initialized_ = true;
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+bool AudioEngine<InterpPolicy, FormatPolicy>::start_recording(int deck, double playback_position) {
+    if (deck < 0 || deck > 1) return false;
+    if (!loop_buffers_initialized_) return false;
+
+    // Only one deck can record at a time
+    if (active_recording_deck_ >= 0 && active_recording_deck_ != deck) {
+        return false;
+    }
+
+    // For punch-in, sync write position to current playback position
+    loop_buffer* lb = &loop_[deck];
+    if (loop_buffer_has_loop(lb)) {
+        if (playback_position < 0) playback_position = 0;
+        auto pos_samples = static_cast<unsigned int>(playback_position * lb->sample_rate);
+        loop_buffer_set_position(lb, pos_samples);
+    }
+
+    if (loop_buffer_start(lb)) {
+        active_recording_deck_ = deck;
+        return true;
+    }
+    return false;
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+void AudioEngine<InterpPolicy, FormatPolicy>::stop_recording(int deck) {
+    if (deck < 0 || deck > 1) return;
+    loop_buffer_stop(&loop_[deck]);
+    if (active_recording_deck_ == deck) {
+        active_recording_deck_ = -1;
+    }
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+bool AudioEngine<InterpPolicy, FormatPolicy>::is_recording(int deck) const {
+    if (deck < 0 || deck > 1) return false;
+    return loop_buffer_is_recording(const_cast<loop_buffer*>(&loop_[deck]));
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+struct track* AudioEngine<InterpPolicy, FormatPolicy>::get_loop_track(int deck) {
+    if (deck < 0 || deck > 1) return nullptr;
+    return loop_buffer_get_track(&loop_[deck]);
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+struct track* AudioEngine<InterpPolicy, FormatPolicy>::peek_loop_track(int deck) {
+    if (deck < 0 || deck > 1) return nullptr;
+    return loop_[deck].track;
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+bool AudioEngine<InterpPolicy, FormatPolicy>::has_loop(int deck) const {
+    if (deck < 0 || deck > 1) return false;
+    return loop_buffer_has_loop(const_cast<loop_buffer*>(&loop_[deck]));
+}
+
+template<typename InterpPolicy, typename FormatPolicy>
+void AudioEngine<InterpPolicy, FormatPolicy>::reset_loop(int deck) {
+    if (deck < 0 || deck > 1) return;
+    loop_buffer_reset(&loop_[deck]);
+}
 
 template<typename InterpPolicy, typename FormatPolicy>
 void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
@@ -139,16 +226,16 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     double target_volume_1, filtered_pitch_1;
     double target_volume_2, filtered_pitch_2;
 
-    setup_player(pl1, frames, engine->settings, &target_volume_1, &filtered_pitch_1);
-    setup_player(pl2, frames, engine->settings, &target_volume_2, &filtered_pitch_2);
+    setup_player(pl1, frames, engine->settings.get(), &target_volume_1, &filtered_pitch_1);
+    setup_player(pl2, frames, engine->settings.get(), &target_volume_2, &filtered_pitch_2);
 
     // During fresh recording (recording active but no loop yet), mute track playback
     if (pl1->recording && !pl1->use_loop) target_volume_1 = 0.0;
     if (pl2->recording && !pl2->use_loop) target_volume_2 = 0.0;
 
     // Select track for each player: use loop track if use_loop is set
-    struct track* tr1 = pl1->use_loop ? alsa_peek_loop_track(engine, 0) : pl1->track;
-    struct track* tr2 = pl2->use_loop ? alsa_peek_loop_track(engine, 1) : pl2->track;
+    struct track* tr1 = pl1->use_loop ? peek_loop_track(0) : pl1->track;
+    struct track* tr2 = pl2->use_loop ? peek_loop_track(1) : pl2->track;
 
     const int tr_1_len = static_cast<int>(tr1->length);
     const int tr_2_len = static_cast<int>(tr2->length);
@@ -239,30 +326,36 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
 
     // Handle capture: loop recording and monitoring
     if (capture && capture->buffer) {
-        // Write to loop buffer if recording
-        int deck = capture->recording_deck;
-        if (deck >= 0 && deck < 2 && capture->loop[deck]) {
-            loop_buffer_write(capture->loop[deck], capture->buffer,
-                              static_cast<unsigned int>(frames),
-                              capture->channels, capture->left_channel, capture->right_channel);
-        }
+        int deck = active_recording_deck_;
+        bool recording = (deck >= 0 && deck < 2);
+        bool monitoring = (deck >= 0 && monitoring_volume_ > 0.0f);
 
-        // Add monitoring: mix capture input into output
-        if (deck >= 0 && capture->monitoring_volume > 0.0f) {
-            float mon_vol = capture->monitoring_volume;
+        if (recording || monitoring) {
+            float mon_vol = monitoring_volume_;
             out_ptr = static_cast<uint8_t*>(playback);
 
             for (unsigned long i = 0; i < frames; ++i) {
-                // Extract stereo from capture buffer
-                float cap_l = static_cast<float>(capture->buffer[i * capture->channels + capture->left_channel]) / 32768.0f;
-                float cap_r = static_cast<float>(capture->buffer[i * capture->channels + capture->right_channel]) / 32768.0f;
+                // Read capture samples using format-aware reader
+                float cap_l = read_capture_sample(capture->buffer, capture->format,
+                                                  capture->bytes_per_sample, i,
+                                                  capture->left_channel, capture->channels);
+                float cap_r = read_capture_sample(capture->buffer, capture->format,
+                                                  capture->bytes_per_sample, i,
+                                                  capture->right_channel, capture->channels);
 
-                // Read current output, add monitoring, write back
-                float out_l = FormatPolicy::read(out_ptr) + cap_l * mon_vol;
-                float out_r = FormatPolicy::read(out_ptr + bytes_per_sample) + cap_r * mon_vol;
+                // Write to loop buffer if recording (one sample at a time)
+                if (recording) {
+                    loop_buffer_write_float(&loop_[deck], cap_l, cap_r);
+                }
 
-                FormatPolicy::write(out_ptr, out_l);
-                FormatPolicy::write(out_ptr + bytes_per_sample, out_r);
+                // Add monitoring: mix capture input into output
+                if (monitoring) {
+                    float out_l = FormatPolicy::read(out_ptr) + cap_l * mon_vol;
+                    float out_r = FormatPolicy::read(out_ptr + bytes_per_sample) + cap_r * mon_vol;
+
+                    FormatPolicy::write(out_ptr, out_l);
+                    FormatPolicy::write(out_ptr + bytes_per_sample, out_r);
+                }
 
                 out_ptr += frame_size;
             }
@@ -399,6 +492,12 @@ void audio_engine_get_stats(struct dsp_stats* stats) {
     stats->process_time_us = sc::audio::g_dsp_stats.process_time_us;
     stats->budget_time_us = sc::audio::g_dsp_stats.budget_time_us;
     stats->xruns = sc::audio::g_dsp_stats.xruns;
+}
+
+void audio_engine_update_global_stats(sc::audio::AudioEngineBase* engine) {
+    if (engine) {
+        sc::audio::g_dsp_stats = engine->get_stats();
+    }
 }
 
 void audio_engine_reset_peak(void) {

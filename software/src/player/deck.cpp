@@ -69,6 +69,9 @@ static void load_track_internal(struct deck* d, struct track* track, struct sc_s
 // C++ Member function implementations
 //
 
+// Destructor must be defined where Playlist is complete (for unique_ptr deletion)
+deck::~deck() = default;
+
 int deck::init(struct sc_settings* settings)
 {
 	ncontrol = 0;
@@ -81,7 +84,7 @@ int deck::init(struct sc_settings* settings)
 	player.init(TARGET_SAMPLE_RATE, track_acquire_empty(), settings);
 	cues_reset(&cues);
 
-	playlist = nullptr;
+	// playlist is default-initialized to nullptr via unique_ptr
 	current_folder_idx = 0;
 	current_file_idx = 0;
 	files_present = false;
@@ -99,8 +102,7 @@ int deck::init(struct sc_settings* settings)
 void deck::clear()
 {
 	player.clear();
-	delete playlist;
-	playlist = nullptr;
+	playlist.reset();
 
 	if (loop_track)
 	{
@@ -176,8 +178,7 @@ void deck::punch_out()
 
 void deck::load_folder(const char* folder_name)
 {
-	delete playlist;
-	playlist = new Playlist();
+	playlist = std::make_unique<Playlist>();
 
 	if (playlist->load(folder_name) && playlist->total_files() > 0)
 	{
@@ -251,7 +252,7 @@ void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 	else if (current_file_idx == 0)
 	{
 		// At first file, go to loop if exists
-		bool has_loop = alsa_has_loop(engine, deck_no);
+		bool has_loop = engine->audio && engine->audio->has_loop(deck_no);
 		LOG_DEBUG("deck %d prev_file: at file 0, has_loop=%d", deck_no, has_loop);
 		if (has_loop)
 		{

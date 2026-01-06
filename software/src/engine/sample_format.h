@@ -19,6 +19,37 @@ namespace sc {
 namespace audio {
 
 //
+// TPDF (Triangular PDF) dither generator
+// Uses two uniform randoms summed for triangular distribution
+// Thread-local state for lock-free operation in audio callback
+//
+class TpdfDither {
+public:
+    // Returns dither value in range [-1, +1] LSB (triangular distribution)
+    static inline float generate() {
+        // Simple fast PRNG (xorshift32)
+        state_ ^= state_ << 13;
+        state_ ^= state_ >> 17;
+        state_ ^= state_ << 5;
+        float r1 = static_cast<float>(static_cast<int32_t>(state_)) * (1.0f / 2147483648.0f);
+
+        state_ ^= state_ << 13;
+        state_ ^= state_ >> 17;
+        state_ ^= state_ << 5;
+        float r2 = static_cast<float>(static_cast<int32_t>(state_)) * (1.0f / 2147483648.0f);
+
+        // Sum of two uniform [-1,1] gives triangular [-2,2], scale to [-1,1]
+        return (r1 + r2) * 0.5f;
+    }
+
+private:
+    static thread_local uint32_t state_;
+};
+
+// Initialize with a non-zero seed
+inline thread_local uint32_t TpdfDither::state_ = 0x12345678;
+
+//
 // Format trait tags for template specialization
 //
 
@@ -26,11 +57,14 @@ struct FormatS16 {
     static constexpr snd_pcm_format_t alsa_format = SND_PCM_FORMAT_S16_LE;
     static constexpr int bytes_per_sample = 2;
     static constexpr float scale = 32767.0f;
-    static constexpr bool needs_dither = false;
+    static constexpr bool needs_dither = true;
 
     static inline void write(void* dst, float sample) {
         auto* p = static_cast<int16_t*>(dst);
-        float clamped = std::fmax(-32768.0f, std::fmin(32767.0f, sample * scale));
+        // Apply TPDF dither (1 LSB amplitude) before quantization
+        float dither = TpdfDither::generate();  // [-1, +1]
+        float dithered = sample * scale + dither;
+        float clamped = std::fmax(-32768.0f, std::fmin(32767.0f, dithered));
         *p = static_cast<int16_t>(clamped);
     }
 
@@ -44,7 +78,7 @@ struct FormatS24_3LE {
     static constexpr snd_pcm_format_t alsa_format = SND_PCM_FORMAT_S24_3LE;
     static constexpr int bytes_per_sample = 3;
     static constexpr float scale = 8388607.0f;
-    static constexpr bool needs_dither = true;
+    static constexpr bool needs_dither = false;  // 24-bit noise floor is -144dB, inaudible
 
     static inline void write(void* dst, float sample) {
         float clamped = std::fmax(-8388608.0f, std::fmin(8388607.0f, sample * scale));
@@ -73,7 +107,7 @@ struct FormatS24_LE {
     static constexpr snd_pcm_format_t alsa_format = SND_PCM_FORMAT_S24_LE;
     static constexpr int bytes_per_sample = 4;  // Stored in low 24 bits of 32-bit word
     static constexpr float scale = 8388607.0f;
-    static constexpr bool needs_dither = true;
+    static constexpr bool needs_dither = false;  // 24-bit noise floor is -144dB, inaudible
 
     static inline void write(void* dst, float sample) {
         float clamped = std::fmax(-8388608.0f, std::fmin(8388607.0f, sample * scale));
@@ -96,7 +130,7 @@ struct FormatS32 {
     static constexpr snd_pcm_format_t alsa_format = SND_PCM_FORMAT_S32_LE;
     static constexpr int bytes_per_sample = 4;
     static constexpr float scale = 2147483647.0f;
-    static constexpr bool needs_dither = true;
+    static constexpr bool needs_dither = false;  // 32-bit has plenty of precision
 
     static inline void write(void* dst, float sample) {
         // Use double for better precision with large scale
@@ -138,6 +172,32 @@ inline int get_bytes_per_sample(snd_pcm_format_t format) {
         case SND_PCM_FORMAT_FLOAT_LE: return FormatFloat::bytes_per_sample;
         default: return 2;  // Default to S16
     }
+}
+
+//
+// Runtime format reader - reads a sample from any format and returns float [-1, 1]
+// Used for capture input where format is determined at runtime
+//
+inline float read_sample_as_float(const void* src, snd_pcm_format_t format) {
+    switch (format) {
+        case SND_PCM_FORMAT_S16_LE:   return FormatS16::read(src);
+        case SND_PCM_FORMAT_S24_3LE:  return FormatS24_3LE::read(src);
+        case SND_PCM_FORMAT_S24_LE:   return FormatS24_LE::read(src);
+        case SND_PCM_FORMAT_S32_LE:   return FormatS32::read(src);
+        case SND_PCM_FORMAT_FLOAT_LE: return FormatFloat::read(src);
+        default: return 0.0f;
+    }
+}
+
+//
+// Read a sample from capture buffer at given frame/channel position
+// Returns float [-1, 1]
+//
+inline float read_capture_sample(const void* buffer, int format, int bytes_per_sample,
+                                  unsigned long frame, int channel, int num_channels) {
+    const uint8_t* ptr = static_cast<const uint8_t*>(buffer);
+    ptr += (frame * num_channels + channel) * bytes_per_sample;
+    return read_sample_as_float(ptr, static_cast<snd_pcm_format_t>(format));
 }
 
 } // namespace audio

@@ -37,13 +37,11 @@ bool loop_buffer_start(struct loop_buffer* lb);
 void loop_buffer_stop(struct loop_buffer* lb);
 
 // Write audio frames to buffer (call from capture callback)
+// Input is float [-1, 1], will be converted to S16 for storage
 // Returns number of frames written (may be less than requested if max reached)
-unsigned int loop_buffer_write(struct loop_buffer* lb,
-                               const int16_t* pcm,
-                               unsigned int frames,
-                               int num_channels,
-                               int left_channel,
-                               int right_channel);
+unsigned int loop_buffer_write_float(struct loop_buffer* lb,
+                                     float left,
+                                     float right);
 
 // Get the recorded track (acquires reference - caller must release)
 // Returns NULL if no recording exists

@@ -15,29 +15,27 @@
 #include "sc1000.h"
 #include "sc_settings.h"
 
-void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
+void sc1000_setup(sc1000* engine, struct rt* rt, const char* root_path)
 {
     LOG_INFO("SC1000 engine init (root: %s)", root_path);
 
-    auto* settings = new sc_settings{};  // Use C++ allocation with value initialization
-
-    engine->settings = settings;
+    engine->settings = std::make_unique<sc_settings>();
     engine->mappings.clear();
 
     // Store root path in settings for use by other components
-    settings->root_path = root_path;
+    engine->settings->root_path = root_path;
 
-    sc_settings_load_user_configuration(engine->settings, engine->mappings);
+    sc_settings_load_user_configuration(engine->settings.get(), engine->mappings);
 
     // Verify root_path wasn't corrupted by settings loading
-    LOG_DEBUG("After settings load, root_path = '%s'", settings->root_path.c_str());
+    LOG_DEBUG("After settings load, root_path = '%s'", engine->settings->root_path.c_str());
 
     // Print loaded mappings for debugging
     sc_settings_print_gpio_mappings(engine->mappings);
 
     // Create two decks, both pointed at the same audio device
-    engine->scratch_deck.init(settings);
-    engine->beat_deck.init(settings);
+    engine->scratch_deck.init(engine->settings.get());
+    engine->beat_deck.init(engine->settings.get());
 
     // Set deck numbers for loop navigation
     engine->beat_deck.deck_no = 0;
@@ -46,7 +44,8 @@ void sc1000_setup(struct sc1000* engine, struct rt* rt, const char* root_path)
     // Tell deck0 to just play without considering inputs
     engine->beat_deck.player.just_play = true;
 
-    alsa_init(engine, settings);
+    // Initialize audio hardware (creates AudioHardware instance)
+    engine->audio = alsa_create(engine, engine->settings.get());
     rt_set_sc1000(rt, engine);
 
     alsa_clear_config_cache();
@@ -101,94 +100,62 @@ void sc1000_load_sample_folders(struct sc1000* engine)
     }
 }
 
-void sc1000_clear(struct sc1000* engine)
+void sc1000_clear(sc1000* engine)
 {
     engine->beat_deck.clear();
     engine->scratch_deck.clear();
 
-    if (engine->ops->clear != nullptr) {
-        engine->ops->clear(engine);
-    }
+    // Audio hardware cleaned up automatically via unique_ptr
+    engine->audio.reset();
 
-    // Clean up settings
-    delete engine->settings;
-    engine->settings = nullptr;
+    // Settings cleaned up automatically via unique_ptr
+    engine->settings.reset();
 }
 
-void sc1000_audio_engine_init(struct sc1000* engine, struct sc1000_ops* ops)
+void sc1000_audio_start(sc1000* engine)
 {
-    debug("%p", engine);
-    engine->fault = false;
-    engine->ops = ops;
-}
-
-/*
- * Start the device inputting and outputting audio
- */
-void sc1000_audio_engine_start(struct sc1000* engine)
-{
-    if (engine->ops->start != nullptr) {
-        engine->ops->start(engine);
+    if (engine->audio) {
+        engine->audio->start();
     }
 }
 
-/*
- * Stop the device
- */
-void sc1000_audio_engine_stop(struct sc1000* engine)
+void sc1000_audio_stop(sc1000* engine)
 {
-    if (engine->ops->stop != nullptr) {
-        engine->ops->stop(engine);
+    if (engine->audio) {
+        engine->audio->stop();
     }
 }
 
-/*
- * Get file descriptors which should be polled for this device
- *
- * Do not return anything for callback-based audio systems. If the
- * return value is > 0, there must be a handle() function available.
- *
- * Return: the number of pollfd filled, or -1 on error
- */
-ssize_t sc1000_audio_engine_pollfds(struct sc1000* engine, struct pollfd* pe, size_t z)
+ssize_t sc1000_audio_pollfds(sc1000* engine, struct pollfd* pe, size_t z)
 {
-    if (engine->ops->pollfds != nullptr) {
-        return engine->ops->pollfds(engine, pe, z);
-    } else {
-        return 0;
+    if (engine->audio) {
+        return engine->audio->pollfds(pe, z);
     }
+    return 0;
 }
 
-/*
- * Handle any available input or output on the device
- *
- * This function can be called when there is activity on any file
- * descriptor, not specifically one returned by this device.
- */
-void sc1000_audio_engine_handle(struct sc1000* engine)
+void sc1000_audio_handle(sc1000* engine)
 {
-    if (engine->fault) {
+    if (engine->fault || !engine->audio) {
         return;
     }
 
-    if (engine->ops->handle == nullptr) {
-        return;
-    }
-
-    if (engine->ops->handle(engine) != 0) {
+    if (engine->audio->handle() != 0) {
         engine->fault = true;
         LOG_ERROR("Error handling audio device; disabling it");
     }
 }
 
 // Helper to handle recording for a single deck
-static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int deck_no)
+static void handle_deck_recording(sc1000* engine, deck* dk, int deck_no)
 {
-    struct player* pl = &deck->player;
+    player* pl = &dk->player;
+
+    if (!engine->audio) return;
 
     // Start recording if requested
     if (pl->recording_started && !pl->recording) {
-        if (alsa_start_recording(engine, deck_no)) {
+        if (engine->audio->start_recording(deck_no, pl->position)) {
             pl->recording = true;
             pl->playing_beep = BEEP_RECORDINGSTART;
         } else {
@@ -201,13 +168,13 @@ static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int 
     // Stop recording if requested
     if (!pl->recording_started && pl->recording) {
         // Check if this was a first recording (will define loop) or punch-in
-        bool was_first_recording = !alsa_has_loop(engine, deck_no);
+        bool was_first_recording = !engine->audio->has_loop(deck_no);
 
         // Stop recording
-        alsa_stop_recording(engine, deck_no);
+        engine->audio->stop_recording(deck_no);
 
         // Navigate to loop position (position 0 in track list)
-        deck->current_file_idx = -1;
+        dk->current_file_idx = -1;
 
         // Switch player to use loop track (RT-safe: just a bool flag)
         // Audio engine will read from loop buffer instead of player->track
@@ -225,7 +192,7 @@ static void handle_deck_recording(struct sc1000* engine, struct deck* deck, int 
     }
 }
 
-void sc1000_handle_deck_recording(struct sc1000* engine)
+void sc1000_handle_deck_recording(sc1000* engine)
 {
     // Handle loop buffer recording for both decks (memory-based, for immediate scratching)
     handle_deck_recording(engine, &engine->beat_deck, 0);     // Beat deck = 0

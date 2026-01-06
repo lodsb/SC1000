@@ -126,20 +126,24 @@ void loop_buffer_stop(struct loop_buffer* lb)
     }
 }
 
-unsigned int loop_buffer_write(struct loop_buffer* lb,
-                               const int16_t* pcm,
-                               unsigned int frames,
-                               int num_channels,
-                               int left_channel,
-                               int right_channel)
+// Helper to convert float [-1, 1] to S16
+static inline int16_t float_to_s16(float sample)
+{
+    // Clamp and scale
+    float clamped = sample;
+    if (clamped > 1.0f) clamped = 1.0f;
+    if (clamped < -1.0f) clamped = -1.0f;
+    return static_cast<int16_t>(clamped * 32767.0f);
+}
+
+unsigned int loop_buffer_write_float(struct loop_buffer* lb,
+                                     float left,
+                                     float right)
 {
     if (!lb->recording || !lb->track)
     {
         return 0;
     }
-
-    unsigned int to_write = frames;
-    unsigned int written = 0;
 
     if (lb->length_locked)
     {
@@ -149,18 +153,13 @@ unsigned int loop_buffer_write(struct loop_buffer* lb,
             return 0;  // Shouldn't happen, but safety check
         }
 
-        for (unsigned int i = 0; i < to_write; i++)
-        {
-            unsigned int pos = lb->write_pos % lb->loop_length;
-            signed short* dest = lb->track->get_sample(static_cast<int>(pos));
-            const int16_t* src = &pcm[i * num_channels];
+        unsigned int pos = lb->write_pos % lb->loop_length;
+        signed short* dest = lb->track->get_sample(static_cast<int>(pos));
 
-            dest[0] = src[left_channel];   // Left
-            dest[1] = src[right_channel];  // Right
+        dest[0] = float_to_s16(left);
+        dest[1] = float_to_s16(right);
 
-            lb->write_pos++;
-            written++;
-        }
+        lb->write_pos++;
         // Wrap write_pos to avoid overflow over time
         lb->write_pos = lb->write_pos % lb->loop_length;
     }
@@ -178,26 +177,19 @@ unsigned int loop_buffer_write(struct loop_buffer* lb,
             return 0;
         }
 
-        to_write = (frames < remaining) ? frames : remaining;
+        // Write sample to track (space is pre-allocated, no RT allocation)
+        signed short* dest = lb->track->get_sample(static_cast<int>(lb->write_pos));
 
-        // Write samples to track (space is pre-allocated, no RT allocation)
-        for (unsigned int i = 0; i < to_write; i++)
-        {
-            signed short* dest = lb->track->get_sample(static_cast<int>(lb->write_pos + i));
-            const int16_t* src = &pcm[i * num_channels];
+        dest[0] = float_to_s16(left);
+        dest[1] = float_to_s16(right);
 
-            dest[0] = src[left_channel];   // Left
-            dest[1] = src[right_channel];  // Right
-        }
-
-        lb->write_pos += to_write;
-        written = to_write;
+        lb->write_pos++;
 
         // Update track length as we go (allows scratching while recording)
         track_set_length(lb->track, lb->write_pos);
     }
 
-    return written;
+    return 1;
 }
 
 struct track* loop_buffer_get_track(struct loop_buffer* lb)

@@ -26,15 +26,14 @@ struct dsp_stats {
     unsigned long xruns;      /* Count of times we exceeded budget */
 };
 
-/* Capture input info passed to audio engine */
+/* Capture input info passed to audio engine (I/O data only, no state) */
 struct audio_capture {
-    const int16_t* buffer;      /* Capture samples (nullptr if not available) */
+    const void* buffer;         /* Capture samples in device format (nullptr if not available) */
+    int format;                 /* ALSA format (snd_pcm_format_t) - use int for C compatibility */
+    int bytes_per_sample;       /* Bytes per sample for this format */
     int channels;               /* Total channels in capture buffer */
     int left_channel;           /* Index of left channel */
     int right_channel;          /* Index of right channel */
-    struct loop_buffer* loop[2]; /* Loop buffers for both decks (0=beat, 1=scratch) */
-    int recording_deck;          /* Which deck is recording (-1 = none) */
-    float monitoring_volume;     /* Monitoring volume */
 };
 
 #ifdef __cplusplus
@@ -65,6 +64,12 @@ void audio_engine_get_stats(struct dsp_stats* stats);
 void audio_engine_reset_peak(void);
 
 #ifdef __cplusplus
+// Update global stats from a specific engine instance (for direct C++ engine usage)
+namespace sc { namespace audio { class AudioEngineBase; } }
+void audio_engine_update_global_stats(sc::audio::AudioEngineBase* engine);
+#endif
+
+#ifdef __cplusplus
 }
 #endif
 
@@ -76,6 +81,7 @@ void audio_engine_reset_peak(void);
 
 #include "sample_format.h"
 #include "interpolation_policy.h"
+#include "loop_buffer.h"
 #include <alsa/asoundlib.h>
 
 namespace sc {
@@ -95,10 +101,14 @@ struct DspStats {
 //
 // Abstract base class for runtime dispatch
 // Virtual dispatch happens once per buffer (~256 samples), negligible overhead.
+// Owns loop buffers and recording state - platform layer only handles I/O.
 //
 class AudioEngineBase {
 public:
     virtual ~AudioEngineBase() = default;
+
+    // Initialize loop buffers (call after construction, before processing)
+    virtual void init_loop_buffers(int sample_rate, int max_seconds) = 0;
 
     // Main processing function
     // capture: input audio (nullptr if not available)
@@ -111,6 +121,23 @@ public:
         int playback_channels,
         unsigned long frames) = 0;
 
+    // Recording control
+    virtual bool start_recording(int deck, double playback_position = 0.0) = 0;
+    virtual void stop_recording(int deck) = 0;
+    virtual bool is_recording(int deck) const = 0;
+    virtual int recording_deck() const = 0;
+
+    // Loop track access
+    virtual struct track* get_loop_track(int deck) = 0;      // Acquires reference
+    virtual struct track* peek_loop_track(int deck) = 0;     // No ref change (RT-safe)
+    virtual bool has_loop(int deck) const = 0;
+    virtual void reset_loop(int deck) = 0;
+
+    // Monitoring volume for active recording deck
+    virtual void set_monitoring_volume(float volume) = 0;
+    virtual float monitoring_volume() const = 0;
+
+    // Stats
     virtual const DspStats& get_stats() const = 0;
     virtual void reset_peak() = 0;
 
@@ -129,7 +156,10 @@ public:
 template<typename InterpPolicy, typename FormatPolicy>
 class AudioEngine final : public AudioEngineBase {
 public:
-    AudioEngine() = default;
+    AudioEngine();
+    ~AudioEngine() override;
+
+    void init_loop_buffers(int sample_rate, int max_seconds) override;
 
     void process(
         sc1000* engine,
@@ -138,6 +168,23 @@ public:
         int playback_channels,
         unsigned long frames) override;
 
+    // Recording control
+    bool start_recording(int deck, double playback_position = 0.0) override;
+    void stop_recording(int deck) override;
+    bool is_recording(int deck) const override;
+    int recording_deck() const override { return active_recording_deck_; }
+
+    // Loop track access
+    struct track* get_loop_track(int deck) override;
+    struct track* peek_loop_track(int deck) override;
+    bool has_loop(int deck) const override;
+    void reset_loop(int deck) override;
+
+    // Monitoring
+    void set_monitoring_volume(float volume) override { monitoring_volume_ = volume; }
+    float monitoring_volume() const override { return monitoring_volume_; }
+
+    // Stats
     const DspStats& get_stats() const override { return stats_; }
     void reset_peak() override {
         stats_.load_peak = 0.0;
@@ -146,6 +193,10 @@ public:
 
 private:
     DspStats stats_{};
+    loop_buffer loop_[2]{};              // Loop buffers for both decks
+    int active_recording_deck_ = -1;     // Which deck is recording (-1 = none)
+    float monitoring_volume_ = 0.0f;     // Monitoring volume for recording
+    bool loop_buffers_initialized_ = false;
 
     // Setup player parameters for the block
     void setup_player(player* pl, unsigned long samples, const sc_settings* settings,

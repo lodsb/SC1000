@@ -341,9 +341,11 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     pl2->volume = target_volume_2;
 
     // Handle capture: loop recording and monitoring
-    if (capture && capture->buffer) {
-        int deck = active_recording_deck_;
-        bool recording = (deck >= 0 && deck < 2);
+    int deck = active_recording_deck_;
+    bool recording = (deck >= 0 && deck < 2);
+    bool has_capture = (capture && capture->buffer);
+
+    if (has_capture) {
         bool monitoring = (deck >= 0 && monitoring_volume_ > 0.0f);
 
         if (recording || monitoring) {
@@ -376,6 +378,11 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
                 out_ptr += frame_size;
             }
         }
+    } else if (recording) {
+        // Capture not available but recording is active
+        // Don't write anything - this preserves existing audio during punch-in
+        // and avoids writing zeros at the start of first recording
+        // The diagnostic in alsa.cpp will log when this happens
     }
 }
 

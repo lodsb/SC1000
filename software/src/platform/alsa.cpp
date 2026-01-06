@@ -193,8 +193,16 @@ static void* buffer_generic(const snd_pcm_channel_area_t* area,
                             int num_channels,
                             int bytes_per_sample) {
     assert(area->first % 8 == 0);
-    unsigned int expected_step = num_channels * bytes_per_sample * 8;
-    assert(area->step == expected_step);
+    unsigned int expected_step = static_cast<unsigned int>(num_channels * bytes_per_sample * 8);
+    if (area->step != expected_step) {
+        // Log mismatch but continue - might indicate format issue
+        static bool logged_step_mismatch = false;
+        if (!logged_step_mismatch) {
+            LOG_WARN("ALSA area step mismatch: expected %u bits, got %u bits (channels=%d, bps=%d)",
+                     expected_step, area->step, num_channels, bytes_per_sample);
+            logged_step_mismatch = true;
+        }
+    }
     unsigned int bitofs = area->first + area->step * offset;
     return static_cast<char*>(area->addr) + bitofs / 8;
 }
@@ -385,10 +393,23 @@ static int pcm_open(alsa_pcm* alsa, const char* device_name,
 
     auto buffer_size = static_cast<snd_pcm_uframes_t>(period_size * device_info->buffer_period_factor);
     if (stream == SND_PCM_STREAM_CAPTURE) {
-        if (!chk("hw_params_set_buffer_size_last", snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames))) return -1;
+        // Use same buffer size as playback for consistent timing
+        // Using set_buffer_size_last can result in very large buffers that overflow
+        if (!chk("hw_params_set_buffer_size", snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size))) {
+            // Fall back to largest if requested size isn't supported
+            LOG_WARN("Capture buffer size %lu not supported, using maximum", buffer_size);
+            if (!chk("hw_params_set_buffer_size_last", snd_pcm_hw_params_set_buffer_size_last(alsa->pcm, hw_params, &frames))) return -1;
+        }
     } else {
         if (!chk("hw_params_set_buffer_size", snd_pcm_hw_params_set_buffer_size(alsa->pcm, hw_params, buffer_size))) return -1;
     }
+
+    // Log actual buffer size
+    snd_pcm_uframes_t actual_buffer;
+    snd_pcm_hw_params_get_buffer_size(hw_params, &actual_buffer);
+    LOG_INFO("%s buffer size: %lu frames (%.1f ms)",
+             stream == SND_PCM_STREAM_CAPTURE ? "Capture" : "Playback",
+             actual_buffer, (actual_buffer * 1000.0) / TARGET_SAMPLE_RATE);
 
     if (!chk("hw_params", snd_pcm_hw_params(alsa->pcm, hw_params))) return -1;
     return 0;
@@ -503,10 +524,30 @@ int AlsaAudio::process_audio() {
                 capture_bps = format_bytes_per_sample(capture_format_);
                 capture_pcm = buffer_generic(&capture_areas[0], capture_offset, capture_channels_, capture_bps);
                 capture_valid = true;
+
+                // One-time debug: log capture format info
+                static bool logged_capture_info = false;
+                if (!logged_capture_info) {
+                    LOG_INFO("Capture: format=%s bps=%d channels=%d left=%d right=%d frames=%lu",
+                             snd_pcm_format_name(capture_format_), capture_bps,
+                             capture_channels_, capture_left_, capture_right_, capture_frames);
+                    logged_capture_info = true;
+                }
             }
         } else if (capture_avail == -EPIPE) {
+            LOG_RT_WARN("Capture overrun (EPIPE)");
             snd_pcm_prepare(capture_.pcm);
             snd_pcm_start(capture_.pcm);
+        } else if (capture_avail < 0) {
+            LOG_RT_WARN("Capture error: %ld", capture_avail);
+        } else {
+            // Not enough capture data available - this causes a gap in recording!
+            static unsigned long capture_underrun_count = 0;
+            capture_underrun_count++;
+            if ((capture_underrun_count % 100) == 1) {
+                LOG_RT_WARN("Capture underrun #%lu: avail=%ld need=%lu",
+                           capture_underrun_count, capture_avail, capture_.period_size);
+            }
         }
     }
 
@@ -538,15 +579,21 @@ int AlsaAudio::process_audio() {
         audio_engine_->process(engine_, capture_valid ? &capture_info : nullptr, stereo_buf, 2, playback_frames);
         audio_engine_update_global_stats(audio_engine_.get());
 
+        // Zero entire output buffer first (required for unmapped channels)
+        const int frame_stride = num_channels_ * bytes_per_sample;
+        const int stereo_bytes = 2 * bytes_per_sample;
+        memset(playback_pcm, 0, playback_frames * frame_stride);
+
+        // Scatter stereo to channels 0-1 using pointer increment (no per-frame multiply)
         uint8_t* out = static_cast<uint8_t*>(playback_pcm);
-        int frame_stride = num_channels_ * bytes_per_sample;
-        int stereo_stride = 2 * bytes_per_sample;
+        const uint8_t* in = stereo_buf;
         for (unsigned long i = 0; i < playback_frames; i++) {
-            memcpy(out + i * frame_stride, stereo_buf + i * stereo_stride, bytes_per_sample);
-            memcpy(out + i * frame_stride + bytes_per_sample, stereo_buf + i * stereo_stride + bytes_per_sample, bytes_per_sample);
+            memcpy(out, in, stereo_bytes);  // Copy L+R together (6 bytes for S24)
+            out += frame_stride;
+            in += stereo_bytes;
         }
 
-        if (config_ && config_->supports_cv && playback_format_ == SND_PCM_FORMAT_S16_LE) {
+        if (config_ && config_->supports_cv) {
             player* pl = &engine_->scratch_deck.player;
             cv_controller_input cv_input = {
                 .pitch = pl->pitch,
@@ -558,7 +605,8 @@ int AlsaAudio::process_audio() {
                 .crossfader_position = engine_->crossfader.position()
             };
             cv_engine_update(&cv_, &cv_input);
-            cv_engine_process(&cv_, static_cast<int16_t*>(playback_pcm), num_channels_, playback_frames);
+            cv_engine_process_format(&cv_, playback_pcm, num_channels_,
+                                     playback_format_, bytes_per_sample, playback_frames);
         }
     }
 

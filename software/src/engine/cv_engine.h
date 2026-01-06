@@ -109,10 +109,21 @@ void cv_engine_set_mapping(struct cv_state* state, struct audio_interface* iface
 // Update all CV inputs from controller state (call once per audio block)
 void cv_engine_update(struct cv_state* state, const struct cv_controller_input* input);
 
-// Process one block - generates CV output samples
+// Process one block - generates CV output samples (S16 version)
 void cv_engine_process(
     struct cv_state* state,
     int16_t* buffer,
     int num_channels,
+    unsigned long frames
+);
+
+// Process one block - generates CV output samples (format-aware version)
+// format: ALSA format (SND_PCM_FORMAT_S16_LE, SND_PCM_FORMAT_S24_3LE, etc.)
+void cv_engine_process_format(
+    struct cv_state* state,
+    void* buffer,
+    int num_channels,
+    int format,
+    int bytes_per_sample,
     unsigned long frames
 );

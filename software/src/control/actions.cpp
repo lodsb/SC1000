@@ -42,10 +42,19 @@ void perform_action_for_deck(deck* deck, mapping* map,
         deck->unset_cue(cuenum);
     }
     else if (map->action_type == NOTE) {
-        // Equal temperament: 2^(1/12) per semitone, 0x3C = middle C
-        double new_pitch = pow(pow(2.0, 1.0 / 12.0), map->parameter - 0x3C);
-        deck->player.note_pitch = new_pitch;
-        LOG_INFO("NOTE action: note=%d -> pitch=%.3f", map->parameter, new_pitch);
+        // Check for note-off: status 0x80 or note-on with velocity 0
+        bool is_note_off = (midi_buffer[0] & 0xF0) == 0x80 ||
+                           ((midi_buffer[0] & 0xF0) == 0x90 && midi_buffer[2] == 0);
+        if (is_note_off) {
+            // Reset pitch to normal on note-off
+            deck->player.note_pitch = 1.0;
+            LOG_DEBUG("NOTE action: note-off, pitch reset to 1.0");
+        } else {
+            // Equal temperament: 2^(1/12) per semitone, 0x3C = middle C
+            double new_pitch = pow(pow(2.0, 1.0 / 12.0), midi_buffer[1] - 0x3C);
+            deck->player.note_pitch = new_pitch;
+            LOG_INFO("NOTE action: note=%d -> pitch=%.3f", midi_buffer[1], new_pitch);
+        }
     }
     else if (map->action_type == STARTSTOP) {
         deck->player.stopped = !deck->player.stopped;

@@ -3,6 +3,8 @@
 //
 
 #include "cv_engine.h"
+#include "sample_format.h"
+#include <alsa/asoundlib.h>
 #include <cmath>
 #include <cstring>
 
@@ -14,6 +16,12 @@ constexpr float BIPOLAR_SCALE = 32767.0f;   // -32768 to +32767
 constexpr float UNIPOLAR_SCALE = 32767.0f;  // 0 to 32767
 constexpr int16_t GATE_HIGH = 32767;
 constexpr int16_t GATE_LOW = 0;
+
+// Scale factors for normalized float output (used by format-aware version)
+constexpr float BIPOLAR_NORM = 1.0f;        // -1.0 to +1.0
+constexpr float UNIPOLAR_NORM = 1.0f;       // 0.0 to 1.0
+constexpr float GATE_HIGH_NORM = 1.0f;
+constexpr float GATE_LOW_NORM = 0.0f;
 
 // Encoder resolution (12-bit)
 constexpr float ENCODER_SCALE = 1.0f / 4096.0f;
@@ -252,4 +260,138 @@ void cv_engine_process(
     state->filter.speed_filtered = filt_speed;
     state->platter.speed = filt_speed;  // Store filtered speed
     state->trigger.pulse_countdown = pulse_countdown;
+}
+
+//
+// Format-aware CV processing using sample_format.h
+//
+// Templated inner function for compile-time format optimization
+//
+namespace sc {
+namespace cv {
+
+template<typename FormatPolicy>
+static void cv_process_typed(
+    struct cv_state* state,
+    void* buffer,
+    int num_channels,
+    unsigned long frames)
+{
+    constexpr int bps = FormatPolicy::bytes_per_sample;
+
+    // Get cached channel indices
+    const int ch_speed = state->channels.platter_speed;
+    const int ch_angle = state->channels.platter_angle;
+    const int ch_accel = state->channels.platter_accel;
+    const int ch_position = state->channels.sample_position;
+    const int ch_crossfader = state->channels.crossfader;
+    const int ch_gate_a = state->channels.gate_a;
+    const int ch_gate_b = state->channels.gate_b;
+    const int ch_pulse = state->channels.direction_pulse;
+
+    // Early out if nothing is mapped
+    if (ch_speed < 0 && ch_angle < 0 && ch_accel < 0 && ch_position < 0 &&
+        ch_crossfader < 0 && ch_gate_a < 0 && ch_gate_b < 0 && ch_pulse < 0)
+        return;
+
+    // Pre-compute constant values for this block (normalized -1 to +1 or 0 to +1)
+    const float gate_a = state->fader.scratch_open ? GATE_HIGH_NORM : GATE_LOW_NORM;
+    const float gate_b = state->fader.beat_open ? GATE_HIGH_NORM : GATE_LOW_NORM;
+    const float angle_out = state->platter.angle;  // Already 0-1
+    const float accel_out = state->platter.acceleration;  // Already -1 to +1
+    const float position_out = state->sample.position;  // Already 0-1
+    const float crossfader_out = state->fader.position;  // Already 0-1
+
+    // Filter state
+    const float alpha = state->filter.alpha;
+    const float one_minus_alpha = 1.0f - alpha;
+    const float target_speed = state->platter.speed_raw;
+    float filt_speed = state->filter.speed_filtered;
+
+    // Pulse countdown
+    int pulse_countdown = state->trigger.pulse_countdown;
+
+    // Frame stride in bytes
+    const int frame_stride = num_channels * bps;
+    uint8_t* out = static_cast<uint8_t*>(buffer);
+
+    // Per-sample processing
+    for (unsigned long i = 0; i < frames; i++)
+    {
+        uint8_t* frame = out + i * frame_stride;
+
+        // Apply lowpass filter to platter speed
+        filt_speed = alpha * target_speed + one_minus_alpha * filt_speed;
+
+        // Write CV outputs using format-aware write
+        if (ch_speed >= 0)
+            FormatPolicy::write(frame + ch_speed * bps, filt_speed);
+
+        if (ch_angle >= 0)
+            FormatPolicy::write(frame + ch_angle * bps, angle_out);
+
+        if (ch_accel >= 0)
+            FormatPolicy::write(frame + ch_accel * bps, accel_out);
+
+        if (ch_position >= 0)
+            FormatPolicy::write(frame + ch_position * bps, position_out);
+
+        if (ch_crossfader >= 0)
+            FormatPolicy::write(frame + ch_crossfader * bps, crossfader_out);
+
+        if (ch_gate_a >= 0)
+            FormatPolicy::write(frame + ch_gate_a * bps, gate_a);
+
+        if (ch_gate_b >= 0)
+            FormatPolicy::write(frame + ch_gate_b * bps, gate_b);
+
+        if (ch_pulse >= 0)
+        {
+            FormatPolicy::write(frame + ch_pulse * bps,
+                               (pulse_countdown > 0) ? GATE_HIGH_NORM : GATE_LOW_NORM);
+            if (pulse_countdown > 0) pulse_countdown--;
+        }
+    }
+
+    // Store state for next block
+    state->filter.speed_filtered = filt_speed;
+    state->platter.speed = filt_speed;
+    state->trigger.pulse_countdown = pulse_countdown;
+}
+
+} // namespace cv
+} // namespace sc
+
+void cv_engine_process_format(
+    struct cv_state* state,
+    void* buffer,
+    int num_channels,
+    int format,
+    int bytes_per_sample,
+    unsigned long frames)
+{
+    using namespace sc::audio;
+
+    // Dispatch to format-specific implementation
+    switch (static_cast<snd_pcm_format_t>(format)) {
+        case SND_PCM_FORMAT_S16_LE:
+            sc::cv::cv_process_typed<FormatS16>(state, buffer, num_channels, frames);
+            break;
+        case SND_PCM_FORMAT_S24_3LE:
+            sc::cv::cv_process_typed<FormatS24_3LE>(state, buffer, num_channels, frames);
+            break;
+        case SND_PCM_FORMAT_S24_LE:
+            sc::cv::cv_process_typed<FormatS24_LE>(state, buffer, num_channels, frames);
+            break;
+        case SND_PCM_FORMAT_S32_LE:
+            sc::cv::cv_process_typed<FormatS32>(state, buffer, num_channels, frames);
+            break;
+        case SND_PCM_FORMAT_FLOAT_LE:
+            sc::cv::cv_process_typed<FormatFloat>(state, buffer, num_channels, frames);
+            break;
+        default:
+            // Fallback: use S16 if format unknown
+            sc::cv::cv_process_typed<FormatS16>(state, buffer, num_channels, frames);
+            break;
+    }
 }

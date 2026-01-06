@@ -27,6 +27,19 @@
 // Sentinel value for unset cue points (used for backward compatibility)
 constexpr double CUE_UNSET = HUGE_VAL;
 
+// TODO: Auto-slice cue marker generation
+// Add automatic cue marker placement for slicing the current deck's sample.
+// UI concept: Press cue markers 1 & 2 simultaneously to trigger auto-slice:
+//   - First press: create 8 evenly-spaced slices across the sample
+//   - Second press: 16 slices
+//   - Third press: 32 slices
+//   - Fourth press: clear auto-slices / return to manual cues
+// Implementation notes:
+//   - Need to detect simultaneous button press in actions.cpp
+//   - Calculate slice positions based on sample length (track->length)
+//   - Consider beat-grid alignment if BPM detection is added later
+//   - Store slice count state per deck to cycle through options
+
 // Cue points manager
 // Stores labeled cue positions in a sample, with file persistence
 class Cues {

@@ -11,6 +11,14 @@ struct loop_buffer;
 // C-compatible types and API (for backward compatibility)
 //
 
+// TODO: RIAA curve / vinyl EQ
+// Investigate adding RIAA equalization curve for authentic vinyl playback character.
+// The RIAA curve has specific time constants:
+// - Bass boost below ~500Hz (turnover at 500.5Hz)
+// - Treble cut above ~2122Hz
+// Could be implemented as a biquad filter chain applied during playback.
+// Reference: https://en.wikipedia.org/wiki/RIAA_equalization
+
 /* Interpolation mode selection */
 typedef enum {
     INTERP_CUBIC = 0,  /* 4-tap Catmull-Rom (fast, no anti-aliasing) */

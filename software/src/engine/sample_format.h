@@ -12,6 +12,7 @@
 
 #include <alsa/asoundlib.h>
 #include <cstdint>
+#include <cstring>
 #include <algorithm>
 #include <cmath>
 
@@ -81,12 +82,51 @@ struct FormatS24_3LE {
     static constexpr bool needs_dither = false;  // 24-bit noise floor is -144dB, inaudible
 
     static inline void write(void* dst, float sample) {
-        float clamped = std::fmax(-8388608.0f, std::fmin(8388607.0f, sample * scale));
-        int32_t val = static_cast<int32_t>(clamped);
-        auto* p = static_cast<uint8_t*>(dst);
-        p[0] = static_cast<uint8_t>(val & 0xFF);
-        p[1] = static_cast<uint8_t>((val >> 8) & 0xFF);
-        p[2] = static_cast<uint8_t>((val >> 16) & 0xFF);
+        // Fast path: branchless clamp + single memcpy (compiler optimizes small memcpy)
+        float scaled = sample * scale;
+        int32_t val = static_cast<int32_t>(scaled);
+        // Branchless clamp to 24-bit signed range
+        val = val < -8388608 ? -8388608 : (val > 8388607 ? 8388607 : val);
+        std::memcpy(dst, &val, 3);  // Compiler optimizes to efficient store
+    }
+
+    // Convert float to clamped 24-bit integer (helper for batch operations)
+    static inline int32_t to_s24(float sample) {
+        float scaled = sample * scale;
+        int32_t val = static_cast<int32_t>(scaled);
+        return val < -8388608 ? -8388608 : (val > 8388607 ? 8388607 : val);
+    }
+
+    // Batch write 4 samples as 3 × 32-bit words (12 bytes)
+    // Layout: [S0:24][S1:24][S2:24][S3:24] -> [W0:32][W1:32][W2:32]
+    // This eliminates unaligned 3-byte writes in favor of aligned 32-bit stores
+    static inline void write_batch4(void* dst, float s0, float s1, float s2, float s3) {
+        uint32_t v0 = static_cast<uint32_t>(to_s24(s0)) & 0xFFFFFF;
+        uint32_t v1 = static_cast<uint32_t>(to_s24(s1)) & 0xFFFFFF;
+        uint32_t v2 = static_cast<uint32_t>(to_s24(s2)) & 0xFFFFFF;
+        uint32_t v3 = static_cast<uint32_t>(to_s24(s3)) & 0xFFFFFF;
+
+        uint32_t* out = static_cast<uint32_t*>(dst);
+        out[0] = v0 | (v1 << 24);
+        out[1] = (v1 >> 8) | (v2 << 16);
+        out[2] = (v2 >> 16) | (v3 << 8);
+    }
+
+    // Batch write stereo pair (L, R) - 6 bytes
+    static inline void write_stereo(void* dst, float l, float r) {
+        write(dst, l);
+        write(static_cast<uint8_t*>(dst) + 3, r);
+    }
+
+    // Batch read stereo pair (L, R) - 6 bytes (for consecutive channels)
+    static inline void read_stereo(const void* src, float& l, float& r) {
+        l = read(src);
+        r = read(static_cast<const uint8_t*>(src) + 3);
+    }
+
+    // Batch write 2 stereo frames (L0, R0, L1, R1) = 4 samples = 12 bytes = 3 words
+    static inline void write_stereo2(void* dst, float l0, float r0, float l1, float r1) {
+        write_batch4(dst, l0, r0, l1, r1);
     }
 
     static inline float read(const void* src) {
@@ -100,6 +140,40 @@ struct FormatS24_3LE {
             val |= 0xFF000000;
         }
         return static_cast<float>(val) / scale;
+    }
+
+    // Convert 24-bit integer to float (helper for batch operations)
+    static inline float from_s24(int32_t val) {
+        // Sign extend if negative (bit 23 set)
+        if (val & 0x800000) {
+            val |= 0xFF000000;
+        }
+        return static_cast<float>(val) / scale;
+    }
+
+    // Batch read 4 samples from 3 × 32-bit words (12 bytes)
+    // Inverse of write_batch4
+    static inline void read_batch4(const void* src, float& s0, float& s1, float& s2, float& s3) {
+        const uint32_t* in = static_cast<const uint32_t*>(src);
+        uint32_t w0 = in[0];
+        uint32_t w1 = in[1];
+        uint32_t w2 = in[2];
+
+        // Extract 24-bit values (inverse of write_batch4 packing)
+        int32_t v0 = static_cast<int32_t>(w0 & 0xFFFFFF);
+        int32_t v1 = static_cast<int32_t>((w0 >> 24) | ((w1 & 0xFFFF) << 8));
+        int32_t v2 = static_cast<int32_t>((w1 >> 16) | ((w2 & 0xFF) << 16));
+        int32_t v3 = static_cast<int32_t>(w2 >> 8);
+
+        s0 = from_s24(v0);
+        s1 = from_s24(v1);
+        s2 = from_s24(v2);
+        s3 = from_s24(v3);
+    }
+
+    // Batch read 2 stereo frames (L0, R0, L1, R1) = 4 samples = 12 bytes
+    static inline void read_stereo2(const void* src, float& l0, float& r0, float& l1, float& r1) {
+        read_batch4(src, l0, r0, l1, r1);
     }
 };
 

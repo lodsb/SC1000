@@ -95,6 +95,10 @@ inline TrackSampleWindow get_sample_window(struct track* tr, int center_sample, 
 
     if (tr_len == 0) return w;
 
+    // Wrap center_sample to track bounds first (position can grow indefinitely)
+    center_sample = center_sample % tr_len;
+    if (center_sample < 0) center_sample += tr_len;
+
     constexpr int HALF_TAPS = SINC_NUM_TAPS / 2;
     int start = center_sample - HALF_TAPS;
     int end = center_sample + HALF_TAPS - 1;
@@ -252,10 +256,10 @@ inline void collect_samples_slow(
     for (int i = 0; i < SINC_NUM_TAPS; ++i) {
         int idx = start + i;
 
-        // Wrap to track boundary
+        // Wrap to track boundary using modulo (O(1) instead of O(n) while loop)
         if (tr_len != 0) {
-            while (idx < 0) idx += tr_len;
-            while (idx >= tr_len) idx -= tr_len;
+            idx = idx % tr_len;
+            if (idx < 0) idx += tr_len;  // Handle negative modulo
         }
 
         if (idx >= 0 && idx < tr_len) {
@@ -286,6 +290,9 @@ inline SincInterpResult sinc_interpolate_track_opt(
     SincInterpResult result = {0.0f, 0.0f};
 
     if (tr_len == 0) return result;
+
+    // Note: sample_pos is expected to be pre-wrapped by caller (audio engine)
+    // This avoids expensive fmod() on every sample
 
     // Get integer and fractional parts
     int center = static_cast<int>(sample_pos);

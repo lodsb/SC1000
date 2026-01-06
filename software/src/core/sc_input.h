@@ -95,6 +95,7 @@ extern "C" {
 #endif
 
 void start_sc_input_thread(void);
+void stop_sc_input_thread(void);
 
 #ifdef __cplusplus
 }

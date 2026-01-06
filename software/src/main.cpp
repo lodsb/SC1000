@@ -133,7 +133,7 @@ static void sig_handler(int signo)
 {
     if (signo == SIGINT) {
         printf("received SIGINT\n");
-        exit(0);
+        rig_quit();  // Signal main loop to exit cleanly
     }
 }
 
@@ -205,6 +205,9 @@ int main(int argc, char* argv[])
 
 out_interface:
 out_rt:
+    // Stop input thread first (it may be polling MIDI devices)
+    stop_sc_input_thread();
+
     rt_stop(&g_rt);
 
     sc1000_clear(&g_sc1000_engine);

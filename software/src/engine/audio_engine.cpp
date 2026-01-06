@@ -249,6 +249,16 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     double sample_1 = (pl1->position - pl1->offset) * tr_1_rate;
     double sample_2 = (pl2->position - pl2->offset) * tr_2_rate;
 
+    // Wrap sample positions once per buffer (avoids fmod per-sample in interpolation)
+    if (tr_1_len > 0) {
+        sample_1 = std::fmod(sample_1, static_cast<double>(tr_1_len));
+        if (sample_1 < 0.0) sample_1 += tr_1_len;
+    }
+    if (tr_2_len > 0) {
+        sample_2 = std::fmod(sample_2, static_cast<double>(tr_2_len));
+        if (sample_2 < 0.0) sample_2 += tr_2_len;
+    }
+
     const float ONE_OVER_SAMPLES = 1.0f / static_cast<float>(frames);
 
     float pitch_1 = static_cast<float>(pl1->pitch);
@@ -302,6 +312,12 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
 
             sample_1 += step_1;
             sample_2 += step_2;
+
+            // Wrap when crossing track boundary (rare, branch predictor handles well)
+            if (sample_1 >= tr_1_len) sample_1 -= tr_1_len;
+            else if (sample_1 < 0.0) sample_1 += tr_1_len;
+            if (sample_2 >= tr_2_len) sample_2 -= tr_2_len;
+            else if (sample_2 < 0.0) sample_2 += tr_2_len;
             vol_1 += volume_gradient_1;
             vol_2 += volume_gradient_2;
             pitch_1 += pitch_gradient_1;
@@ -394,6 +410,7 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process(
     if (load > 100.0) {
         stats_.xruns++;
     }
+
 }
 
 //

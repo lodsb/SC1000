@@ -84,6 +84,10 @@ struct InputContext {
 // Singleton input context - later can be moved into sc1000 struct or passed explicitly
 static InputContext g_input_ctx;
 
+// Thread control
+static volatile bool g_input_running = true;
+static pthread_t g_input_thread_handle;
+
 // Convenience accessors for backwards compatibility during transition
 #define shift_latched g_input_ctx.shift_latched
 #define gpiopresent g_input_ctx.hw.gpio.mcp23017_present
@@ -818,7 +822,7 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
 
     unsigned int second_count = 0;
 
-    while (1) // Main input loop
+    while (g_input_running) // Main input loop
     {
         frame_count++;
 
@@ -907,7 +911,7 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
             last_input_time = input_time;
         }
 
-        //usleep(scsettings.update_rate);
+        usleep(settings->update_rate);  // Rate limit input loop to reduce CPU contention
     }
 }
 
@@ -924,16 +928,26 @@ void* sc_input_thread(void* ptr)
 // Start the input thread
 void start_sc_input_thread()
 {
-    pthread_t thread1;
     int iret1;
 
     LOG_INFO("Starting GPIO input thread");
+    sc::input::g_input_running = true;
 
-    iret1 = pthread_create(&thread1, nullptr, sc::input::sc_input_thread, nullptr);
+    iret1 = pthread_create(&sc::input::g_input_thread_handle, nullptr, sc::input::sc_input_thread, nullptr);
 
     if (iret1)
     {
         LOG_ERROR("Error - pthread_create() return code: %d", iret1);
         exit(EXIT_FAILURE);
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Stop the input thread
+void stop_sc_input_thread()
+{
+    LOG_INFO("Stopping GPIO input thread");
+    sc::input::g_input_running = false;
+    pthread_join(sc::input::g_input_thread_handle, nullptr);
+    LOG_INFO("GPIO input thread stopped");
 }

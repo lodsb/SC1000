@@ -17,21 +17,21 @@ The software in the `software/` folder has been completely rewritten and moderni
 
 ### What's New
 
-- **Loop recording** with punch-in overdub and per-deck control
+- **Loop recording** with punch-in overdub and per-deck control (via external audio interface)
 - **High-quality sinc interpolation** (16-tap, anti-aliased)
 - **Float-based audio engine** with native 24-bit support
-- **CV outputs** for modular synthesis integration
+- **CV outputs** for modular synthesis integration (via external audio interface)
 - **Multi-device audio routing** with per-device configuration
 - **Extensive logging system** with file output
 - **JSON configuration** for easy customization
 - **CMake build system** with Docker cross-compilation support
 - **C++17 codebase** with modern patterns (RAII, namespaces, smart pointers)
 
+For more info see below (section [Software Features Version 2](#software-features-version-2))
+
 ### Compatibility Note
 
-**The new software is a drop-in binary replacement.** It runs on the existing SD card Linux image - no OS update required. Simply copy the new `xwax` binary to the USB stick root or to `/root/xwax` on the SD card.
-
-The original software is preserved in `software/original_version/` for reference.
+**The new software is/will be a drop-in binary replacement.** It runs on the existing SD card Linux image - no OS update required. Simply copy the new `xwax` binary to the USB stick root or to `/root/xwax` on the SD card.
 
 ---
 
@@ -125,11 +125,11 @@ A video covering most of this information can be found at https://www.youtube.co
 
 ---
 
-## Software Features (v2) ##
+## Software Features Version 2 ##
 
 ### Loop Recording (Memory Sampler)
 
-Record audio input into an in-memory buffer that can be immediately scratched and looped.
+Record audio input into an in-memory buffer that can be immediately scratched and looped. This feature needs an external audio interface connected to the USB port and a valid device configuration for the input channels, see [Multi-Device Audio Configuration](#multi-device-audio-configuration).
 
 **Controls (per deck):**
 | Action | How |
@@ -152,6 +152,38 @@ Record audio input into an in-memory buffer that can be immediately scratched an
 
 ---
 
+### CV Outputs
+
+Control voltage outputs for modular synthesis integration. This feature needs an external audio interface connected to the USB port and a valid device configuration for the output channels, see [Multi-Device Audio Configuration](#multi-device-audio-configuration).
+
+**Available CV signals:**
+| Signal | Description |
+|--------|-------------|
+| Platter Angle | Current rotational position (0-1) |
+| Platter Speed | Playback speed (-1 to +1, with filtering) |
+| Sample Position | Position in current track (0-1) |
+| Crossfader | Crossfader position (0-1) |
+| Gate A | High when scratch deck side is open |
+| Gate B | High when beat deck side is open |
+| Direction Pulse | Trigger pulse on platter direction change |
+
+**Configuration:**
+```json
+{
+  "cv_mapping": {
+    "platter_speed": 2,
+    "platter_angle": 3,
+    "sample_position": 4,
+    "crossfader": 5,
+    "gate_a": 6,
+    "gate_b": 7,
+    "direction_pulse": 8
+  }
+}
+```
+
+---
+
 ### Audio Engine
 
 The audio engine has been rewritten for quality and performance:
@@ -159,11 +191,76 @@ The audio engine has been rewritten for quality and performance:
 - **Float-based mixing**: All internal processing uses 32-bit float
 - **Native device resolution**: Supports 16-bit, 24-bit, and 32-bit I/O
 - **Automatic dithering**: Applied when outputting to 16-bit (internal audio interface)
-- **Vectorized processing**: Optimized for ARM NEON auto-vectorization
+- **Vectorized processing**: Optimized for ARM NEON (auto-)vectorization
 - **CPU usage**: ~7% with cubic interpolation, ~9% with sinc interpolation
 
 ---
 
+### Sinc Interpolation
+
+High-quality 16-tap windowed sinc resampling with anti-aliasing for pitch-shifted playback.
+
+**Anti-aliasing behavior:**
+- Bandwidth automatically adjusts based on playback speed
+- At pitch ≤ 1.0: full bandwidth (no filtering needed)
+- At pitch 1.0-2.0: 0.5 cutoff
+- At pitch > 2.0: aggressive 0.25 cutoff for fast scratching
+
+---
+
+### JSON Configuration
+
+Settings are stored in JSON format (`sc_settings.json`) for easy editing and extensibility.
+
+Key configuration areas:
+- Audio device routing
+- MIDI controller mappings
+- GPIO button mappings
+- CV output assignments
+- Crossfader calibration and behavior (VCA mode, cut mode, hamster switch)
+- Platter speed/reverse/brake settings
+- Loop recording parameters
+
+---
+
+### MIDI Control
+
+Works as before. Full MIDI controller support with configurable mappings.
+
+**Supported message types:**
+- Note on/off (with velocity)
+- Control Change (CC)
+- Pitch bend (14-bit resolution for fine pitch control)
+
+**NOTE action:** MIDI notes can trigger pitch changes using equal temperament tuning (middle C = 1.0x pitch). Useful for melodic scratching.
+
+---
+
+### Multi-Device Audio Configuration
+
+Per-device settings with flexible routing for inputs, outputs, and CV mappings.
+
+**Device matching:**
+- Devices matched by USB device name
+- Use `"*"` to match any USB audio device
+- Multiple device configurations supported in settings
+
+**Input/Output routing:**
+```json
+{
+  "audio_devices": [{
+    "name": "USB Audio Device",
+    "input_channels": 2,
+    "input_left": 0,
+    "input_right": 1,
+    "output_channels": 2,
+    "output_left": 0,
+    "output_right": 1
+  }]
+}
+```
+
+---
 ### Command-Line Options
 
 ```bash
@@ -210,104 +307,6 @@ Configurable logging with multiple output targets and severity levels.
 **Output targets:**
 - **Console**: Default, logs to stdout
 - **File**: Logs to `{root}/sc1000.log` or custom path
-
----
-
-### Sinc Interpolation
-
-High-quality 16-tap windowed sinc resampling with anti-aliasing for pitch-shifted playback.
-
-**Anti-aliasing behavior:**
-- Bandwidth automatically adjusts based on playback speed
-- At pitch ≤ 1.0: full bandwidth (no filtering needed)
-- At pitch 1.0-2.0: 0.5 cutoff
-- At pitch > 2.0: aggressive 0.25 cutoff for fast scratching
-
----
-
-### MIDI Control
-
-Full MIDI controller support with configurable mappings.
-
-**Supported message types:**
-- Note on/off (with velocity)
-- Control Change (CC)
-- Pitch bend (14-bit resolution for fine pitch control)
-
-**NOTE action:** MIDI notes can trigger pitch changes using equal temperament tuning (middle C = 1.0x pitch). Useful for melodic scratching.
-
----
-
-### Multi-Device Audio Configuration
-
-Per-device settings with flexible routing for inputs, outputs, and CV mappings.
-
-**Device matching:**
-- Devices matched by USB device name
-- Use `"*"` to match any USB audio device
-- Multiple device configurations supported in settings
-
-**Input/Output routing:**
-```json
-{
-  "audio_devices": [{
-    "name": "USB Audio Device",
-    "input_channels": 2,
-    "input_left": 0,
-    "input_right": 1,
-    "output_channels": 2,
-    "output_left": 0,
-    "output_right": 1
-  }]
-}
-```
-
----
-
-### CV Outputs
-
-Control voltage outputs for modular synthesis integration.
-
-**Available CV signals:**
-| Signal | Description |
-|--------|-------------|
-| Platter Angle | Current rotational position (0-1) |
-| Platter Speed | Playback speed (-1 to +1, with filtering) |
-| Sample Position | Position in current track (0-1) |
-| Crossfader | Crossfader position (0-1) |
-| Gate A | High when scratch deck side is open |
-| Gate B | High when beat deck side is open |
-| Direction Pulse | Trigger pulse on platter direction change |
-
-**Configuration:**
-```json
-{
-  "cv_mapping": {
-    "platter_speed": 2,
-    "platter_angle": 3,
-    "sample_position": 4,
-    "crossfader": 5,
-    "gate_a": 6,
-    "gate_b": 7,
-    "direction_pulse": 8
-  }
-}
-```
-
----
-
-### JSON Configuration
-
-Settings are stored in JSON format (`sc_settings.json`) for easy editing and extensibility.
-
-Key configuration areas:
-- Audio device routing
-- MIDI controller mappings
-- GPIO button mappings
-- CV output assignments
-- Crossfader calibration and behavior (VCA mode, cut mode, hamster switch)
-- Platter speed/reverse/brake settings
-- Loop recording parameters
 
 ---
 

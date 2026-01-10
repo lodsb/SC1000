@@ -109,7 +109,7 @@ namespace sc {
 namespace config {
 
 // Default importer path
-constexpr const char* DEFAULT_IMPORTER_PATH = "/root/xwax-import";
+constexpr const char* DEFAULT_IMPORTER_PATH = "/root/sc1000-import";
 
 void add_mapping(sc::control::MappingRegistry& registry, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter)
 {

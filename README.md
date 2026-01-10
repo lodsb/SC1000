@@ -31,7 +31,7 @@ For more info see below (section [Software Features Version 2](#software-feature
 
 ### Compatibility Note
 
-**The new software is/will be a drop-in binary replacement.** It runs on the existing SD card Linux image - no OS update required. Simply copy the new `xwax` binary to the USB stick root or to `/root/xwax` on the SD card.
+**The new software is a drop-in binary replacement.** It runs on the existing SD card Linux image - no OS update required. Simply copy the `sc1000` binary to the USB stick root - the device will run it automatically. See [Deploying to Device](#deploying-to-device) for details.
 
 ---
 
@@ -62,7 +62,7 @@ The beats and samples folders should in turn contain a number of subfolders, to 
 * samples/Enter the Scratch Game vol 1/02 - Funkyfresh Aaaah.wav
 * samples/Enter the Scratch Game vol 1/03 - Funkydope Aaaah.wav
 
-Optionally, you can put an updated version of xwax on the root of the USB stick, and the SC1000 will run it instead of the internal version. This gives a very easy way to update the software on the device.
+Optionally, you can put an updated version of the software (`sc1000` binary) on the root of the USB stick, and the SC1000 will run it instead of the internal version. This gives a very easy way to update the software on the device. See [Deploying to Device](#deploying-to-device) for details.
 
 ![SC implementation chart](http://rasteri.com/SC1000_MIDI_chart.png)
 
@@ -332,9 +332,112 @@ cd docker
 
 Output: `software/build-buildroot/sc1000`
 
-Deploy by copying to device as `/root/xwax` or to USB stick root.
+**Updating prebuilt binaries (for maintainers):**
+```bash
+cd docker
+./release.sh              # Build and update prebuilt/ directory
+git add prebuilt/
+git commit -m 'Update prebuilt binaries'
+```
 
-See `docker/README.md` for full details.
+See `docker/README.md` for full build details.
+
+---
+
+### Deploying to Device
+
+There are two ways to update the SC1000 software:
+
+#### Using Prebuilt Binaries (Easiest)
+
+Ready-to-use binaries are available in the `prebuilt/` directory:
+
+```bash
+# Copy to USB stick
+cp prebuilt/sc1000 /media/USB_STICK/
+cp software/sc_settings.json /media/USB_STICK/
+
+# For full system update (includes init script, importer)
+cp prebuilt/sc.tar /media/USB_STICK/
+# Hold buttons during power-on to apply
+```
+
+#### Method 1: USB Stick Override (Recommended for Development)
+
+The simplest method - the device automatically runs binaries from the USB stick instead of the internal version.
+
+1. **Build** the binary using Docker (see above)
+2. **Copy** files to USB stick root:
+   - `sc1000` (the binary)
+   - `sc_settings.json` (configuration)
+3. **Insert** USB stick and power on device
+
+The device checks for `/media/sda/sc1000` at boot and runs it if present.
+
+**Using the deploy script:**
+```bash
+cd docker
+./run-docker.sh          # Start build container (if not running)
+./deploy.sh              # Build, copy to USB, unmount
+
+# Options:
+./deploy.sh --no-build   # Skip build, just copy existing binary
+./deploy.sh --usb /path  # Specify USB mount point
+./deploy.sh --tar        # Also create sc.tar for full system update
+```
+
+#### Method 2: Full System Update (via sc.tar)
+
+For permanent installation or when updating kernel/device tree:
+
+1. **Create** update package:
+   ```bash
+   cd updater
+   ./buildupdater.sh
+   ```
+
+2. **Copy** `sc.tar` to USB stick root
+
+3. **Hold update buttons** while powering on:
+   - **SC500**: Either beat button
+   - **SC1000**: Specific button combination (check PIC register 0x69:0x05)
+
+4. **Wait** for success audio feedback
+
+The update extracts:
+- `sc1000` → `/usr/bin/`
+- `S50sc1000` → `/etc/init.d/` (init script, replaces legacy S50xwax)
+- `sc1000-import` → `/root/` (audio importer)
+- `sc_settings.json` → `/media/sda/`
+- `zImage`, `*.dtb` → boot partition (if present in tarball)
+
+#### Binary Priority Order
+
+The init script checks for executables in this order:
+1. `/media/sda/sc1000` (USB stick)
+2. `/usr/bin/sc1000` (system)
+
+### Building Complete OS Image
+
+To build a fresh SD card image with updated kernel, filesystem, and init scripts:
+
+```bash
+cd docker
+./build-os.sh
+```
+
+This uses Docker to build the complete buildroot system:
+- **U-Boot** 2017.05 bootloader
+- **Linux Kernel** 4.17.19 (sunxi)
+- **Root Filesystem** with SC1000 overlay
+- **Output**: `os/sdcard.img.gz`
+
+**Flash to SD card:**
+```bash
+gunzip -c os/sdcard.img.gz | sudo dd of=/dev/sdX bs=4M status=progress
+```
+
+See [docker/README.md](docker/README.md) for detailed build options and configuration.
 
 ---
 

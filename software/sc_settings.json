@@ -869,7 +869,7 @@
     }
   ],
   "sc1000": {
-    "audio_init_delay": 5,
+    "audio_init_delay": 2,
     "brake_speed": 3000,
     "buffer_period_factor": 4,
     "cut_beats": 0,

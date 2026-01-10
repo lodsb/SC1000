@@ -23,28 +23,17 @@
  * Implement a global one-line status console
  */
 
-#ifndef STATUS_H
-#define STATUS_H
+#pragma once
 
-#include <stdarg.h>
+#include <cstdarg>
 
 #define STATUS_VERBOSE 0
 #define STATUS_INFO    1
 #define STATUS_WARN    2
 #define STATUS_ALERT   3
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-const char* status(void);
-int status_level(void);
+const char* status();
+int status_level();
 
 void status_set(int level, const char *s);
 void status_printf(int level, const char *s, ...);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif

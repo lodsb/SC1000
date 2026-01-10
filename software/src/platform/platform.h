@@ -20,8 +20,7 @@
 
 // Platform abstraction layer for SC1000 hardware
 // This is the fixed hardware interface - components here won't change
-#ifndef PLATFORM_PLATFORM_H
-#define PLATFORM_PLATFORM_H
+#pragma once
 
 #include "i2c.h"
 #include "gpio.h"
@@ -63,5 +62,3 @@ inline bool platform_init(HardwareState* hw)
 
 } // namespace platform
 } // namespace sc
-
-#endif

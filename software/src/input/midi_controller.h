@@ -70,12 +70,12 @@ public:
 private:
     void process_midi_message();
 
+    struct rt* rt_ = nullptr;  // For accessing engine->input_state
     struct midi midi_;
     struct deck* deck_[NUMDECKS] = {nullptr, nullptr};
 
     char obuf_[180] = {};
     size_t ofill_ = 0;
-    bool shifted_ = false;
 
     bool parsing_ = false;
     unsigned char parsed_bytes_ = 0;

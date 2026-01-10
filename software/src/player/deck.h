@@ -50,7 +50,7 @@ struct deck
    bool protect;
 
    struct player player;
-   struct cues cues;
+   Cues cues;
 
    /* Punch */
    double punch;

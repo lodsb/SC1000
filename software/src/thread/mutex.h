@@ -20,17 +20,16 @@
  */
 
 /*
- * Mutex locking for syncronisation between low priority threads
+ * Mutex locking for synchronisation between low priority threads
  */
 
-#ifndef MUTEX_H
-#define MUTEX_H
+#pragma once
 
 #include "realtime.h"
 
-typedef pthread_mutex_t mutex;
+using mutex = pthread_mutex_t;
 
-static inline void mutex_init(mutex *m)
+inline void mutex_init(mutex *m)
 {
     if (pthread_mutex_init(m, nullptr) != 0)
         abort();
@@ -40,7 +39,7 @@ static inline void mutex_init(mutex *m)
  * Pre: lock is not held
  */
 
-static inline void mutex_clear(mutex *m)
+inline void mutex_clear(mutex *m)
 {
     int r;
 
@@ -60,7 +59,7 @@ static inline void mutex_clear(mutex *m)
  * Post: lock is held by this thread
  */
 
-static inline void mutex_lock(mutex *m)
+inline void mutex_lock(mutex *m)
 {
     rt_not_allowed();
 
@@ -75,10 +74,8 @@ static inline void mutex_lock(mutex *m)
  * Post: lock is not held
  */
 
-static inline void mutex_unlock(mutex *m)
+inline void mutex_unlock(mutex *m)
 {
     if (pthread_mutex_unlock(m) != 0)
         abort();
 }
-
-#endif

@@ -20,8 +20,7 @@
 
 
 // AS5600 magnetic rotary encoder interface
-#ifndef PLATFORM_ENCODER_H
-#define PLATFORM_ENCODER_H
+#pragma once
 
 #include <cstdint>
 
@@ -41,5 +40,3 @@ uint16_t encoder_read_angle(EncoderState* state);
 
 } // namespace platform
 } // namespace sc
-
-#endif

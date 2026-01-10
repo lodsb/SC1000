@@ -33,26 +33,16 @@ namespace control {
 
 class InputState;  // Forward declaration
 
-// Action state - encapsulates globals for shift key and pitch mode
-// These are inherently global (represent hardware input state)
-// Collected here for clarity and potential future thread-safety improvements
-struct ActionState {
-    static bool shifted;      // Shift key pressed
-    static int pitch_mode;    // 0=off, 1=beat deck, 2=scratch deck
-};
-
-// Backward-compatible aliases
-inline bool& shifted = ActionState::shifted;
-inline int& pitch_mode = ActionState::pitch_mode;
-
 // Execute an action on a specific deck
 void perform_action_for_deck(deck* d, mapping* map,
                              const unsigned char midi_buffer[3],
-                             sc1000* engine, sc_settings* settings);
+                             sc1000* engine, sc_settings* settings,
+                             InputState& input_state);
 
 // Dispatch an input event to the appropriate deck
 void dispatch_event(mapping* map, unsigned char midi_buffer[3],
-                    sc1000* engine, sc_settings* settings);
+                    sc1000* engine, sc_settings* settings,
+                    InputState& input_state);
 
 } // namespace control
 } // namespace sc

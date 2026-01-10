@@ -105,7 +105,7 @@ static void rt_main(struct rt* rt)
             controller_handle(rt->ctl[n]);
         }
 
-        sc1000_audio_handle(rt->engine);
+        rt->engine->audio_handle();
     }
 }
 
@@ -115,139 +115,117 @@ static void* launch(void* p)
     return nullptr;
 }
 
-/*
- * Initialise state of realtime handler
- */
-void rt_init(struct rt* rt)
-{
-    debug("%p", rt);
+//
+// C++ member function implementations
+//
 
-    rt->finished = false;
-    rt->nctl = 0;
-    rt->npt = 0;
+void rt::init()
+{
+    debug("%p", this);
+    finished = false;
+    nctl = 0;
+    npt = 0;
 }
 
-/*
- * Clear resources associated with the realtime handler
- */
-void rt_clear(struct rt* rt)
+void rt::clear()
 {
-    (void)rt;
+    // No resources to clear currently
 }
 
-/*
- * Add a device to this realtime handler
- *
- * Return: -1 if the device could not be added, otherwise 0
- * Post: if 0 is returned the device is added
- */
-int rt_set_sc1000(struct rt* rt, struct sc1000* engine)
+int rt::set_engine(struct sc1000* eng)
 {
     ssize_t z;
 
-    debug("%p adding device %p", rt, engine);
+    debug("%p adding device %p", this, eng);
 
-    z = sc1000_audio_pollfds(engine, &rt->pt[rt->npt], sizeof(rt->pt) - rt->npt);
+    z = eng->audio_pollfds(&pt[npt], sizeof(pt) - npt);
     if (z == -1) {
         LOG_ERROR("Device failed to return file descriptors");
         return -1;
     }
 
-    rt->npt += static_cast<size_t>(z);
-    rt->engine = engine;
+    npt += static_cast<size_t>(z);
+    engine = eng;
 
     return 0;
 }
 
-/*
- * Add a controller to the realtime handler
- *
- * Return: -1 if the device could not be added, otherwise 0
- */
-int rt_add_controller(struct rt* rt, Controller* c)
+int rt::add_controller(Controller* c)
 {
     ssize_t z;
 
-    debug("%p adding controller %p", rt, c);
+    debug("%p adding controller %p", this, c);
 
-    if (rt->nctl == ARRAY_SIZE(rt->ctl)) {
+    if (nctl == ARRAY_SIZE(ctl)) {
         LOG_WARN("Too many controllers");
         return -1;
     }
 
-    z = controller_pollfds(c, &rt->pt[rt->npt], sizeof(rt->pt) - rt->npt);
+    z = controller_pollfds(c, &pt[npt], sizeof(pt) - npt);
     if (z == -1) {
         LOG_ERROR("Controller failed to return file descriptors");
         return -1;
     }
 
-    rt->npt += static_cast<size_t>(z);
-    rt->ctl[rt->nctl++] = c;
+    npt += static_cast<size_t>(z);
+    ctl[nctl++] = c;
 
     return 0;
 }
 
-/*
- * Start realtime handling of the given devices
- *
- * Return: -1 on error, otherwise 0
- */
-int rt_start(struct rt* rt, int priority)
+int rt::start(int prio)
 {
-    assert(priority >= 0);
-    rt->priority = priority;
+    assert(prio >= 0);
+    priority = prio;
 
-    if (rt->npt > 0) {
+    if (npt > 0) {
         int r;
 
         LOG_INFO("Launching realtime thread to handle devices...");
 
-        if (sem_init(&rt->sem, 0, 0) == -1) {
+        if (sem_init(&sem, 0, 0) == -1) {
             perror("sem_init");
             return -1;
         }
 
-        r = pthread_create(&rt->ph, nullptr, launch, static_cast<void*>(rt));
+        r = pthread_create(&ph, nullptr, launch, static_cast<void*>(this));
         if (r != 0) {
             errno = r;
             perror("pthread_create");
-            if (sem_destroy(&rt->sem) == -1) {
+            if (sem_destroy(&sem) == -1) {
                 abort();
             }
             return -1;
         }
 
-        if (sem_wait(&rt->sem) == -1) {
+        if (sem_wait(&sem) == -1) {
             abort();
         }
-        if (sem_destroy(&rt->sem) == -1) {
+        if (sem_destroy(&sem) == -1) {
             abort();
         }
 
-        if (rt->finished) {
-            if (pthread_join(rt->ph, nullptr) != 0) {
+        if (finished) {
+            if (pthread_join(ph, nullptr) != 0) {
                 abort();
             }
             return -1;
         }
     }
 
-    sc1000_audio_start(rt->engine);
+    engine->audio_start();
 
     return 0;
 }
 
-/*
- * Stop realtime handling, which was previously started by rt_start()
- */
-void rt_stop(struct rt* rt)
+void rt::stop()
 {
-    rt->finished = true;
+    finished = true;
 
-    sc1000_audio_stop(rt->engine);
+    engine->audio_stop();
 
-    if (rt->npt > 0) {
-        if (pthread_join(rt->ph, nullptr) != 0) {
+    if (npt > 0) {
+        if (pthread_join(ph, nullptr) != 0) {
             abort();
         }
     }

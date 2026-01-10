@@ -22,8 +22,7 @@
 // GPIO hardware access for SC1000
 // - MCP23017 I/O expander (external, via I2C)
 // - A13 SoC GPIO (memory-mapped)
-#ifndef PLATFORM_GPIO_H
-#define PLATFORM_GPIO_H
+#pragma once
 
 #include <cstdint>
 
@@ -76,5 +75,3 @@ uint32_t gpio_a13_read_port(GpioState* state, uint8_t port);
 
 } // namespace platform
 } // namespace sc
-
-#endif

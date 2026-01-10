@@ -496,7 +496,7 @@ int AlsaAudio::process_audio() {
     snd_pcm_sframes_t commitres, avail;
     int err;
 
-    sc1000_handle_deck_recording(engine_);
+    engine_->handle_deck_recording();
 
     avail = snd_pcm_avail_update(playback_.pcm);
     if (avail < 0) return static_cast<int>(avail);

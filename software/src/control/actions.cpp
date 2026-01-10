@@ -21,6 +21,7 @@
 // Action dispatch for SC1000 control events
 
 #include "actions.h"
+#include "input_state.h"
 
 #include <cmath>
 #include <cstdio>
@@ -37,13 +38,10 @@
 namespace sc {
 namespace control {
 
-// Static member definitions for ActionState
-bool ActionState::shifted = false;
-int ActionState::pitch_mode = 0;
-
 void perform_action_for_deck(deck* deck, mapping* map,
                              const unsigned char midi_buffer[3],
-                             sc1000* engine, sc_settings* settings)
+                             sc1000* engine, sc_settings* settings,
+                             InputState& input_state)
 {
     if (map->action_type == CUE) {
         unsigned int cuenum = 0;
@@ -80,12 +78,12 @@ void perform_action_for_deck(deck* deck, mapping* map,
         deck->player.stopped = !deck->player.stopped;
     }
     else if (map->action_type == SHIFTON) {
-        LOG_DEBUG("SHIFTON action fired, shifted: %d -> true", shifted);
-        shifted = true;
+        LOG_DEBUG("SHIFTON action fired, shifted: %d -> true", input_state.is_shifted());
+        input_state.set_shifted(true);
     }
     else if (map->action_type == SHIFTOFF) {
-        LOG_DEBUG("SHIFTOFF action fired, shifted: %d -> false", shifted);
-        shifted = false;
+        LOG_DEBUG("SHIFTOFF action fired, shifted: %d -> false", input_state.is_shifted());
+        input_state.set_shifted(false);
     }
     else if (map->action_type == NEXTFILE) {
         deck->next_file(engine, settings);
@@ -150,11 +148,11 @@ void perform_action_for_deck(deck* deck, mapping* map,
         }
     }
     else if (map->action_type == JOGPIT) {
-        pitch_mode = map->deck_no + 1;
-        LOG_DEBUG("Set Pitch Mode %d", pitch_mode);
+        input_state.set_pitch_mode(map->deck_no + 1);
+        LOG_DEBUG("Set Pitch Mode %d", input_state.pitch_mode());
     }
     else if (map->action_type == JOGPSTOP) {
-        pitch_mode = 0;
+        input_state.set_pitch_mode(0);
     }
     else if (map->action_type == SC500) {
         LOG_DEBUG("SC500 detected");
@@ -191,7 +189,8 @@ void perform_action_for_deck(deck* deck, mapping* map,
 }
 
 void dispatch_event(mapping* map, unsigned char midi_buffer[3],
-                    sc1000* engine, sc_settings* settings)
+                    sc1000* engine, sc_settings* settings,
+                    InputState& input_state)
 {
     if (map == nullptr) return;
 
@@ -222,7 +221,7 @@ void dispatch_event(mapping* map, unsigned char midi_buffer[3],
                 target->player.position = 0;
                 target->player.target_position = 0;
                 target->player.offset = 0;
-                cues_load_from_file(&target->cues, target->player.track->path);
+                target->cues.load_from_file(target->player.track->path);
             }
         }
 
@@ -239,7 +238,7 @@ void dispatch_event(mapping* map, unsigned char midi_buffer[3],
         }
     }
     else {
-        perform_action_for_deck(target, map, midi_buffer, engine, settings);
+        perform_action_for_deck(target, map, midi_buffer, engine, settings, input_state);
     }
 }
 

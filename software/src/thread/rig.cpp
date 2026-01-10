@@ -23,7 +23,6 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
 #include <algorithm>
 #include <fcntl.h>
 #include <unistd.h>
@@ -37,14 +36,14 @@
 #define EVENT_WAKE 0
 #define EVENT_QUIT 1
 
-static int event[2]; /* pipe to wake up service thread */
+// Global rig instance
+struct rig g_rig;
 
-// Tracks currently being imported - replaces intrusive linked list
-static std::vector<track*> g_importing_tracks;
+//
+// rig member function implementations
+//
 
-mutex lock;
-
-int rig_init()
+int rig::init()
 {
     /* Create a pipe which will be used to wake us from other threads */
 
@@ -67,7 +66,7 @@ int rig_init()
     return 0;
 }
 
-void rig_clear()
+void rig::clear()
 {
     mutex_clear(&lock);
 
@@ -84,7 +83,7 @@ void rig_clear()
  * non-priority event driven operations (eg. everything but audio).
  */
 
-int rig_main()
+int rig::main()
 {
     constexpr size_t MAX_POLL_ENTRIES = 4;
     struct pollfd pt[MAX_POLL_ENTRIES];
@@ -102,10 +101,10 @@ int rig_main()
         size_t poll_count = 1;  // Start after the event pipe entry
 
         /* Set up poll entries for importing tracks */
-        for (track* t : g_importing_tracks) {
+        for (track* t : importing_tracks) {
             if (poll_count >= MAX_POLL_ENTRIES)
                 break;
-            track_pollfd(t, &pt[poll_count]);
+            t->pollfd(&pt[poll_count]);
             poll_count++;
         }
 
@@ -158,14 +157,14 @@ int rig_main()
         sc::log::flush_rt_logs();
 
         /* Handle track events - iterate with index for safe removal */
-        for (size_t i = 0; i < g_importing_tracks.size(); ) {
-            track* t = g_importing_tracks[i];
+        for (size_t i = 0; i < importing_tracks.size(); ) {
+            track* t = importing_tracks[i];
             bool was_importing = t->is_importing();
 
-            track_handle(t);
+            t->handle();
 
             // If track finished importing, it was removed from the vector
-            // by rig_remove_track(), so don't increment index
+            // by remove_track(), so don't increment index
             if (was_importing && !t->is_importing()) {
                 // Track was removed, don't increment i
             } else {
@@ -182,7 +181,7 @@ finish:
  * Post a simple event into the rig event loop
  */
 
-static int post_event(char e)
+int rig::post_event(char e)
 {
     rt_not_allowed();
 
@@ -198,17 +197,17 @@ static int post_event(char e)
  * Ask the rig to exit from another thread or signal handler
  */
 
-int rig_quit()
+int rig::quit()
 {
     return post_event(EVENT_QUIT);
 }
 
-void rig_lock(void)
+void rig::acquire_lock()
 {
     mutex_lock(&lock);
 }
 
-void rig_unlock(void)
+void rig::release_lock()
 {
     mutex_unlock(&lock);
 }
@@ -217,10 +216,10 @@ void rig_unlock(void)
  * Add a track to be handled until import has completed
  */
 
-void rig_post_track(struct track *t)
+void rig::post_track(struct track* t)
 {
     track_acquire(t);
-    g_importing_tracks.push_back(t);
+    importing_tracks.push_back(t);
     post_event(EVENT_WAKE);
 }
 
@@ -228,10 +227,10 @@ void rig_post_track(struct track *t)
  * Remove a track from the import list (called when import completes)
  */
 
-void rig_remove_track(struct track *t)
+void rig::remove_track(struct track* t)
 {
-    auto it = std::find(g_importing_tracks.begin(), g_importing_tracks.end(), t);
-    if (it != g_importing_tracks.end()) {
-        g_importing_tracks.erase(it);
+    auto it = std::find(importing_tracks.begin(), importing_tracks.end(), t);
+    if (it != importing_tracks.end()) {
+        importing_tracks.erase(it);
     }
 }

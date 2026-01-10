@@ -231,7 +231,7 @@ static int track_init(struct track* t, const char* importer, const char* path)
 	// Add to track registry for deduplication lookups
 	g_track_registry[path] = t;
 
-	rig_post_track(t);
+	g_rig.post_track(t);
 
 	return 0;
 }
@@ -570,30 +570,7 @@ void track::handle()
 	}
 
 	stop_import(this);
-	rig_remove_track(this);
+	g_rig.remove_track(this);
 	track_release(this); /* may delete the track */
 }
 
-//
-// Legacy C API wrappers
-//
-
-int track_ensure_space(struct track* tr, unsigned int samples)
-{
-	return tr->ensure_space(samples);
-}
-
-void track_set_length(struct track* tr, unsigned int samples)
-{
-	tr->set_length(samples);
-}
-
-void track_pollfd(struct track* tr, struct pollfd* pe)
-{
-	tr->pollfd(pe);
-}
-
-void track_handle(struct track* tr)
-{
-	tr->handle();
-}

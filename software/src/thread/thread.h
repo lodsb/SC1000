@@ -23,20 +23,9 @@
  * General helper functions for threads
  */
 
-#ifndef THREAD_H
-#define THREAD_H
+#pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int thread_global_init(void);
-void thread_global_clear(void);
-void thread_to_realtime(void);
-void rt_not_allowed(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+int thread_global_init();
+void thread_global_clear();
+void thread_to_realtime();
+void rt_not_allowed();

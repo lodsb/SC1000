@@ -72,15 +72,3 @@ private:
     std::map<unsigned int, double> positions_;
 };
 
-// Legacy C-compatible wrapper (for struct cues compatibility during transition)
-struct cues {
-    Cues impl;
-};
-
-// Legacy free functions that delegate to the class
-inline void cues_reset(cues* q) { q->impl.reset(); }
-inline void cues_unset(cues* q, unsigned int label) { q->impl.unset(label); }
-inline void cues_set(cues* q, unsigned int label, double position) { q->impl.set(label, position); }
-inline double cues_get(const cues* q, unsigned int label) { return q->impl.get_or_unset(label); }
-inline void cues_load_from_file(cues* q, const char* pathname) { q->impl.load_from_file(pathname); }
-inline void cues_save_to_file(cues* q, const char* pathname) { q->impl.save_to_file(pathname); }

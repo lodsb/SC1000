@@ -57,10 +57,6 @@
 #include "../engine/audio_engine.h"
 
 using namespace sc::platform;
-
-// Use control module functions and state
-using sc::control::shifted;
-using sc::control::pitch_mode;
 using sc::control::dispatch_event;
 
 namespace sc {
@@ -84,7 +80,7 @@ struct InputContext {
     // First-time initialization flag
     bool first_time = true;
 
-    // Pitch mode transition tracking (pitch_mode itself is in control module)
+    // Pitch mode transition tracking (pitch_mode is in sc1000.input_state)
     int old_pitch_mode = 0;
 
     // PIC readings cache
@@ -234,7 +230,7 @@ void process_io(struct sc1000* sc1000_engine)
 
     // Capture shifted state ONCE before processing any mappings
     // This ensures all mappings for the same button see the same pre-press shifted state
-    bool shifted_at_start = shifted;
+    bool shifted_at_start = sc1000_engine->input_state.is_shifted();
 
     for (auto& m : sc1000_engine->mappings.all())
     {
@@ -271,7 +267,7 @@ void process_io(struct sc1000* sc1000_engine)
                     if (m.action_type == RECORD || m.action_type == LOOPERASE)
                     {
                         LOG_DEBUG("Button port=%d pin=%d pressed, shifted=%d, edge_type=%d, action=%d",
-                                  m.gpio_port, m.pin, shifted, m.edge_type, m.action_type);
+                                  m.gpio_port, m.pin, shifted_at_start, m.edge_type, m.action_type);
                     }
                     LOG_DEBUG("Button %d pressed", m.pin);
                     if (first_time && m.deck_no == 1 && (m.action_type == VOLUP || m.action_type
@@ -280,7 +276,7 @@ void process_io(struct sc1000* sc1000_engine)
                         sc1000_engine->beat_deck.player.set_track(
                                          track_acquire_by_import(sc1000_engine->beat_deck.importer.c_str(),
                                                                  "/var/os-version.mp3"));
-                        cues_load_from_file(&sc1000_engine->beat_deck.cues,
+                        sc1000_engine->beat_deck.cues.load_from_file(
                                             sc1000_engine->beat_deck.player.track->path);
                         sc1000_engine->scratch_deck.player.set_volume = 0.0;
                     }
@@ -297,12 +293,12 @@ void process_io(struct sc1000* sc1000_engine)
                         {
                             LOG_DEBUG("Checking mapping port=%d pin=%d action=%d edge=%d shifted=%d will_fire=%d",
                                       m.gpio_port, m.pin, m.action_type,
-                                      m.edge_type, shifted,
-                                      ((!shifted && m.edge_type == BUTTON_PRESSED) ||
-                                       (shifted && m.edge_type == BUTTON_PRESSED_SHIFTED)) ? 1 : 0);
+                                      m.edge_type, shifted_at_start,
+                                      ((!shifted_at_start && m.edge_type == BUTTON_PRESSED) ||
+                                       (shifted_at_start && m.edge_type == BUTTON_PRESSED_SHIFTED)) ? 1 : 0);
                         }
 
-                        if ((!shifted && m.edge_type == BUTTON_PRESSED) || (shifted && m.edge_type ==
+                        if ((!shifted_at_start && m.edge_type == BUTTON_PRESSED) || (shifted_at_start && m.edge_type ==
                             BUTTON_PRESSED_SHIFTED))
                         {
                             // Show which action fires
@@ -312,7 +308,7 @@ void process_io(struct sc1000* sc1000_engine)
                                 LOG_DEBUG("FIRING action=%d for port=%d pin=%d deck=%d",
                                           m.action_type, m.gpio_port, m.pin, m.deck_no);
                             }
-                            dispatch_event(&m, nullptr, sc1000_engine, settings);
+                            dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                         }
 
                         // start the counter
@@ -337,7 +333,7 @@ void process_io(struct sc1000* sc1000_engine)
                     // Use latched shifted state for release detection
                     if ((!m.shifted_at_press && m.edge_type == BUTTON_RELEASED) ||
                         (m.shifted_at_press && m.edge_type == BUTTON_RELEASED_SHIFTED))
-                        dispatch_event(&m, nullptr, sc1000_engine, settings);
+                        dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                     // start the counter
                     m.debounce = -settings->debounce_time;
                 }
@@ -358,7 +354,7 @@ void process_io(struct sc1000* sc1000_engine)
                 {
                     LOG_DEBUG("Triggering held action for port=%d pin=%d action=%d",
                               m.gpio_port, m.pin, m.action_type);
-                    dispatch_event(&m, nullptr, sc1000_engine, settings);
+                    dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                 }
                 m.debounce++;
             }
@@ -374,7 +370,7 @@ void process_io(struct sc1000* sc1000_engine)
                         // Use latched shifted state from when button was first pressed
                         if ((!m.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
                             (m.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
-                            dispatch_event(&m, nullptr, sc1000_engine, settings);
+                            dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                     }
                 }
                 // check to see if unpressed
@@ -384,7 +380,7 @@ void process_io(struct sc1000* sc1000_engine)
                     // Note: After hold time, release events don't fire (button was held too long)
                     // Only unshifted BUTTON_RELEASED fires here (for legacy compatibility)
                     if (m.edge_type == BUTTON_RELEASED && !m.shifted_at_press)
-                        dispatch_event(&m, nullptr, sc1000_engine, settings);
+                        dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                     // start the counter
                     m.debounce = -settings->debounce_time;
                 }
@@ -412,7 +408,7 @@ void process_io(struct sc1000* sc1000_engine)
         if (midi_map != nullptr) {
             LOG_DEBUG("MIDI mapping found: action=%d deck=%d param=%d",
                      midi_map->action_type, midi_map->deck_no, midi_map->parameter);
-            dispatch_event(midi_map, midi_bytes, sc1000_engine, settings);
+            dispatch_event(midi_map, midi_bytes, sc1000_engine, settings, sc1000_engine->input_state);
         } else {
             LOG_DEBUG("MIDI no mapping for [%02X %02X %02X] shifted=%d",
                      midi_bytes[0], midi_bytes[1], midi_bytes[2], midi_shifted);
@@ -420,7 +416,8 @@ void process_io(struct sc1000* sc1000_engine)
     }
 }
 
-// Old globals (file_i2c_rot, pitch_mode, buttons, etc.) now in InputContext struct
+// Old globals (file_i2c_rot, buttons, etc.) now in InputContext struct
+// pitch_mode and shifted are now in sc1000.input_state
 
 void process_pic(struct sc1000* sc1000_engine)
 {
@@ -505,7 +502,7 @@ void process_pic(struct sc1000* sc1000_engine)
                 {
                     sc1000_engine->beat_deck.player.set_track(
                                      track_acquire_by_import(sc1000_engine->beat_deck.importer.c_str(), "/var/os-version.mp3"));
-                    cues_load_from_file(&sc1000_engine->beat_deck.cues, sc1000_engine->beat_deck.player.track->path);
+                    sc1000_engine->beat_deck.cues.load_from_file(sc1000_engine->beat_deck.player.track->path);
                     buttonState = BUTTONSTATE_WAITING;
                 }
             }
@@ -533,9 +530,9 @@ void process_pic(struct sc1000* sc1000_engine)
         case BUTTONSTATE_ACTING_INSTANT:
 
             // Any button to stop pitch mode
-            if (pitch_mode)
+            if (sc1000_engine->input_state.pitch_mode())
             {
-                pitch_mode = 0;
+                sc1000_engine->input_state.set_pitch_mode(0);
                 old_pitch_mode = 0;
                 LOG_DEBUG("Pitch mode Disabled");
             }
@@ -547,7 +544,7 @@ void process_pic(struct sc1000* sc1000_engine)
                 sc1000_engine->scratch_deck.next_file(sc1000_engine, settings);
             else if (totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 scratch_deck.files_present)
-                pitch_mode = 2;
+                sc1000_engine->input_state.set_pitch_mode(2);
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
                 sc1000_engine->beat_deck.prev_file(sc1000_engine, settings);
@@ -556,7 +553,7 @@ void process_pic(struct sc1000* sc1000_engine)
                 sc1000_engine->beat_deck.next_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && sc1000_engine->
                 beat_deck.files_present)
-                pitch_mode = 1;
+                sc1000_engine->input_state.set_pitch_mode(1);
             else if (totalbuttons[0] && totalbuttons[1] && totalbuttons[2] && totalbuttons[3])
                 shift_latched = true;
             else
@@ -674,13 +671,14 @@ void process_rot(struct sc1000* sc1000_engine)
         num_blips = 0;
         sc1000_engine->scratch_deck.encoder_angle = sc1000_engine->scratch_deck.new_encoder_angle;
 
-        if (pitch_mode)
+        int current_pitch_mode = sc1000_engine->input_state.pitch_mode();
+        if (current_pitch_mode)
         {
             if (!old_pitch_mode)
             {
                 // We just entered pitchmode, set offset etc
 
-                if (pitch_mode == 0)
+                if (current_pitch_mode == 0)
                 {
                     sc1000_engine->beat_deck.player.note_pitch = 1.0;
                 }
@@ -707,7 +705,7 @@ void process_rot(struct sc1000* sc1000_engine)
 
             // Use the angle of the platter to control sample pitch
 
-            if (pitch_mode == 0)
+            if (current_pitch_mode == 0)
             {
                 sc1000_engine->scratch_deck.player.note_pitch = (((double)(sc1000_engine->scratch_deck.encoder_angle +
                     sc1000_engine->scratch_deck.angle_offset)) / 16384) + 1.0;
@@ -776,7 +774,7 @@ void process_rot(struct sc1000* sc1000_engine)
                     }*/
         }
         //}
-        old_pitch_mode = pitch_mode;
+        old_pitch_mode = sc1000_engine->input_state.pitch_mode();
     }
 }
 

@@ -19,27 +19,17 @@
  *
  */
 
-#ifndef REALTIME_H
-#define REALTIME_H
+#pragma once
 
 #include <poll.h>
 #include <pthread.h>
 #include <semaphore.h>
-#include <stdbool.h>
 
-#ifdef __cplusplus
 class Controller;
-#else
-typedef struct Controller Controller;
-#endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /*
- * State data for the realtime thread, maintained during rt_start and
- * rt_stop
+ * State data for the realtime thread, maintained during start() and
+ * stop()
  */
 
 struct rt {
@@ -55,22 +45,15 @@ struct rt {
 
     size_t npt;
     struct pollfd pt[32];
+
+    // Member functions
+    void init();
+    void clear();
+    int set_engine(struct sc1000 *engine);
+    int add_controller(Controller *c);
+    int start(int priority);
+    void stop();
 };
 
-int rt_global_init(void);
-void rt_not_allowed(void);
-
-void rt_init(struct rt *rt);
-void rt_clear(struct rt *rt);
-
-int rt_set_sc1000(struct rt *rt, struct sc1000 *engine);
-int rt_add_controller(struct rt *rt, Controller *c);
-
-int rt_start(struct rt *rt, int priority);
-void rt_stop(struct rt *rt);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+int rt_global_init();
+void rt_not_allowed();

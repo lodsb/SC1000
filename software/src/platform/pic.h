@@ -20,8 +20,7 @@
 
 
 // PIC input processor interface (ADCs, buttons, capsense)
-#ifndef PLATFORM_PIC_H
-#define PLATFORM_PIC_H
+#pragma once
 
 #include <cstdint>
 
@@ -48,5 +47,3 @@ PicReadings pic_read_all(PicState* state);
 
 } // namespace platform
 } // namespace sc
-
-#endif

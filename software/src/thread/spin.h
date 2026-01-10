@@ -23,26 +23,24 @@
  * Spinlock routines for synchronising with the realtime thread
  */
 
-#ifndef SPIN_H
-#define SPIN_H
+#pragma once
 
-#include <errno.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
 #include <pthread.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include "realtime.h"
 
-typedef pthread_spinlock_t spin;
+using spin = pthread_spinlock_t;
 
-static inline void spin_init(spin *s)
+inline void spin_init(spin *s)
 {
     if (pthread_spin_init(s, PTHREAD_PROCESS_PRIVATE) != 0)
         abort();
 }
 
-static inline void spin_clear(spin *s)
+inline void spin_clear(spin *s)
 {
     if (pthread_spin_destroy(s) != 0)
         abort();
@@ -57,7 +55,7 @@ static inline void spin_clear(spin *s)
  * Post: lock is held by the current thread
  */
 
-static inline void spin_lock(spin *s)
+inline void spin_lock(spin *s)
 {
     rt_not_allowed();
 
@@ -73,7 +71,7 @@ static inline void spin_lock(spin *s)
  * Post: if true is returned, lock is held by the current thread
  */
 
-static inline bool spin_try_lock(spin *s)
+inline bool spin_try_lock(spin *s)
 {
     int r;
 
@@ -95,11 +93,8 @@ static inline bool spin_try_lock(spin *s)
  * Post: lock is not held
  */
 
-static inline void spin_unlock(spin *s)
+inline void spin_unlock(spin *s)
 {
     if (pthread_spin_unlock(s) != 0)
         abort();
 }
-
-#endif
-

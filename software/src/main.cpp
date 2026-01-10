@@ -135,7 +135,7 @@ static void sig_handler(int signo)
 {
     if (signo == SIGINT) {
         printf("received SIGINT\n");
-        rig_quit();  // Signal main loop to exit cleanly
+        g_rig.quit();  // Signal main loop to exit cleanly
     }
 }
 
@@ -167,15 +167,15 @@ int main(int argc, char* argv[])
     if (thread_global_init() == -1) {
         return -1;
     }
-    if (rig_init() == -1) {
+    if (g_rig.init() == -1) {
         return -1;
     }
-    rt_init(&g_rt);
+    g_rt.init();
 
     use_mlock = false;
 
-    sc1000_setup(&g_sc1000_engine, &g_rt, g_root_path);
-    sc1000_load_sample_folders(&g_sc1000_engine);
+    g_sc1000_engine.setup(&g_rt, g_root_path);
+    g_sc1000_engine.load_sample_folders();
 
     rc = EXIT_FAILURE; /* until clean exit */
 
@@ -185,7 +185,7 @@ int main(int argc, char* argv[])
     // Start realtime stuff
     priority = 0;
 
-    if (rt_start(&g_rt, priority) == -1) {
+    if (g_rt.start(priority) == -1) {
         return -1;
     }
 
@@ -197,7 +197,7 @@ int main(int argc, char* argv[])
     // Main loop
     SC_LOG_INFO("Entering main loop");
 
-    if (rig_main() == -1) {
+    if (g_rig.main() == -1) {
         goto out_interface;
     }
 
@@ -210,11 +210,11 @@ out_rt:
     // Stop input thread first (it may be polling MIDI devices)
     stop_sc_input_thread();
 
-    rt_stop(&g_rt);
+    g_rt.stop();
 
-    sc1000_clear(&g_sc1000_engine);
+    g_sc1000_engine.clear();
 
-    rig_clear();
+    g_rig.clear();
     thread_global_clear();
 
     // Shutdown logging

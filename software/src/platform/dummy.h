@@ -19,19 +19,8 @@
  *
  */
 
-#ifndef DUMMY_H
-#define DUMMY_H
+#pragma once
 
 #include "../core/sc1000.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void dummy_init(struct sc1000 *d);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif

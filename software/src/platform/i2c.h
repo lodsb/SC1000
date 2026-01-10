@@ -20,8 +20,7 @@
 
 
 // I2C communication primitives for SC1000 hardware
-#ifndef PLATFORM_I2C_H
-#define PLATFORM_I2C_H
+#pragma once
 
 namespace sc {
 namespace platform {
@@ -39,5 +38,3 @@ int i2c_write_reg(int fd, unsigned char reg, unsigned char value);
 
 } // namespace platform
 } // namespace sc
-
-#endif

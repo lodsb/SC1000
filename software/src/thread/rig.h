@@ -19,30 +19,44 @@
  *
  */
 
-#ifndef RIG_H
-#define RIG_H
+#pragma once
 
 #include "../player/track.h"
+#include <vector>
+#include <pthread.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/*
+ * The rig handles non-realtime I/O operations (track importing).
+ * It runs the main event loop and manages file descriptor polling.
+ */
+struct rig {
+    int event[2];                       // pipe to wake up service thread
+    std::vector<track*> importing_tracks;
+    pthread_mutex_t lock;
 
-int rig_init();
-void rig_clear();
+    // Initialize the rig (creates event pipe, initializes mutex)
+    int init();
 
-int rig_main();
+    // Clean up resources
+    void clear();
 
-int rig_quit();
+    // Run the main event loop (blocks until quit)
+    int main();
 
-void rig_lock();
-void rig_unlock();
+    // Request the rig to exit from another thread
+    int quit();
 
-void rig_post_track(struct track *t);
-void rig_remove_track(struct track *t);
+    // Lock/unlock for thread-safe operations
+    void acquire_lock();
+    void release_lock();
 
-#ifdef __cplusplus
-}
-#endif
+    // Track import management
+    void post_track(struct track* t);
+    void remove_track(struct track* t);
 
-#endif
+private:
+    int post_event(char e);
+};
+
+// Global rig instance (defined in rig.cpp)
+extern struct rig g_rig;

@@ -19,10 +19,9 @@
  *
  */
 
-#ifndef DEBUG_H
-#define DEBUG_H
+#pragma once
 
-#include <stdio.h>
+#include <cstdio>
 
 #ifdef DEBUG
 #define debug(...) { \
@@ -34,6 +33,4 @@
 #else
 #define debug(...)
 #define dassert(x)
-#endif
-
 #endif

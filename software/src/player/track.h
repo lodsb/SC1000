@@ -99,30 +99,7 @@ struct track* track_acquire_for_recording(int sample_rate);
 void track_acquire(struct track *t);
 void track_release(struct track *t);
 
-// Legacy C-compatible API (wrappers around member functions)
-int track_ensure_space(struct track *tr, unsigned int samples);
-void track_set_length(struct track *tr, unsigned int samples);
-void track_pollfd(struct track *tr, struct pollfd *pe);
-void track_handle(struct track *tr);
-
 #ifdef __cplusplus
-}
-#endif
-
-/* Legacy inline functions for C compatibility */
-#ifndef __cplusplus
-/* Return true if the track importer is running, otherwise false */
-static inline bool track_is_importing(struct track *tr)
-{
-    return tr->pid != 0;
-}
-
-/* Return a pointer to (not value of) the sample data for each channel */
-static inline signed short* track_get_sample(struct track *tr, int s)
-{
-    struct track_block *b;
-    b = tr->block[s / TRACK_BLOCK_SAMPLES];
-    return &b->pcm[(s % TRACK_BLOCK_SAMPLES) * TRACK_CHANNELS];
 }
 #endif
 

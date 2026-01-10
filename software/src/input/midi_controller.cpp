@@ -33,14 +33,12 @@
 #include "../util/log.h"
 #include "../player/deck.h"
 #include "../core/global.h"
+#include "../core/sc1000.h"
 #include "../thread/realtime.h"
 
 #include "../platform/midi.h"
-#include "../control/actions.h"
 #include "midi_event.h"
 #include "midi_controller.h"
-
-using sc::control::shifted;
 
 MidiController::MidiController() = default;
 
@@ -55,6 +53,8 @@ int MidiController::init(struct rt* rt, const char* hw)
 {
     LOG_INFO("MIDI controller init %p from %s", static_cast<void*>(this), hw);
 
+    rt_ = rt;  // Store for access to engine->input_state
+
     strncpy(port_name_, hw, sizeof(port_name_) - 1);
     port_name_[sizeof(port_name_) - 1] = '\0';
 
@@ -68,12 +68,11 @@ int MidiController::init(struct rt* rt, const char* hw)
         deck_[i] = nullptr;
     }
 
-    if (rt_add_controller(rt, this) == -1) {
+    if (rt->add_controller(this) == -1) {
         midi_close(&midi_);
         return -1;
     }
 
-    shifted_ = false;
     parsing_ = false;
     parsed_bytes_ = 0;
     initialized_ = true;
@@ -108,6 +107,8 @@ void MidiController::process_midi_message()
     LOG_INFO("MIDI: %s ch=%d data=[%d, %d]", type, channel, midi_buffer_[1], midi_buffer_[2]);
 
     // Push MIDI event to lock-free queue for processing by input thread
+    // Capture current shifted state from engine's input state
+    bool shifted = rt_ && rt_->engine ? rt_->engine->input_state.is_shifted() : false;
     if (!midi_event_queue_push(midi_buffer_, shifted)) {
         LOG_WARN("MIDI event queue full, dropping event");
     }

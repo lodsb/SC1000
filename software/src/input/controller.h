@@ -21,19 +21,12 @@
 
 #pragma once
 
-#ifdef __cplusplus
 #include <cstddef>
-#else
-#include <stddef.h>
-#endif
-
 #include <sys/poll.h>
 #include <sys/types.h>
 
 struct deck;
 struct rt;
-
-#ifdef __cplusplus
 
 /*
  * Controller - abstract base class for input controllers
@@ -90,15 +83,3 @@ void controller_add_deck(Controller* c, struct deck* d);
 ssize_t controller_pollfds(Controller* c, struct pollfd* pe, size_t z);
 void controller_handle(Controller* c);
 void controller_clear(Controller* c);
-
-extern "C" {
-#endif
-
-// C-compatible opaque type (for C code that just passes pointers around)
-#ifndef __cplusplus
-typedef struct Controller Controller;
-#endif
-
-#ifdef __cplusplus
-}
-#endif

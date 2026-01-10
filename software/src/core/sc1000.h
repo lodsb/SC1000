@@ -74,16 +74,16 @@ struct sc1000
     // Audio hardware (ALSA implementation)
     std::unique_ptr<AudioHardware> audio;
     bool fault = false;
+
+    // Setup and lifecycle
+    void setup(struct rt* rt, const char* root_path);
+    void load_sample_folders();
+    void clear();
+
+    // Audio hardware control (delegates to AudioHardware interface)
+    void audio_start();
+    void audio_stop();
+    void handle_deck_recording();
+    ssize_t audio_pollfds(struct pollfd* pe, size_t z);
+    void audio_handle();
 };
-
-// Setup and lifecycle
-void sc1000_setup(sc1000* engine, struct rt* rt, const char* root_path);
-void sc1000_load_sample_folders(sc1000* engine);
-void sc1000_clear(sc1000* engine);
-
-// Audio hardware control (delegates to AudioHardware interface)
-void sc1000_audio_start(sc1000* engine);
-void sc1000_audio_stop(sc1000* engine);
-void sc1000_handle_deck_recording(sc1000* engine);
-ssize_t sc1000_audio_pollfds(sc1000* engine, struct pollfd* pe, size_t z);
-void sc1000_audio_handle(sc1000* engine);

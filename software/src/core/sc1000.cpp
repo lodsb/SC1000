@@ -35,49 +35,49 @@
 #include "sc1000.h"
 #include "sc_settings.h"
 
-void sc1000_setup(sc1000* engine, struct rt* rt, const char* root_path)
+void sc1000::setup(struct rt* rt, const char* root_path)
 {
     LOG_INFO("SC1000 engine init (root: %s)", root_path);
 
-    engine->settings = std::make_unique<sc_settings>();
-    engine->mappings.clear();
+    settings = std::make_unique<sc_settings>();
+    mappings.clear();
 
     // Store root path in settings for use by other components
-    engine->settings->root_path = root_path;
+    settings->root_path = root_path;
 
-    sc_settings_load_user_configuration(engine->settings.get(), engine->mappings);
+    sc_settings_load_user_configuration(settings.get(), mappings);
 
     // Verify root_path wasn't corrupted by settings loading
-    LOG_DEBUG("After settings load, root_path = '%s'", engine->settings->root_path.c_str());
+    LOG_DEBUG("After settings load, root_path = '%s'", settings->root_path.c_str());
 
     // Print loaded mappings for debugging
-    sc_settings_print_gpio_mappings(engine->mappings);
+    sc_settings_print_gpio_mappings(mappings);
 
     // Create two decks, both pointed at the same audio device
-    engine->scratch_deck.init(engine->settings.get());
-    engine->beat_deck.init(engine->settings.get());
+    scratch_deck.init(settings.get());
+    beat_deck.init(settings.get());
 
     // Set deck numbers for loop navigation
-    engine->beat_deck.deck_no = 0;
-    engine->scratch_deck.deck_no = 1;
+    beat_deck.deck_no = 0;
+    scratch_deck.deck_no = 1;
 
     // Tell deck0 to just play without considering inputs
-    engine->beat_deck.player.just_play = true;
+    beat_deck.player.just_play = true;
 
     // Initialize audio hardware (creates AudioHardware instance)
-    engine->audio = alsa_create(engine, engine->settings.get());
-    rt_set_sc1000(rt, engine);
+    audio = alsa_create(this, settings.get());
+    rt->set_engine(this);
 
     alsa_clear_config_cache();
 }
 
-void sc1000_load_sample_folders(struct sc1000* engine)
+void sc1000::load_sample_folders()
 {
-    const std::string& root = engine->settings->root_path;
+    const std::string& root = settings->root_path;
     std::string samples_path = root + "/samples";
     std::string beats_path = root + "/beats";
 
-    LOG_DEBUG("sc1000_load_sample_folders called, root_path = '%s'", root.c_str());
+    LOG_DEBUG("load_sample_folders called, root_path = '%s'", root.c_str());
     LOG_DEBUG("samples_path = '%s', beats_path = '%s'", samples_path.c_str(), beats_path.c_str());
 
     // Check for samples folder (only do USB mount dance for default /media/sda)
@@ -104,70 +104,70 @@ void sc1000_load_sample_folders(struct sc1000* engine)
     LOG_INFO("Loading beats from: %s", beats_path.c_str());
     LOG_INFO("Loading samples from: %s", samples_path.c_str());
 
-    engine->beat_deck.load_folder(beats_path.c_str());
-    engine->scratch_deck.load_folder(samples_path.c_str());
+    beat_deck.load_folder(beats_path.c_str());
+    scratch_deck.load_folder(samples_path.c_str());
 
-    if (!engine->scratch_deck.files_present) {
+    if (!scratch_deck.files_present) {
         // Load the default sentence if no sample files found on usb stick
-        engine->scratch_deck.player.set_track(
-                         track_acquire_by_import(engine->scratch_deck.importer.c_str(), "/var/scratchsentence.mp3"));
+        scratch_deck.player.set_track(
+                         track_acquire_by_import(scratch_deck.importer.c_str(), "/var/scratchsentence.mp3"));
         LOG_DEBUG("Set default track ok");
-        cues_load_from_file(&engine->scratch_deck.cues, engine->scratch_deck.player.track->path);
+        scratch_deck.cues.load_from_file(scratch_deck.player.track->path);
         LOG_DEBUG("Set cues ok");
         // Set the time back a bit so the sample doesn't start too soon
-        engine->scratch_deck.player.target_position = -4.0;
-        engine->scratch_deck.player.position = -4.0;
+        scratch_deck.player.target_position = -4.0;
+        scratch_deck.player.position = -4.0;
     }
 }
 
-void sc1000_clear(sc1000* engine)
+void sc1000::clear()
 {
-    engine->beat_deck.clear();
-    engine->scratch_deck.clear();
+    beat_deck.clear();
+    scratch_deck.clear();
 
     // Audio hardware cleaned up automatically via unique_ptr
-    engine->audio.reset();
+    audio.reset();
 
     // Settings cleaned up automatically via unique_ptr
-    engine->settings.reset();
+    settings.reset();
 }
 
-void sc1000_audio_start(sc1000* engine)
+void sc1000::audio_start()
 {
-    if (engine->audio) {
-        engine->audio->start();
+    if (audio) {
+        audio->start();
     }
 }
 
-void sc1000_audio_stop(sc1000* engine)
+void sc1000::audio_stop()
 {
-    if (engine->audio) {
-        engine->audio->stop();
+    if (audio) {
+        audio->stop();
     }
 }
 
-ssize_t sc1000_audio_pollfds(sc1000* engine, struct pollfd* pe, size_t z)
+ssize_t sc1000::audio_pollfds(struct pollfd* pe, size_t z)
 {
-    if (engine->audio) {
-        return engine->audio->pollfds(pe, z);
+    if (audio) {
+        return audio->pollfds(pe, z);
     }
     return 0;
 }
 
-void sc1000_audio_handle(sc1000* engine)
+void sc1000::audio_handle()
 {
-    if (engine->fault || !engine->audio) {
+    if (fault || !audio) {
         return;
     }
 
-    if (engine->audio->handle() != 0) {
-        engine->fault = true;
+    if (audio->handle() != 0) {
+        fault = true;
         LOG_ERROR("Error handling audio device; disabling it");
     }
 }
 
 // Helper to handle recording for a single deck
-static void handle_deck_recording(sc1000* engine, deck* dk, int deck_no)
+static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
 {
     player* pl = &dk->player;
 
@@ -212,9 +212,9 @@ static void handle_deck_recording(sc1000* engine, deck* dk, int deck_no)
     }
 }
 
-void sc1000_handle_deck_recording(sc1000* engine)
+void sc1000::handle_deck_recording()
 {
     // Handle loop buffer recording for both decks (memory-based, for immediate scratching)
-    handle_deck_recording(engine, &engine->beat_deck, 0);     // Beat deck = 0
-    handle_deck_recording(engine, &engine->scratch_deck, 1);  // Scratch deck = 1
+    handle_single_deck_recording(this, &beat_deck, 0);     // Beat deck = 0
+    handle_single_deck_recording(this, &scratch_deck, 1);  // Scratch deck = 1
 }

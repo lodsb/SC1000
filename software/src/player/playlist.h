@@ -22,8 +22,6 @@
 #pragma once
 
 #include <cstddef>
-
-#ifdef __cplusplus
 #include <vector>
 #include <string>
 
@@ -101,13 +99,3 @@ private:
 	std::vector<sc_file*> all_files_;  // Flat view for O(1) random access
 	size_t total_files_ = 0;
 };
-
-extern "C" {
-#endif
-
-// C-compatible wrapper functions (for any remaining C code)
-// These are deprecated - prefer using Playlist class directly
-
-#ifdef __cplusplus
-}
-#endif

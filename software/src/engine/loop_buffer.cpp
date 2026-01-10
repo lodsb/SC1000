@@ -47,7 +47,7 @@ void loop_buffer_init(struct loop_buffer* lb, int sample_rate, int max_seconds)
     if (lb->track)
     {
         // Pre-allocate all the space we'll need
-        if (track_ensure_space(lb->track, lb->max_samples) < 0)
+        if (lb->track->ensure_space(lb->max_samples) < 0)
         {
             fprintf(stderr, "loop_buffer: failed to pre-allocate %u samples\n", lb->max_samples);
             track_release(lb->track);
@@ -130,7 +130,7 @@ void loop_buffer_stop(struct loop_buffer* lb)
         {
             lb->loop_length = lb->write_pos;
             lb->length_locked = true;
-            track_set_length(lb->track, lb->loop_length);
+            lb->track->set_length(lb->loop_length);
             printf("loop_buffer: loop defined, %u samples (%.2f sec)\n",
                    lb->loop_length, static_cast<float>(lb->loop_length) / lb->sample_rate);
         }
@@ -206,7 +206,7 @@ unsigned int loop_buffer_write_float(struct loop_buffer* lb,
         lb->write_pos++;
 
         // Update track length as we go (allows scratching while recording)
-        track_set_length(lb->track, lb->write_pos);
+        lb->track->set_length(lb->write_pos);
     }
 
     return 1;

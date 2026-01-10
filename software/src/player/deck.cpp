@@ -54,6 +54,12 @@ static void load_track_internal(struct deck* d, struct track* track, struct sc_s
 	pl->fader_pitch = 1.0;
 	pl->bend_pitch = 1.0;
 	pl->note_pitch = 1.0;
+
+	// Reset cap_touch to force re-detection and proper angle_offset recalculation
+	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
+	pl->cap_touch = false;
+	pl->cap_touch_old = false;
+
 	if (!d->player.just_play)
 	{
 		if (settings->platter_enabled)
@@ -367,6 +373,11 @@ bool deck::recall_loop(struct sc_settings* settings)
 	player.target_position = 0;
 	player.offset = 0;
 
+	// Reset cap_touch to force re-detection and proper angle_offset recalculation
+	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
+	player.cap_touch = false;
+	player.cap_touch_old = false;
+
 	if (settings->platter_enabled)
 	{
 		angle_offset = 0 - encoder_angle;
@@ -391,6 +402,11 @@ void deck::goto_loop(struct sc1000* engine, struct sc_settings* settings)
 	player.position = 0;
 	player.target_position = 0;
 	player.offset = 0;
+
+	// Reset cap_touch to force re-detection and proper angle_offset recalculation
+	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
+	player.cap_touch = false;
+	player.cap_touch_old = false;
 
 	// Reset platter angle offset
 	if (settings->platter_enabled)

@@ -661,8 +661,9 @@ void process_rot(struct sc1000* sc1000_engine)
         wrapped_angle = sc1000_engine->scratch_deck.encoder_angle;
     }
 
-    // rotary sensor sometimes returns incorrect values, if we skip more than 100 ignore that value
-    // If we see 3 blips in a row, then I guess we better accept the new value
+    // Blip filter: rotary sensor sometimes returns incorrect values
+    // Ignore jumps > 100 ticks, accept after 3 consecutive blips
+    // (Part of encoder glitch protection chain - see audio_engine.cpp:173)
     if (abs(sc1000_engine->scratch_deck.new_encoder_angle - wrapped_angle) > 100 && num_blips < 2)
     {
         //printf("blip! %d %d %d\n", deck[1].newEncoderAngle, deck[1].encoderAngle, wrappedAngle);

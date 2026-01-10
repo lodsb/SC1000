@@ -170,6 +170,31 @@ void AudioEngine<InterpPolicy, FormatPolicy>::reset_loop(int deck) {
     loop_buffer_reset(&loop_[deck]);
 }
 
+//
+// Encoder glitch protection chain:
+//
+// The rotary encoder can produce spurious readings that would cause extreme
+// pitch values and corrupt audio playback. Multiple layers prevent this:
+//
+// 1. Blip filter (sc_input.cpp:664-674)
+//    - Ignores encoder jumps > 100 ticks, accepts after 3 consecutive blips
+//
+// 2. Cap touch reset (deck.cpp: load_track_internal, recall_loop, goto_loop)
+//    - Resets cap_touch on track changes to force angle_offset recalculation
+//
+// 3. Diff sanity check (below, lines ~215-221)
+//    - If |position - target_position| > 0.5s, snaps instead of chasing
+//
+// 4. Pitch clamp in slipmat mode (below, lines ~201-202)
+//    - Limits pitch to ±20 when platter is released
+//
+// 5. Position wrapping with fmod (process loop, lines ~347-354)
+//    - Proper modulo wrap handles high pitch on short loops
+//
+// 6. Interpolation bounds (sinc_interpolate_opt.h:119, 280)
+//    - Final safety net with modulo wrap before sample access
+//
+
 template<typename InterpPolicy, typename FormatPolicy>
 void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
     struct player* pl,
@@ -211,6 +236,15 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
         }
     } else {
         double diff = pl->position - pl->target_position;
+
+        // Sanity check: if diff is unreasonably large (>0.5 sec), assume encoder glitch
+        // and snap to current position instead of trying to catch up at high speed
+        constexpr double MAX_REASONABLE_DIFF = 0.5;
+        if (std::fabs(diff) > MAX_REASONABLE_DIFF) {
+            pl->target_position = pl->position;
+            diff = 0.0;
+        }
+
         target_pitch = (-diff) * 40;
     }
     pl->cap_touch_old = pl->cap_touch;
@@ -333,11 +367,16 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
             sample_1 += step_1;
             sample_2 += step_2;
 
-            // Wrap when crossing track boundary (rare, branch predictor handles well)
-            if (sample_1 >= tr_1_len) sample_1 -= tr_1_len;
-            else if (sample_1 < 0.0) sample_1 += tr_1_len;
-            if (sample_2 >= tr_2_len) sample_2 -= tr_2_len;
-            else if (sample_2 < 0.0) sample_2 += tr_2_len;
+            // Wrap when crossing track boundary
+            // Use fmod for correctness with high pitch values on short loops
+            if (tr_1_len > 0 && (sample_1 >= tr_1_len || sample_1 < 0.0)) {
+                sample_1 = std::fmod(sample_1, static_cast<double>(tr_1_len));
+                if (sample_1 < 0.0) sample_1 += tr_1_len;
+            }
+            if (tr_2_len > 0 && (sample_2 >= tr_2_len || sample_2 < 0.0)) {
+                sample_2 = std::fmod(sample_2, static_cast<double>(tr_2_len));
+                if (sample_2 < 0.0) sample_2 += tr_2_len;
+            }
             vol_1 += volume_gradient_1;
             vol_2 += volume_gradient_2;
             pitch_1 += pitch_gradient_1;

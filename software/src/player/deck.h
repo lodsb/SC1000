@@ -26,6 +26,7 @@
 #include <memory>
 
 #include "cues.h"
+#include "deck_state.h"
 #include "player.h"
 
 #ifdef __cplusplus
@@ -62,19 +63,25 @@ struct deck
    // If a shift modifier has been pressed recently
    bool shifted;
 
-   // Playlist navigation (index-based for O(1) access)
-   // current_file_idx: -1 = loop track (position 0), 0+ = file tracks (position 1+)
+   // === Grouped state (new structure) ===
+   NavigationState nav_state;
+   EncoderState encoder_state;
+   LoopState loop_state;
+
+   // Playlist (owned)
    std::unique_ptr<Playlist> playlist;
-   size_t current_folder_idx;
-   int current_file_idx;
-   bool files_present;
    int deck_no;  // 0 = beat, 1 = scratch
 
-   int32_t angle_offset; // Offset between encoder angle and track position, reset every time the platter is touched
-   int encoder_angle, new_encoder_angle;
+   // === Legacy field aliases (for gradual migration) ===
+   size_t& current_folder_idx = nav_state.folder_idx;
+   int& current_file_idx = nav_state.file_idx;
+   bool& files_present = nav_state.files_present;
 
-   // Loop recording - persisted loop track for recall
-   struct track* loop_track;
+   int32_t& angle_offset = encoder_state.offset;
+   int& encoder_angle = encoder_state.angle;
+   int& new_encoder_angle = encoder_state.angle_raw;
+
+   struct track*& loop_track = loop_state.track;
 
 #ifdef __cplusplus
    // C++ member functions
@@ -99,7 +106,7 @@ struct deck
    bool has_loop() const;
 
    // Loop navigation helpers
-   bool is_at_loop() const { return current_file_idx == -1; }
+   bool is_at_loop() const { return nav_state.is_at_loop(); }
    void goto_loop(struct sc1000* engine, struct sc_settings* settings);
 #endif
 };

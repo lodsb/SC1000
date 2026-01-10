@@ -174,9 +174,9 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
     if (!engine->audio) return;
 
     // Start recording if requested
-    if (pl->recording_started && !pl->recording) {
+    if (pl->recording_started && !pl->recording_active) {
         if (engine->audio->start_recording(deck_no, pl->position)) {
-            pl->recording = true;
+            pl->recording_active = true;
             pl->playing_beep = BEEP_RECORDINGSTART;
         } else {
             // Failed to start recording
@@ -186,7 +186,7 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
     }
 
     // Stop recording if requested
-    if (!pl->recording_started && pl->recording) {
+    if (!pl->recording_started && pl->recording_active) {
         // Check if this was a first recording (will define loop) or punch-in
         bool was_first_recording = !engine->audio->has_loop(deck_no);
 
@@ -206,7 +206,7 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
             pl->offset = 0;
         }
 
-        pl->recording = false;
+        pl->recording_active = false;
         pl->playing_beep = BEEP_RECORDINGSTOP;
         LOG_DEBUG("Recording stopped on deck %d, navigated to loop (position 0)", deck_no);
     }

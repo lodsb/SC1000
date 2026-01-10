@@ -38,6 +38,15 @@
 #include "track.h"
 
 //
+// LoopState member - defined here where track is complete
+//
+
+bool LoopState::has_loop() const
+{
+	return track != nullptr && track->length > 0;
+}
+
+//
 // Helper function (internal)
 //
 

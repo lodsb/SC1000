@@ -302,8 +302,8 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     setup_player(pl2, frames, engine->settings.get(), &target_volume_2, &filtered_pitch_2);
 
     // During fresh recording (recording active but no loop yet), mute track playback
-    if (pl1->recording && !pl1->use_loop) target_volume_1 = 0.0;
-    if (pl2->recording && !pl2->use_loop) target_volume_2 = 0.0;
+    if (pl1->recording_active && !pl1->use_loop) target_volume_1 = 0.0;
+    if (pl2->recording_active && !pl2->use_loop) target_volume_2 = 0.0;
 
     // Select track for each player: use loop track if use_loop is set
     struct track* tr1 = pl1->use_loop ? peek_loop_track(0) : pl1->track;

@@ -101,27 +101,28 @@ find_usb() {
 }
 
 # Build the binary
+# Returns the path to the built binary on stdout (all other output goes to stderr)
 build_binary() {
     local container="$1"
 
-    echo "=== Syncing source files to container ==="
+    echo "=== Syncing source files to container ===" >&2
     docker cp "$SOFTWARE_DIR/src" "$container:/home/builder/sc1000/software/"
     docker cp "$SOFTWARE_DIR/deps" "$container:/home/builder/sc1000/software/"
     docker cp "$SOFTWARE_DIR/cmake" "$container:/home/builder/sc1000/software/"
     docker cp "$SOFTWARE_DIR/CMakeLists.txt" "$container:/home/builder/sc1000/software/"
 
-    echo "=== Building SC1000 ==="
+    echo "=== Building SC1000 ===" >&2
     if [ "$USE_CMAKE" = true ]; then
         docker exec "$container" bash -c "cd /home/builder/sc1000/software && \
             rm -rf build-arm && mkdir -p build-arm && cd build-arm && \
             cmake -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_TOOLCHAIN_FILE=../cmake/buildroot-uclibc.cmake .. && \
-            make -j\$(nproc)"
+            make -j\$(nproc)" >&2
         echo "/home/builder/sc1000/software/build-arm/sc1000"
     else
         docker exec "$container" bash -c "cd /home/builder/sc1000/software && \
             rm -rf src/Build/Release/obj && \
-            make ARCH=SC1000 build=Release BUILDROOT_PREFIX=/home/builder/buildroot-2018.08 -j\$(nproc)"
+            make ARCH=SC1000 build=Release BUILDROOT_PREFIX=/home/builder/buildroot-2018.08 -j\$(nproc)" >&2
         echo "/home/builder/sc1000/software/src/Build/Release/sc1000"
     fi
 }

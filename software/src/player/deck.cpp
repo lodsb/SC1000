@@ -44,13 +44,14 @@
 static void load_track_internal(struct deck* d, struct track* track, struct sc_settings* settings)
 {
 	struct player* pl = &d->player;
-	cues_save_to_file(&d->cues, pl->track->path);
+	d->cues.save_to_file(pl->track->path);
 	pl->set_track(track);
 	pl->target_position = 0;
 	pl->position = 0;
 	pl->offset = 0;
 	pl->use_loop = false;  // Switch back to file track (loop is preserved for recall)
-	cues_load_from_file(&d->cues, pl->track->path);
+	pl->stopped = false;   // Reset stopped state so scratching works immediately
+	d->cues.load_from_file(pl->track->path);
 	pl->fader_pitch = 1.0;
 	pl->bend_pitch = 1.0;
 	pl->note_pitch = 1.0;
@@ -90,7 +91,7 @@ int deck::init(struct sc_settings* settings)
 	shifted = false;
 
 	player.init(TARGET_SAMPLE_RATE, track_acquire_empty(), settings);
-	cues_reset(&cues);
+	cues.reset();
 
 	// playlist is default-initialized to nullptr via unique_ptr
 	current_folder_idx = 0;
@@ -142,15 +143,15 @@ void deck::clone(const deck& from)
 
 void deck::unset_cue(unsigned int label)
 {
-	cues_unset(&cues, label);
+	cues.unset(label);
 }
 
 void deck::cue(unsigned int label)
 {
-	double p = cues_get(&cues, label);
+	double p = cues.get_or_unset(label);
 	if (p == CUE_UNSET) {
-		cues_set(&cues, label, player.get_elapsed());
-		cues_save_to_file(&cues, player.track->path);
+		cues.set(label, player.get_elapsed());
+		cues.save_to_file(player.track->path);
 	}
 	else {
 		player.seek_to(p);
@@ -160,10 +161,10 @@ void deck::cue(unsigned int label)
 void deck::punch_in(unsigned int label)
 {
 	double e = player.get_elapsed();
-	double p = cues_get(&cues, label);
+	double p = cues.get_or_unset(label);
 	if (p == CUE_UNSET)
 	{
-		cues_set(&cues, label, e);
+		cues.set(label, e);
 		return;
 	}
 
@@ -200,8 +201,8 @@ void deck::load_folder(const char* folder_name)
 		sc_file* file = playlist->get_file(0, 0);
 		player.set_track(track_acquire_by_import(importer.c_str(), file->full_path.c_str()));
 		LOG_DEBUG("deck_load_folder set track ok");
-		cues_load_from_file(&cues, player.track->path);
-		LOG_DEBUG("deck_load_folder set cues_load_from_file ok");
+		cues.load_from_file(player.track->path);
+		LOG_DEBUG("deck_load_folder set cues.load_from_file ok");
 	}
 	else
 	{
@@ -372,6 +373,7 @@ bool deck::recall_loop(struct sc_settings* settings)
 	player.position = 0;
 	player.target_position = 0;
 	player.offset = 0;
+	player.stopped = false;  // Reset stopped state so scratching works immediately
 
 	// Reset cap_touch to force re-detection and proper angle_offset recalculation
 	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
@@ -402,6 +404,7 @@ void deck::goto_loop(struct sc1000* engine, struct sc_settings* settings)
 	player.position = 0;
 	player.target_position = 0;
 	player.offset = 0;
+	player.stopped = false;  // Reset stopped state so scratching works immediately
 
 	// Reset cap_touch to force re-detection and proper angle_offset recalculation
 	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)

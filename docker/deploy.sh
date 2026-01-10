@@ -7,7 +7,7 @@ set -e
 
 CONTAINER="awesome_lichterman"
 USB_MOUNT="/media/niklas/STORE N GO"
-OUTPUT_FILE="sc1000_new"
+OUTPUT_FILE="sc1000"
 SOFTWARE_DIR="/home/niklas/CLionProjects/SC1000/software"
 USE_CMAKE=true
 

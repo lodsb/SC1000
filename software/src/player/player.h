@@ -59,7 +59,8 @@ struct player
            note_pitch, // Pitch after note change
    fader_pitch, // pitch after fader change
    bend_pitch, // pitch after semitone bend change
-   motor_speed; // speed of virtual motor, usually same as nominal_pitch but affected by start/stop
+   motor_speed, // speed of virtual motor, usually same as nominal_pitch but affected by start/stop
+   last_external_speed; // Previous external speed for change detection (instant MIDI response)
 
 
    bool just_play;

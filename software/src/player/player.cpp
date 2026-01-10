@@ -60,6 +60,7 @@ void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings
 	note_pitch = 1.0;
 	fader_pitch = 1.0;
 	bend_pitch = 1.0;
+	last_external_speed = 1.0;
 	fader_target = 0.0;  // Start silent until ADC values are read
 	fader_volume = 0.0;
 	stopped = false;

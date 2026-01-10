@@ -206,27 +206,36 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
     double target_pitch;
     auto samples_i = 1.0 / static_cast<double>(samples);
 
-    // Figure out motor speed
+    // === External pitch (MIDI note/bend) ===
+    // These transpose the sample directly, like changing the speed on a sampler
+    double external_speed = pl->note_pitch * pl->fader_pitch * pl->bend_pitch;
+
+    // Detect significant external pitch changes for instant response
+    // Only triggers on actual MIDI note/bend changes, not on play/pause
+    bool external_changed = std::fabs(external_speed - pl->last_external_speed) > 0.01;
+    pl->last_external_speed = external_speed;
+
+    // === Motor/platter behavior ===
     if (pl->stopped) {
-        // Simulate braking
+        // Simulate braking: motor decelerates toward 0
         if (pl->motor_speed > 0.1) {
             pl->motor_speed = pl->motor_speed - samples_i * (settings->brake_speed * 10);
         } else {
             pl->motor_speed = 0.0;
         }
     } else {
-        // Stack all the pitch bends on top of each other
-        pl->motor_speed = pl->note_pitch * pl->fader_pitch * pl->bend_pitch;
+        pl->motor_speed = external_speed;
     }
 
-    // Deal with case where we've released the platter
+    // === Pitch calculation based on mode ===
     if (pl->just_play ||  // Platter is always released on beat deck
         (!pl->cap_touch && !pl->cap_touch_old))  // Don't do it on first iteration for backspins
     {
+        // Platter released: slipmat simulation toward motor_speed
         if (pl->pitch > 20.0) pl->pitch = 20.0;
         if (pl->pitch < -20.0) pl->pitch = -20.0;
 
-        // Simulate slipmat for lasers/phasers
+        // Simulate slipmat
         if (pl->pitch < pl->motor_speed - 0.1) {
             target_pitch = pl->pitch + samples_i * settings->slippiness;
         } else if (pl->pitch > pl->motor_speed + 0.1) {
@@ -235,6 +244,7 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
             target_pitch = pl->motor_speed;
         }
     } else {
+        // Platter touched: position-based control (user scratching)
         double diff = pl->position - pl->target_position;
 
         // Sanity check: if diff is unreasonably large (>0.5 sec), assume encoder glitch
@@ -249,7 +259,15 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
     }
     pl->cap_touch_old = pl->cap_touch;
 
-    *filtered_pitch = (0.1 * target_pitch) + (0.9 * pl->pitch);
+    // === Final pitch smoothing ===
+    if (external_changed && !pl->cap_touch) {
+        // Instant response for MIDI note/bend changes when not scratching
+        *filtered_pitch = external_speed;
+        pl->pitch = external_speed;  // Also snap current pitch for immediate effect
+    } else {
+        // Normal IIR smoothing for all other cases
+        *filtered_pitch = (0.1 * target_pitch) + (0.9 * pl->pitch);
+    }
 
     // Volume fader decay
     double vol_decay_amount = samples_i * DECAY_SAMPLES;

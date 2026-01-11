@@ -68,10 +68,10 @@ void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings
 	volume_state.fader_current = 0.0;
 	volume_state.playback = 0.0;      // Audio engine smoothing state
 
-	// Legacy state (kept for sync-back compatibility, migrating to DeckInput)
+	// Initialize DeckInput volume from settings
+	input.volume_knob = settings->initial_volume;
+
 	platter_state.reset();
-	recording_state.reset_all();
-	feedback_state.stop();
 	stopped = false;
 }
 
@@ -79,21 +79,6 @@ void player::clear()
 {
 	spin_clear(&lock);
 	track_release(track);
-}
-
-double player::get_elapsed() const
-{
-	return pos_state.current - pos_state.offset;
-}
-
-bool player::is_active() const
-{
-	return (std::fabs(pitch_state.current) > 0.01);
-}
-
-void player::recue()
-{
-	pos_state.offset = pos_state.current;
 }
 
 void player::set_track(struct track* tr)
@@ -106,30 +91,5 @@ void player::set_track(struct track* tr)
 	track = tr;
 	spin_unlock(&lock);
 	track_release(x); /* discard the old track */
-}
-
-void player::clone(const player& from)
-{
-	double elapsed;
-	struct track* x;
-	struct track* t;
-
-	elapsed = from.pos_state.current - from.pos_state.offset;
-	pos_state.offset = pos_state.current - elapsed;
-
-	t = from.track;
-	track_acquire(t);
-
-	spin_lock(&lock);
-	x = track;
-	track = t;
-	spin_unlock(&lock);
-
-	track_release(x);
-}
-
-void player::seek_to(double seconds)
-{
-	pos_state.offset = pos_state.current - seconds;
 }
 

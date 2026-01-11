@@ -146,6 +146,7 @@ struct sc_settings
    int cut_beats;
 
    double initial_volume;
+   double max_volume;  // Maximum output volume (0.0-1.0), default 1.0. Useful for SC500 which is loud at full volume.
 
    bool midi_remapped;
    bool io_remapped;

@@ -286,8 +286,10 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
         state->fader_current -= vol_decay_amount;
     }
 
-    *target_volume = std::fabs(state->pitch) * BASE_VOLUME * state->fader_current;
-    if (*target_volume > 1.0) *target_volume = 1.0;
+    // Apply all volume factors: pitch-based gain, crossfader, volume knob, and max_volume limit
+    *target_volume = std::fabs(state->pitch) * BASE_VOLUME * state->fader_current * in.volume_knob;
+    double max_vol = settings->max_volume;
+    if (*target_volume > max_vol) *target_volume = max_vol;
 
 
     static int dbg_count = 0;

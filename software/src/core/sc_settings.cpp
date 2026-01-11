@@ -164,6 +164,7 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->volume_amount = json.value("volume_amount", 0.03);
    settings->volume_amount_held = json.value("volume_amount_held", 0.001);
    settings->initial_volume = json.value("initial_volume", 0.125);
+   settings->max_volume = json.value("max_volume", 1.0);
    settings->midi_remapped = 0;
    settings->io_remapped = 0;
    settings->jog_reverse = json.value("jog_reverse", 0);

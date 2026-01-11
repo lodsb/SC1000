@@ -92,15 +92,12 @@ if(CMAKE_CROSSCOMPILING)
     message(STATUS "Building for ARM (SC1000 device) via toolchain")
     # ARM flags are set by toolchain file, just add optimization flags
     target_compile_options(sc1000 PRIVATE -flto -ftree-vectorize)
-    target_link_options(sc1000 PRIVATE -flto)
 elseif(NATIVE)
     message(STATUS "Building for NATIVE host")
     target_compile_options(sc1000 PRIVATE -flto -ftree-vectorize)
-    target_link_options(sc1000 PRIVATE -flto)
 else()
     message(STATUS "Building for ARM (SC1000 device) - direct")
     target_compile_options(sc1000 PRIVATE -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize)
-    target_link_options(sc1000 PRIVATE -flto)
 endif()
 
 # Common warning flags
@@ -121,7 +118,7 @@ target_include_directories(sc1000 PRIVATE
 # Static linking for C/C++ runtime, dynamic for ALSA (needs dlopen for plugins)
 # Using set_target_properties for CMake 3.10 compatibility (target_link_options requires 3.13)
 set_target_properties(sc1000 PROPERTIES
-        LINK_FLAGS "-static-libstdc++ -static-libgcc"
+        LINK_FLAGS "-flto -static-libstdc++ -static-libgcc"
 )
 
 target_link_libraries(sc1000

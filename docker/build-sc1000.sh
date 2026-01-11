@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build SC1000 software using buildroot toolchain
+# Build SC1000 software using CMake + buildroot toolchain
 # Run from host: docker exec <container> /home/builder/sc1000/docker/build-sc1000.sh
 # Or from inside container: /home/builder/sc1000/docker/build-sc1000.sh
 
@@ -7,7 +7,7 @@ set -e
 
 BUILDROOT_DIR="/home/builder/buildroot-2018.08"
 SC1000_DIR="/home/builder/sc1000/software"
-OUTPUT_DIR="$SC1000_DIR/src/Build/Release"
+BUILD_DIR="$SC1000_DIR/build-buildroot"
 
 # Check if buildroot config exists, copy if needed
 if [ ! -f "$BUILDROOT_DIR/.config" ]; then
@@ -41,28 +41,31 @@ if [ ! -f "$BUILDROOT_DIR/output/staging/usr/include/alsa/asoundlib.h" ]; then
     make alsa-lib
 fi
 
-TOOLCHAIN_PREFIX="$BUILDROOT_DIR/output/host/bin/arm-linux"
-
 echo "=============================================="
-echo "Building SC1000 with Make + buildroot toolchain"
+echo "Building SC1000 with CMake + buildroot toolchain"
 echo "=============================================="
 
 cd "$SC1000_DIR"
 
-# Clean and build with Release optimization
-make clean 2>/dev/null || true
-make ARCH=SC1000 build=Release BUILDROOT_PREFIX="$BUILDROOT_DIR" -j$(nproc)
+# Configure with CMake using toolchain file
+cmake -B "$BUILD_DIR" \
+    -DCMAKE_TOOLCHAIN_FILE="$SC1000_DIR/cmake/buildroot-uclibc.cmake" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILDROOT_DIR="$BUILDROOT_DIR"
+
+# Build
+cmake --build "$BUILD_DIR" -j$(nproc)
 
 echo "=============================================="
 echo "Build complete!"
-echo "Binary: $OUTPUT_DIR/sc1000"
+echo "Binary: $BUILD_DIR/sc1000"
 echo "=============================================="
 
 # Show binary info
-file "$OUTPUT_DIR/sc1000"
+file "$BUILD_DIR/sc1000"
 echo ""
 echo "Library dependencies:"
-"$TOOLCHAIN_PREFIX-readelf" -d "$OUTPUT_DIR/sc1000" | grep NEEDED || true
+"$BUILDROOT_DIR/output/host/bin/arm-linux-readelf" -d "$BUILD_DIR/sc1000" | grep NEEDED || true
 
 echo ""
-echo "To deploy: copy $OUTPUT_DIR/sc1000 to device as /usr/bin/sc1000"
+echo "To deploy: copy $BUILD_DIR/sc1000 to device as /usr/bin/sc1000"

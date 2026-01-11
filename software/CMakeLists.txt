@@ -81,17 +81,26 @@ add_executable(sc1000
         ${UTIL_SOURCES}
 )
 
+# Release build optimization (CMake default is -O3, but be explicit)
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()
+
 # Compiler flags
 if(CMAKE_CROSSCOMPILING)
     message(STATUS "Building for ARM (SC1000 device) via toolchain")
     # ARM flags are set by toolchain file, just add optimization flags
     target_compile_options(sc1000 PRIVATE -flto -ftree-vectorize)
+    target_link_options(sc1000 PRIVATE -flto)
 elseif(NATIVE)
     message(STATUS "Building for NATIVE host")
     target_compile_options(sc1000 PRIVATE -flto -ftree-vectorize)
+    target_link_options(sc1000 PRIVATE -flto)
 else()
     message(STATUS "Building for ARM (SC1000 device) - direct")
     target_compile_options(sc1000 PRIVATE -mcpu=cortex-a8 -mfpu=neon -flto -ftree-vectorize)
+    target_link_options(sc1000 PRIVATE -flto)
 endif()
 
 # Common warning flags

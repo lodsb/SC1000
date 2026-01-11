@@ -166,3 +166,65 @@ if(BUILD_RESAMPLER_TEST)
 
     message(STATUS "Building resampler quality test")
 endif()
+
+# Audio engine test harness
+option(BUILD_TESTS "Build audio engine tests" OFF)
+
+if(BUILD_TESTS)
+    set(TEST_SOURCES
+            test/src/test_main.cpp
+            test/src/test_harness.cpp
+            test/src/test_audio_backend.cpp
+            test/src/test_samples.cpp
+            test/src/input_sequence.cpp
+            test/src/test_stubs.cpp
+    )
+
+    # Subset of sources needed for testing (no hardware dependencies)
+    set(TEST_CORE_SOURCES
+            src/core/sc1000.cpp
+            src/core/sc_settings.cpp
+            src/core/global.cpp
+            src/control/actions.cpp
+            src/control/mapping_registry.cpp
+            src/engine/audio_engine.cpp
+            src/engine/cv_engine.cpp
+            src/engine/loop_buffer.cpp
+            src/player/cues.cpp
+            src/player/deck.cpp
+            src/player/player.cpp
+            src/player/playlist.cpp
+            src/player/track.cpp
+            src/input/midi_event.cpp
+            src/util/log.cpp
+    )
+
+    add_executable(sc1000-test
+            ${TEST_SOURCES}
+            ${TEST_CORE_SOURCES}
+    )
+
+    target_compile_options(sc1000-test PRIVATE
+            -Wall
+            -Wextra
+            -Wno-unused-parameter
+            -O2
+    )
+
+    target_compile_definitions(sc1000-test PRIVATE
+            SC1000_TEST_MODE
+    )
+
+    target_include_directories(sc1000-test PRIVATE
+            deps
+            src
+            test/src
+    )
+
+    target_link_libraries(sc1000-test
+            m
+            pthread
+    )
+
+    message(STATUS "Building audio engine tests")
+endif()

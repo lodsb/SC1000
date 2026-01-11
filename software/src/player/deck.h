@@ -21,9 +21,9 @@
 
 #pragma once
 
-#include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "cues.h"
 #include "deck_state.h"
@@ -31,34 +31,24 @@
 
 #ifdef __cplusplus
 #include "playlist.h"
-class Controller;
 #else
 struct Playlist;
 typedef struct Playlist Playlist;
-struct Controller;
-typedef struct Controller Controller;
 #endif
 
 struct sc_settings;
 struct track;
 struct sc1000;
 
-#define NO_PUNCH (HUGE_VAL)
-
 struct deck
 {
    std::string importer;
-   bool protect;
 
    struct player player;
    Cues cues;
 
-   /* Punch */
-   double punch;
-
-   /* A controller adds itself here */
-   size_t ncontrol;
-   Controller* control[4];
+   // Punch-in point (nullopt = not punching)
+   std::optional<double> punch;
 
    // If a shift modifier has been pressed recently
    bool shifted;

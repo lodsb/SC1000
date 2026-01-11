@@ -30,8 +30,6 @@
 #include "../util/status.h"
 #include "../thread/rig.h"
 
-#include "../input/controller.h"
-
 #include "cues.h"
 #include "deck.h"
 #include "playlist.h"
@@ -90,9 +88,7 @@ deck::~deck() = default;
 
 int deck::init(struct sc_settings* settings)
 {
-	ncontrol = 0;
-	punch = NO_PUNCH;
-	protect = false;
+	punch = std::nullopt;
 	assert(!settings->importer.empty());
 	importer = settings->importer;
 	shifted = false;
@@ -127,10 +123,10 @@ void deck::clear()
 	}
 }
 
-bool deck::is_locked(struct sc1000* engine) const
+bool deck::is_locked(struct sc1000* /* engine */) const
 {
-	if (!engine || !engine->audio) return false;
-	return (protect && engine->audio->get_deck_state(deck_no).is_active());
+	// Protection feature removed - decks are never locked
+	return false;
 }
 
 void deck::recue(struct sc1000* engine)
@@ -165,8 +161,8 @@ void deck::unset_cue(unsigned int label)
 
 void deck::cue(unsigned int label, struct sc1000* engine)
 {
-	double p = cues.get_or_unset(label);
-	if (p == CUE_UNSET) {
+	auto p = cues.get(label);
+	if (!p.has_value()) {
 		// Set cue at current elapsed time
 		double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
 		cues.set(label, elapsed);
@@ -175,40 +171,40 @@ void deck::cue(unsigned int label, struct sc1000* engine)
 	else {
 		// Seek to cue point: set offset so elapsed = p
 		double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
-		player.input.position_offset = current_pos - p;
+		player.input.position_offset = current_pos - p.value();
 	}
 }
 
 void deck::punch_in(unsigned int label, struct sc1000* engine)
 {
 	double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
-	double p = cues.get_or_unset(label);
-	if (p == CUE_UNSET)
+	auto p = cues.get(label);
+	if (!p.has_value())
 	{
 		cues.set(label, elapsed);
 		return;
 	}
 
 	double e = elapsed;
-	if (punch != NO_PUNCH)
-		e -= punch;
+	if (punch.has_value())
+		e -= punch.value();
 
 	// Seek to cue point
 	double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
-	player.input.position_offset = current_pos - p;
-	punch = p - e;
+	player.input.position_offset = current_pos - p.value();
+	punch = p.value() - e;
 }
 
 void deck::punch_out(struct sc1000* engine)
 {
-	if (punch == NO_PUNCH)
+	if (!punch.has_value())
 		return;
 
 	double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
-	double target = elapsed - punch;
+	double target = elapsed - punch.value();
 	double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
 	player.input.position_offset = current_pos - target;
-	punch = NO_PUNCH;
+	punch = std::nullopt;
 }
 
 void deck::load_folder(const char* folder_name)

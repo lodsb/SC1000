@@ -99,8 +99,8 @@ struct sc_settings
    // delay between iterations of the input loop
    int update_rate;
 
-   // 1 when enabled, 0 when not
-   int platter_enabled;
+   // Whether platter input is enabled
+   bool platter_enabled;
 
    // specifies the ratio of platter movement to sample movement
    // 4096 = 1 second for every platter rotation
@@ -129,20 +129,20 @@ struct sc_settings
    // How many seconds to wait before initializing Audio
    unsigned int audio_init_delay;
 
-   // whether or not to take input from the volume knobs (sc500 should enable this setting)
-   int disable_volume_adc;
+   // Whether to take input from the volume knobs (SC500 disables this)
+   bool disable_volume_adc;
 
-   // whether or not to take input from the PIC buttons (sc500 should enable this setting)
-   int disable_pic_buttons;
+   // Whether to take input from the PIC buttons (SC500 disables this)
+   bool disable_pic_buttons;
 
    // how much to adjust the volumes when the volume up/down buttons are pressed or held
    double volume_amount;
    double volume_amount_held;
 
-   // whether or not to reverse the jogwheel
-   int jog_reverse;
+   // Whether to reverse the jogwheel direction
+   bool jog_reverse;
 
-   // whether or not the fader cuts the beats
+   // Fader cut mode: 0 = off, 1 = cuts beats, 2 = cuts scratch
    int cut_beats;
 
    double initial_volume;

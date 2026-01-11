@@ -150,7 +150,7 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->fader_close_point = json.value("fader_close_point", 2);
    settings->fader_open_point = json.value("fader_open_point", 10);
    settings->update_rate = json.value("update_rate", 2000);
-   settings->platter_enabled = json.value("platter_enabled", 1);
+   settings->platter_enabled = json.value("platter_enabled", true);
    settings->platter_speed = json.value("platter_speed", 2275);
    settings->debounce_time = json.value("debounce_time", 5);
    settings->hold_time = json.value("hold_time", 100);
@@ -159,15 +159,15 @@ void settings_from_json(sc_settings* settings, const nlohmann::json& json)
    settings->pitch_range = json.value("pitch_range", 50);
    settings->midi_init_delay = json.value("midi_init_delay", 5u);
    settings->audio_init_delay = json.value("audio_init_delay", 2u);
-   settings->disable_volume_adc = json.value("disable_volume_adc", 0);
-   settings->disable_pic_buttons = json.value("disable_pic_buttons", 0);
+   settings->disable_volume_adc = json.value("disable_volume_adc", false);
+   settings->disable_pic_buttons = json.value("disable_pic_buttons", false);
    settings->volume_amount = json.value("volume_amount", 0.03);
    settings->volume_amount_held = json.value("volume_amount_held", 0.001);
    settings->initial_volume = json.value("initial_volume", 0.125);
    settings->max_volume = json.value("max_volume", 1.0);
    settings->midi_remapped = 0;
    settings->io_remapped = 0;
-   settings->jog_reverse = json.value("jog_reverse", 0);
+   settings->jog_reverse = json.value("jog_reverse", false);
    settings->cut_beats = json.value("cut_beats", 0);
    settings->importer = DEFAULT_IMPORTER_PATH;
 

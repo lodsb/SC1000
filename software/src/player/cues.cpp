@@ -60,15 +60,6 @@ std::optional<double> Cues::get(unsigned int label) const
     return std::nullopt;
 }
 
-double Cues::get_or_unset(unsigned int label) const
-{
-    auto it = positions_.find(label);
-    if (it != positions_.end()) {
-        return it->second;
-    }
-    return CUE_UNSET;
-}
-
 void Cues::unset(unsigned int label)
 {
     positions_.erase(label);
@@ -110,7 +101,7 @@ void Cues::load_from_file(const char* pathname)
         double position;
         if (iss >> position) {
             // Only store if not the sentinel value
-            if (position != CUE_UNSET) {
+            if (position != CUE_FILE_UNSET) {
                 positions_[index] = position;
             }
         }
@@ -151,13 +142,13 @@ void Cues::save_to_file(const char* pathname) const
         }
     }
 
-    // Write positions, using CUE_UNSET for gaps
+    // Write positions, using CUE_FILE_UNSET for gaps
     for (unsigned int i = 0; i <= max_label; ++i) {
         auto it = positions_.find(i);
         if (it != positions_.end()) {
             file << it->second << '\n';
         } else {
-            file << CUE_UNSET << '\n';
+            file << CUE_FILE_UNSET << '\n';
         }
     }
 

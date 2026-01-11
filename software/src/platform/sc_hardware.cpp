@@ -283,8 +283,8 @@ void SC1000Hardware::detect_sc500(sc_settings* settings)
         if (gpio_a13_read_pin(&hw_.gpio, 6, 11))
         {
             LOG_INFO("SC500 detected");
-            settings->disable_volume_adc = 1;
-            settings->disable_pic_buttons = 1;
+            settings->disable_volume_adc = true;
+            settings->disable_pic_buttons = true;
         }
     }
 }

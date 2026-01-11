@@ -47,31 +47,10 @@ void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings
 	sample_dt = 1.0 / sample_rate;
 	track = tr;
 
-	// Position state
-	pos_state.current = 0.0;
-	pos_state.offset = 0.0;
-	pos_state.target = 0.0;
-	pos_state.last_difference = 0.0;
-
-	// Pitch state
-	pitch_state.current = 0.0;
-	pitch_state.sync = 1.0;
-	pitch_state.note = 1.0;
-	pitch_state.fader = 1.0;
-	pitch_state.bend = 1.0;
-	pitch_state.last_external = 1.0;
-	pitch_state.motor_speed = 1.0;
-
-	// Volume state
-	volume_state.knob = settings->initial_volume;
-	volume_state.fader_target = 0.0;  // Start silent until ADC values are read
-	volume_state.fader_current = 0.0;
-	volume_state.playback = 0.0;      // Audio engine smoothing state
-
-	// Initialize DeckInput volume from settings
+	// Initialize input state
+	input = sc::DeckInput{};  // Reset to defaults
 	input.volume_knob = settings->initial_volume;
 
-	platter_state.reset();
 	stopped = false;
 }
 

@@ -24,8 +24,8 @@
 #include <optional>
 #include <string>
 
-// Sentinel value for unset cue points (used for backward compatibility)
-constexpr double CUE_UNSET = HUGE_VAL;
+// Sentinel value for unset cue points in .cue file format (file I/O only)
+constexpr double CUE_FILE_UNSET = HUGE_VAL;
 
 // TODO: Auto-slice cue marker generation
 // Add automatic cue marker placement for slicing the current deck's sample.
@@ -51,9 +51,6 @@ public:
 
     // Get a cue point position, returns nullopt if not set
     std::optional<double> get(unsigned int label) const;
-
-    // Get cue position with legacy sentinel (CUE_UNSET if not found)
-    double get_or_unset(unsigned int label) const;
 
     // Remove a cue point
     void unset(unsigned int label);

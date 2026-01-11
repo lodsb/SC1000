@@ -19,15 +19,12 @@
  *
  */
 
-#include <cassert>
 #include <cstdio>
 
 #include "../util/debug.h"
 #include "../player/deck.h"
 
 #include "controller.h"
-
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof(*x))
 
 /*
  * Add a deck to this controller, if possible
@@ -38,9 +35,6 @@ void controller_add_deck(Controller* c, struct deck* d)
 
     if (c->add_deck(d) == 0) {
         debug("deck was added");
-
-        assert(d->ncontrol < ARRAY_SIZE(d->control));
-        d->control[d->ncontrol++] = c;
     }
 }
 

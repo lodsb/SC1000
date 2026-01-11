@@ -109,7 +109,7 @@ struct TrackSampleWindow {
     bool valid;                   // True if direct access possible
 };
 
-inline TrackSampleWindow get_sample_window(struct track* tr, int center_sample, int tr_len) {
+inline TrackSampleWindow get_sample_window(Track* tr, int center_sample, int tr_len) {
     TrackSampleWindow w;
     w.valid = false;
 
@@ -264,7 +264,7 @@ inline void sinc_convolve_stereo_buffered(
 // Slow path: collect samples across block/track boundaries
 //
 inline void collect_samples_slow(
-    struct track* tr,
+    Track* tr,
     int center_sample,
     int tr_len,
     float* samples_l,
@@ -302,7 +302,7 @@ struct SincInterpResult {
 };
 
 inline SincInterpResult sinc_interpolate_track_opt(
-    struct track* tr,
+    Track* tr,
     double sample_pos,
     int tr_len,
     float abs_pitch)
@@ -351,8 +351,8 @@ struct DualDeckResultOpt {
 };
 
 inline DualDeckResultOpt sinc_interpolate_dual_deck_opt(
-    struct track* tr1, double sample_pos1, int tr_len1, float pitch1,
-    struct track* tr2, double sample_pos2, int tr_len2, float pitch2)
+    Track* tr1, double sample_pos1, int tr_len1, float pitch1,
+    Track* tr2, double sample_pos2, int tr_len2, float pitch2)
 {
     auto res1 = sinc_interpolate_track_opt(tr1, sample_pos1, tr_len1, pitch1);
     auto res2 = sinc_interpolate_track_opt(tr2, sample_pos2, tr_len2, pitch2);

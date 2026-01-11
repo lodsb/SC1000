@@ -55,15 +55,15 @@ enum class ButtonMachineState : uint8_t {
 //
 class SC1000Hardware : public HardwareInput {
 public:
-    bool init(sc1000* engine) override;
-    void poll(sc1000* engine) override;
-    void log_stats(sc1000* engine) override;
+    bool init(Sc1000* engine) override;
+    void poll(Sc1000* engine) override;
+    void log_stats(Sc1000* engine) override;
 
 private:
     // Platform hardware (GPIO, encoder, PIC)
     HardwareState hw_;
 
-    // Button runtime state (separate from mapping config)
+    // Button runtime state (separate from Mapping config)
     std::unordered_map<size_t, ButtonState> button_states_;
 
     // Shift key state
@@ -92,11 +92,11 @@ private:
     unsigned char pic_skip_counter_ = 0;
 
     // Internal methods
-    void init_gpio(sc1000* engine);
-    void detect_sc500(sc_settings* settings);
-    void process_gpio_buttons(sc1000* engine);
-    void process_pic_inputs(sc1000* engine);
-    void process_encoder(sc1000* engine);
+    void init_gpio(Sc1000* engine);
+    void detect_sc500(ScSettings* settings);
+    void process_gpio_buttons(Sc1000* engine);
+    void process_pic_inputs(Sc1000* engine);
+    void process_encoder(Sc1000* engine);
 };
 
 //
@@ -111,9 +111,9 @@ std::unique_ptr<HardwareInput> create_hardware()
 // SC1000Hardware implementation
 //
 
-bool SC1000Hardware::init(sc1000* engine)
+bool SC1000Hardware::init(Sc1000* engine)
 {
-    sc_settings* settings = engine->settings.get();
+    ScSettings* settings = engine->settings.get();
 
     // Initialize encoder (rotary sensor on I2C0)
     if (!encoder_init(&hw_.encoder))
@@ -154,7 +154,7 @@ bool SC1000Hardware::init(sc1000* engine)
     return hw_.pic.present || hw_.encoder.present || hw_.gpio.mmap_present;
 }
 
-void SC1000Hardware::poll(sc1000* engine)
+void SC1000Hardware::poll(Sc1000* engine)
 {
     if (hw_.pic.present)
     {
@@ -195,10 +195,10 @@ void SC1000Hardware::poll(sc1000* engine)
     }
 }
 
-void SC1000Hardware::log_stats(sc1000* engine)
+void SC1000Hardware::log_stats(Sc1000* engine)
 {
     // Get DSP stats
-    struct dsp_stats dsp;
+    struct DspStats dsp;
     audio_engine_get_stats(&dsp);
 
     LOG_STATS(
@@ -214,9 +214,9 @@ void SC1000Hardware::log_stats(sc1000* engine)
         pic_readings_.buttons[2], pic_readings_.buttons[3]);
 }
 
-void SC1000Hardware::init_gpio(sc1000* engine)
+void SC1000Hardware::init_gpio(Sc1000* engine)
 {
-    struct mapping* map;
+    struct Mapping* map;
 
     // Initialize MCP23017 GPIO expander
     gpio_init_mcp23017(&hw_.gpio);
@@ -275,7 +275,7 @@ void SC1000Hardware::init_gpio(sc1000* engine)
     }
 }
 
-void SC1000Hardware::detect_sc500(sc_settings* settings)
+void SC1000Hardware::detect_sc500(ScSettings* settings)
 {
     // Detect SC500 by seeing if G11 is pulled low
     if (hw_.gpio.mmap_present)
@@ -289,9 +289,9 @@ void SC1000Hardware::detect_sc500(sc_settings* settings)
     }
 }
 
-void SC1000Hardware::process_gpio_buttons(sc1000* engine)
+void SC1000Hardware::process_gpio_buttons(Sc1000* engine)
 {
-    sc_settings* settings = engine->settings.get();
+    ScSettings* settings = engine->settings.get();
 
     // Read all MCP23017 pins at once (already inverted by platform layer)
     uint16_t mcp_pins = 0;
@@ -303,11 +303,11 @@ void SC1000Hardware::process_gpio_buttons(sc1000* engine)
     // Capture shifted state ONCE before processing any mappings
     bool shifted_at_start = engine->input_state.is_shifted();
 
-    // Use index-based iteration to associate ButtonState with each mapping
+    // Use index-based iteration to associate ButtonState with each Mapping
     auto& mappings = engine->mappings.all();
     for (size_t idx = 0; idx < mappings.size(); ++idx)
     {
-        const mapping& m = mappings[idx];
+        const Mapping& m = mappings[idx];
         ButtonState& bs = button_states_[idx];
 
         // Only digital pins
@@ -349,7 +349,7 @@ void SC1000Hardware::process_gpio_buttons(sc1000* engine)
                         if (m.action_type == NEXTFILE || m.action_type == PREVFILE ||
                             m.action_type == RANDOMFILE || m.action_type == JOGPIT)
                         {
-                            LOG_DEBUG("Checking mapping port=%d pin=%d action=%d edge=%d shifted=%d",
+                            LOG_DEBUG("Checking Mapping port=%d pin=%d action=%d edge=%d shifted=%d",
                                       m.gpio_port, m.pin, m.action_type, m.edge_type, shifted_at_start);
                         }
 
@@ -428,9 +428,9 @@ void SC1000Hardware::process_gpio_buttons(sc1000* engine)
     }
 }
 
-void SC1000Hardware::process_pic_inputs(sc1000* engine)
+void SC1000Hardware::process_pic_inputs(Sc1000* engine)
 {
-    sc_settings* settings = engine->settings.get();
+    ScSettings* settings = engine->settings.get();
 
     unsigned int i;
     unsigned int fader_cut_point1, fader_cut_point2;
@@ -600,9 +600,9 @@ void SC1000Hardware::process_pic_inputs(sc1000* engine)
     }
 }
 
-void SC1000Hardware::process_encoder(sc1000* engine)
+void SC1000Hardware::process_encoder(Sc1000* engine)
 {
-    sc_settings* settings = engine->settings.get();
+    ScSettings* settings = engine->settings.get();
 
     int8_t crossed_zero;
     int wrapped_angle = 0x0000;

@@ -25,7 +25,7 @@
 #include <stdbool.h>
 #include <memory>
 
-struct loop_buffer;
+struct LoopBuffer;
 
 //
 // C-compatible types and API (for backward compatibility)
@@ -46,7 +46,7 @@ typedef enum {
 } interpolation_mode_t;
 
 /* DSP performance metrics */
-struct dsp_stats {
+struct DspStats {
     double load_percent;      /* Current DSP load (0-100+) */
     double load_peak;         /* Peak load since last reset */
     double process_time_us;   /* Last process time in microseconds */
@@ -55,7 +55,7 @@ struct dsp_stats {
 };
 
 /* Capture input info passed to audio engine (I/O data only, no state) */
-struct audio_capture {
+struct AudioCapture {
     const void* buffer;         /* Capture samples in device format (nullptr if not available) */
     int format;                 /* ALSA format (snd_pcm_format_t) - use int for C compatibility */
     int bytes_per_sample;       /* Bytes per sample for this format */
@@ -72,7 +72,7 @@ extern "C" {
 void audio_engine_set_interpolation(interpolation_mode_t mode);
 
 /* Get current interpolation mode */
-interpolation_mode_t audio_engine_get_interpolation(void);
+interpolation_mode_t audio_engine_get_interpolation();
 
 /* Main audio processing function (legacy S16 interface)
  * - capture: input from capture device (can have nullptr buffer if not available)
@@ -81,15 +81,15 @@ interpolation_mode_t audio_engine_get_interpolation(void);
  * - frames: number of frames to process
  */
 void audio_engine_process(
-    struct sc1000* engine,
-    struct audio_capture* capture,
+    struct Sc1000* engine,
+    struct AudioCapture* capture,
     int16_t* playback,
     int playback_channels,
     unsigned long frames
 );
 
-void audio_engine_get_stats(struct dsp_stats* stats);
-void audio_engine_reset_peak(void);
+void audio_engine_get_stats(struct DspStats* stats);
+void audio_engine_reset_peak();
 
 #ifdef __cplusplus
 // Update global stats from a specific engine instance (for direct C++ engine usage)
@@ -144,8 +144,8 @@ public:
     // playback: output buffer (format determined by template)
     // frames: number of frames to process
     virtual void process(
-        sc1000* engine,
-        audio_capture* capture,
+        Sc1000* engine,
+        AudioCapture* capture,
         void* playback,
         int playback_channels,
         unsigned long frames) = 0;
@@ -157,8 +157,8 @@ public:
     virtual int recording_deck() const = 0;
 
     // Loop track access
-    virtual struct track* get_loop_track(int deck) = 0;      // Acquires reference
-    virtual struct track* peek_loop_track(int deck) = 0;     // No ref change (RT-safe)
+    virtual Track* get_loop_track(int deck) = 0;      // Acquires reference
+    virtual Track* peek_loop_track(int deck) = 0;     // No ref change (RT-safe)
     virtual bool has_loop(int deck) const = 0;
     virtual void reset_loop(int deck) = 0;
 
@@ -205,8 +205,8 @@ public:
     void init_loop_buffers(int sample_rate, int max_seconds) override;
 
     void process(
-        sc1000* engine,
-        audio_capture* capture,
+        Sc1000* engine,
+        AudioCapture* capture,
         void* playback,
         int playback_channels,
         unsigned long frames) override;
@@ -218,8 +218,8 @@ public:
     int recording_deck() const override { return active_recording_deck_; }
 
     // Loop track access
-    struct track* get_loop_track(int deck) override;
-    struct track* peek_loop_track(int deck) override;
+    Track* get_loop_track(int deck) override;
+    Track* peek_loop_track(int deck) override;
     bool has_loop(int deck) const override;
     void reset_loop(int deck) override;
 
@@ -268,19 +268,19 @@ public:
 private:
     DspStats stats_{};
     DeckProcessingState deck_state_[2]{};  // Per-deck audio engine internal state
-    loop_buffer loop_[2]{};              // Loop buffers for both decks
+    LoopBuffer loop_[2]{};              // Loop buffers for both decks
     int active_recording_deck_ = -1;     // Which deck is recording (-1 = none)
     float monitoring_volume_ = 0.0f;     // Monitoring volume for recording
     bool loop_buffers_initialized_ = false;
 
     // Setup player parameters for the block
-    void setup_player(player* pl, DeckProcessingState* state, unsigned long samples,
-                      const sc_settings* settings, double* target_volume, double* filtered_pitch);
+    void setup_player(Player* pl, DeckProcessingState* state, unsigned long samples,
+                      const ScSettings* settings, double* target_volume, double* filtered_pitch);
 
     // Process and mix both players
     void process_players(
-        sc1000* engine,
-        audio_capture* capture,
+        Sc1000* engine,
+        AudioCapture* capture,
         void* playback,
         int channels,
         unsigned long frames);

@@ -31,12 +31,12 @@ static int level = 0;
  * Return: current status string
  */
 
-const char* status(void)
+const char* status()
 {
     return message;
 }
 
-int status_level(void)
+int status_level()
 {
     return level;
 }

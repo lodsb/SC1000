@@ -48,7 +48,7 @@ static constexpr snd_pcm_format_t TARGET_SAMPLE_FORMAT = SND_PCM_FORMAT_S16_LE;
 //
 // Internal PCM state
 //
-struct alsa_pcm {
+struct AlsaPcm {
     snd_pcm_t* pcm = nullptr;
     struct pollfd* pe = nullptr;
     size_t pe_count = 0;
@@ -60,7 +60,7 @@ struct alsa_pcm {
 //
 // ALSA device info (for discovery)
 //
-struct alsa_device_info {
+struct AlsaDeviceInfo {
     bool is_present = false;
     int device_id = -1;
     int subdevice_id = -1;
@@ -75,14 +75,14 @@ struct alsa_device_info {
 };
 
 static constexpr int MAX_ALSA_DEVICES = 8;
-static alsa_device_info alsa_devices[MAX_ALSA_DEVICES];
+static AlsaDeviceInfo alsa_devices[MAX_ALSA_DEVICES];
 
 //
 // AlsaAudio class - implements AudioHardware interface
 //
 class AlsaAudio : public AudioHardware {
 public:
-    AlsaAudio(sc1000* engine) : engine_(engine) {}
+    AlsaAudio(Sc1000* engine) : engine_(engine) {}
     ~AlsaAudio() override;
 
     // AudioHardware interface
@@ -99,8 +99,8 @@ public:
     bool has_loop(int deck) const override;
     bool has_capture() const override { return capture_enabled_; }
     void reset_loop(int deck) override;
-    struct track* get_loop_track(int deck) override;
-    struct track* peek_loop_track(int deck) override;
+    Track* get_loop_track(int deck) override;
+    Track* peek_loop_track(int deck) override;
 
     // Query API (delegated to audio engine)
     sc::audio::DeckProcessingState get_deck_state(int deck) const override;
@@ -109,28 +109,28 @@ public:
     double get_volume(int deck) const override;
 
     // Setup (called by factory)
-    bool setup(alsa_device_info* device_info, audio_interface* config, int num_channels, sc_settings* settings);
+    bool setup(AlsaDeviceInfo* device_info, AudioInterface* config, int num_channels, ScSettings* settings);
 
 private:
-    sc1000* engine_;
-    alsa_pcm capture_{};
-    alsa_pcm playback_{};
+    Sc1000* engine_;
+    AlsaPcm capture_{};
+    AlsaPcm playback_{};
     bool started_ = false;
     bool capture_enabled_ = false;
     int num_channels_ = 2;
     int capture_channels_ = 0;
     int capture_left_ = 0;
     int capture_right_ = 1;
-    audio_interface* config_ = nullptr;
-    cv_state cv_{};
+    AudioInterface* config_ = nullptr;
+    CvState cv_{};
     snd_pcm_format_t playback_format_ = SND_PCM_FORMAT_S16_LE;
     snd_pcm_format_t capture_format_ = SND_PCM_FORMAT_S16_LE;
     std::unique_ptr<sc::audio::AudioEngineBase> audio_engine_;
 
     int process_audio();
-    static ssize_t pcm_pollfds(alsa_pcm* pcm, struct pollfd* pe, size_t z);
-    static int pcm_revents(alsa_pcm* pcm, unsigned short* revents);
-    static void pcm_close(alsa_pcm* pcm);
+    static ssize_t pcm_pollfds(AlsaPcm* pcm, struct pollfd* pe, size_t z);
+    static int pcm_revents(AlsaPcm* pcm, unsigned short* revents);
+    static void pcm_close(AlsaPcm* pcm);
 };
 
 //
@@ -156,7 +156,7 @@ static void create_alsa_device_id_string(char* str, unsigned int size, int dev, 
     }
 }
 
-static void print_alsa_device_info(alsa_device_info* iface) {
+static void print_alsa_device_info(AlsaDeviceInfo* iface) {
     LOG_INFO("Device info: card='%s' dev=%d sub=%d present=%d internal=%d in=%d out=%d 48k=%d 16bit=%d period=%d",
              iface->card_name, iface->device_id, iface->subdevice_id,
              iface->is_present, iface->is_internal,
@@ -218,7 +218,7 @@ static void* buffer_generic(const snd_pcm_channel_area_t* area,
 //
 // Device discovery
 //
-static void fill_audio_interface_info(sc_settings* settings) {
+static void fill_audio_interface_info(ScSettings* settings) {
     int err;
     int card_id, last_card_id = -1;
     char str[64];
@@ -346,7 +346,7 @@ static bool contains_substring_ci(const char* haystack, const char* needle) {
     return false;
 }
 
-static alsa_device_info* find_matching_device(audio_interface* config) {
+static AlsaDeviceInfo* find_matching_device(AudioInterface* config) {
     int card_num = -1;
     if (sscanf(config->device.c_str(), "hw:%d", &card_num) == 1 ||
         sscanf(config->device.c_str(), "plughw:%d", &card_num) == 1) {
@@ -374,8 +374,8 @@ static alsa_device_info* find_matching_device(audio_interface* config) {
 //
 // PCM open helper
 //
-static int pcm_open(alsa_pcm* alsa, const char* device_name,
-                    snd_pcm_stream_t stream, alsa_device_info* device_info,
+static int pcm_open(AlsaPcm* alsa, const char* device_name,
+                    snd_pcm_stream_t stream, AlsaDeviceInfo* device_info,
                     uint8_t num_channels, snd_pcm_format_t* out_format = nullptr) {
     int err, dir;
     snd_pcm_hw_params_t* hw_params;
@@ -438,7 +438,7 @@ AlsaAudio::~AlsaAudio() {
     pcm_close(&playback_);
 }
 
-void AlsaAudio::pcm_close(alsa_pcm* pcm) {
+void AlsaAudio::pcm_close(AlsaPcm* pcm) {
     if (pcm->pcm) {
         snd_pcm_close(pcm->pcm);
         pcm->pcm = nullptr;
@@ -449,7 +449,7 @@ void AlsaAudio::pcm_close(alsa_pcm* pcm) {
     }
 }
 
-ssize_t AlsaAudio::pcm_pollfds(alsa_pcm* pcm, struct pollfd* pe, size_t z) {
+ssize_t AlsaAudio::pcm_pollfds(AlsaPcm* pcm, struct pollfd* pe, size_t z) {
     int count = snd_pcm_poll_descriptors_count(pcm->pcm);
     auto ucount = static_cast<unsigned int>(count);
     if (ucount > z) return -1;
@@ -467,7 +467,7 @@ ssize_t AlsaAudio::pcm_pollfds(alsa_pcm* pcm, struct pollfd* pe, size_t z) {
     return count;
 }
 
-int AlsaAudio::pcm_revents(alsa_pcm* pcm, unsigned short* revents) {
+int AlsaAudio::pcm_revents(AlsaPcm* pcm, unsigned short* revents) {
     int r = snd_pcm_poll_descriptors_revents(pcm->pcm, pcm->pe, static_cast<unsigned int>(pcm->pe_count), revents);
     if (r < 0) {
         alsa_error("poll_descriptors_revents", r);
@@ -565,7 +565,7 @@ int AlsaAudio::process_audio() {
         }
     }
 
-    audio_capture capture_info = {};
+    AudioCapture capture_info = {};
     if (capture_valid && capture_pcm) {
         capture_info.buffer = capture_pcm;
         capture_info.format = static_cast<int>(capture_format_);
@@ -610,7 +610,7 @@ int AlsaAudio::process_audio() {
         if (config_ && config_->supports_cv) {
             // Use query API for audio engine output state
             auto deck_state = audio_engine_->get_deck_state(1);  // Scratch deck = 1
-            cv_controller_input cv_input = {
+            CvControllerInput cv_input = {
                 .pitch = deck_state.pitch,
                 .encoder_angle = engine_->scratch_deck.encoder_state.angle,
                 .sample_position = deck_state.position,
@@ -673,11 +673,11 @@ void AlsaAudio::reset_loop(int deck) {
     audio_engine_->reset_loop(deck);
 }
 
-track* AlsaAudio::get_loop_track(int deck) {
+Track* AlsaAudio::get_loop_track(int deck) {
     return audio_engine_->get_loop_track(deck);
 }
 
-track* AlsaAudio::peek_loop_track(int deck) {
+Track* AlsaAudio::peek_loop_track(int deck) {
     return audio_engine_->peek_loop_track(deck);
 }
 
@@ -697,7 +697,7 @@ double AlsaAudio::get_volume(int deck) const {
     return audio_engine_->get_volume(deck);
 }
 
-bool AlsaAudio::setup(alsa_device_info* device_info, audio_interface* config, int num_channels, sc_settings* settings) {
+bool AlsaAudio::setup(AlsaDeviceInfo* device_info, AudioInterface* config, int num_channels, ScSettings* settings) {
     print_alsa_device_info(device_info);
 
     bool needs_plughw = !device_info->supports_48k_samplerate;
@@ -760,13 +760,13 @@ bool AlsaAudio::setup(alsa_device_info* device_info, audio_interface* config, in
 //
 // Factory function
 //
-std::unique_ptr<AudioHardware> alsa_create(sc1000* engine, sc_settings* settings) {
+std::unique_ptr<AudioHardware> alsa_create(Sc1000* engine, ScSettings* settings) {
     LOG_INFO("ALSA init starting");
     sleep(settings->audio_init_delay);
     fill_audio_interface_info(settings);
 
     for (auto& config : settings->audio_interfaces) {
-        alsa_device_info* device = find_matching_device(&config);
+        AlsaDeviceInfo* device = find_matching_device(&config);
         if (device) {
             LOG_INFO("Matched config '%s' to device %s", config.name.c_str(), config.device.c_str());
             auto alsa = std::make_unique<AlsaAudio>(engine);

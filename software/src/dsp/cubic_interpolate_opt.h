@@ -56,7 +56,7 @@ struct CubicSampleWindow {
     bool valid;                   // True if direct access possible
 };
 
-inline CubicSampleWindow get_cubic_sample_window(struct track* tr, int center_sample, int tr_len) {
+inline CubicSampleWindow get_cubic_sample_window(Track* tr, int center_sample, int tr_len) {
     CubicSampleWindow w;
     w.valid = false;
 
@@ -193,7 +193,7 @@ inline CubicResult cubic_interpolate_direct(const signed short* samples, float f
 //
 // Slow path: collect samples through get_sample() for boundary cases
 //
-inline CubicResult cubic_interpolate_slow(struct track* tr, int center_sample, int tr_len, float frac) {
+inline CubicResult cubic_interpolate_slow(Track* tr, int center_sample, int tr_len, float frac) {
     int start = center_sample - CUBIC_OPT_CENTER_OFFSET;
 
     float samples[8];  // 4 stereo pairs
@@ -245,7 +245,7 @@ inline CubicResult cubic_interpolate_slow(struct track* tr, int center_sample, i
 // Main optimized interpolation function for one deck
 //
 inline CubicResult cubic_interpolate_track_opt(
-    struct track* tr,
+    Track* tr,
     double sample_pos,
     int tr_len)
 {
@@ -279,8 +279,8 @@ struct DualDeckCubicResultOpt {
 };
 
 inline DualDeckCubicResultOpt cubic_interpolate_dual_deck_opt(
-    struct track* tr1, double sample_pos1, int tr_len1,
-    struct track* tr2, double sample_pos2, int tr_len2)
+    Track* tr1, double sample_pos1, int tr_len1,
+    Track* tr2, double sample_pos2, int tr_len2)
 {
     auto res1 = cubic_interpolate_track_opt(tr1, sample_pos1, tr_len1);
     auto res2 = cubic_interpolate_track_opt(tr2, sample_pos2, tr_len2);

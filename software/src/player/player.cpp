@@ -37,7 +37,7 @@
 // C++ Member function implementations
 //
 
-void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings* settings)
+void Player::init(unsigned int sample_rate, Track* tr, struct ScSettings* settings)
 {
 	assert(tr != nullptr);
 	assert(sample_rate != 0);
@@ -54,15 +54,15 @@ void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings
 	stopped = false;
 }
 
-void player::clear()
+void Player::clear()
 {
 	spin_clear(&lock);
 	track_release(track);
 }
 
-void player::set_track(struct track* tr)
+void Player::set_track(Track* tr)
 {
-	struct track* x;
+	Track* x;
 	assert(tr != nullptr);
 	assert(tr->refcount > 0);
 	spin_lock(&lock); /* Synchronise with the playback thread */

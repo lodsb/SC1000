@@ -26,7 +26,7 @@ namespace control {
 //
 // InputState - Encapsulates global input modifier state
 //
-// Replaces the static ActionState members. Owned by sc1000.
+// Replaces the static ActionState members. Owned by Sc1000.
 // Only accessed from input thread, so no synchronization needed.
 //
 

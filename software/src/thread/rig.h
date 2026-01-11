@@ -29,9 +29,9 @@
  * The rig handles non-realtime I/O operations (track importing).
  * It runs the main event loop and manages file descriptor polling.
  */
-struct rig {
+struct Rig {
     int event[2];                       // pipe to wake up service thread
-    std::vector<track*> importing_tracks;
+    std::vector<Track*> importing_tracks;
     pthread_mutex_t lock;
 
     // Initialize the rig (creates event pipe, initializes mutex)
@@ -51,12 +51,12 @@ struct rig {
     void release_lock();
 
     // Track import management
-    void post_track(struct track* t);
-    void remove_track(struct track* t);
+    void post_track(Track* t);
+    void remove_track(Track* t);
 
 private:
     int post_event(char e);
 };
 
 // Global rig instance (defined in rig.cpp)
-extern struct rig g_rig;
+extern struct Rig g_rig;

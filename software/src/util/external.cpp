@@ -208,12 +208,12 @@ fail:
     return -1;
 }
 
-void rb_reset(struct rb* rb)
+void rb_reset(struct Rb* rb)
 {
     rb->len = 0;
 }
 
-bool rb_is_full(const struct rb* rb)
+bool rb_is_full(const struct Rb* rb)
 {
     return (rb->len == sizeof(rb->buf));
 }
@@ -224,7 +224,7 @@ bool rb_is_full(const struct rb* rb)
  *
  * Return: -1 on error, 0 on EOF, otherwise the number of bytes added
  */
-static ssize_t top_up(struct rb* rb, int fd)
+static ssize_t top_up(struct Rb* rb, int fd)
 {
     size_t remain;
     ssize_t z;
@@ -248,7 +248,7 @@ static ssize_t top_up(struct rb* rb, int fd)
  *    otherwise string length (incl. terminator)
  * Post: if return is > 0, q points to alloc'd string
  */
-static ssize_t pop(struct rb* rb, char** q)
+static ssize_t pop(struct Rb* rb, char** q)
 {
     const char* x;
     char* s;
@@ -291,7 +291,7 @@ static ssize_t pop(struct rb* rb, char** q)
  * Return: 0 on EOF, or -1 on error
  * Post: if -1 is returned, errno is set accordingly
  */
-ssize_t get_line(int fd, struct rb* rb, char** string)
+ssize_t get_line(int fd, struct Rb* rb, char** string)
 {
     ssize_t y, z;
 

@@ -29,7 +29,7 @@
 #include "sc_input.h"
 #include <memory>
 
-struct sc_settings;
+struct ScSettings;
 
 //
 // Abstract audio hardware interface
@@ -52,8 +52,8 @@ public:
     virtual bool has_loop(int deck) const = 0;
     virtual bool has_capture() const = 0;
     virtual void reset_loop(int deck) = 0;
-    virtual struct track* get_loop_track(int deck) = 0;
-    virtual struct track* peek_loop_track(int deck) = 0;
+    virtual Track* get_loop_track(int deck) = 0;
+    virtual Track* peek_loop_track(int deck) = 0;
 
     // Query API (reads audio engine output state)
     virtual sc::audio::DeckProcessingState get_deck_state(int deck) const = 0;
@@ -62,12 +62,12 @@ public:
     virtual double get_volume(int deck) const = 0;
 };
 
-struct sc1000
+struct Sc1000
 {
-    struct deck scratch_deck;
-    struct deck beat_deck;
+    struct Deck scratch_deck;
+    struct Deck beat_deck;
 
-    std::unique_ptr<sc_settings> settings;
+    std::unique_ptr<ScSettings> settings;
 
     // Input mappings (GPIO and MIDI) with indexed lookup
     sc::control::MappingRegistry mappings;
@@ -83,7 +83,7 @@ struct sc1000
     bool fault = false;
 
     // Setup and lifecycle
-    void setup(struct rt* rt, const char* root_path);
+    void setup(struct Rt* rt, const char* root_path);
     void load_sample_folders();
     void clear();
 

@@ -51,7 +51,7 @@
 
 // Track registry - maps path to track pointer for O(1) lookup
 // Replaces the old intrusive linked list
-static std::unordered_map<std::string, track*> g_track_registry;
+static std::unordered_map<std::string, Track*> g_track_registry;
 
 static bool use_mlock = false;
 
@@ -60,7 +60,7 @@ static bool use_mlock = false;
  * continuous checks for NULL throughout the code
  */
 
-static struct track empty = {};
+static Track empty = {};
 
 // Initialize empty track at startup
 static struct EmptyTrackInit {
@@ -85,7 +85,7 @@ static struct EmptyTrackInit {
  * allocated
  */
 
-void track_use_mlock(void)
+void track_use_mlock()
 {
 	use_mlock = true;
 }
@@ -96,9 +96,9 @@ void track_use_mlock(void)
  * Return: -1 if memory could not be allocated, otherwise 0
  */
 
-static int more_space(struct track* tr)
+static int more_space(Track* tr)
 {
-	struct track_block* block;
+	TrackBlock* block;
 
 	rt_not_allowed();
 
@@ -108,14 +108,14 @@ static int more_space(struct track* tr)
 		return -1;
 	}
 
-	block = static_cast<struct track_block*>(malloc(sizeof(struct track_block)));
+	block = static_cast<TrackBlock*>(malloc(sizeof(TrackBlock)));
 	if (block == nullptr)
 	{
 		perror("malloc");
 		return -1;
 	}
 
-	if (use_mlock && mlock(block, sizeof(struct track_block)) == -1)
+	if (use_mlock && mlock(block, sizeof(TrackBlock)) == -1)
 	{
 		perror("mlock");
 		free(block);
@@ -140,7 +140,7 @@ static int more_space(struct track* tr)
  * Post: len contains the length of the buffer, in bytes
  */
 
-static void* access_pcm(struct track* tr, size_t* len)
+static void* access_pcm(Track* tr, size_t* len)
 {
 	unsigned int block;
 	size_t fill;
@@ -167,7 +167,7 @@ static void* access_pcm(struct track* tr, size_t* len)
  * placed in the buffer.
  */
 
-static void commit_pcm_samples(struct track* tr, unsigned int samples)
+static void commit_pcm_samples(Track* tr, unsigned int samples)
 {
 	unsigned int fill = tr->length % TRACK_BLOCK_SAMPLES;
 
@@ -186,7 +186,7 @@ static void commit_pcm_samples(struct track* tr, unsigned int samples)
  * and leaves the residual in the buffer ready for next time.
  */
 
-static void commit(struct track* tr, size_t len)
+static void commit(Track* tr, size_t len)
 {
 	tr->bytes += len;
 	commit_pcm_samples(tr, static_cast<unsigned int>(tr->bytes / SAMPLE - tr->length));
@@ -200,7 +200,7 @@ static void commit(struct track* tr, size_t len)
  * Post: track is importing
  */
 
-static int track_init(struct track* t, const char* importer, const char* path)
+static int track_init(Track* t, const char* importer, const char* path)
 {
 	pid_t pid;
 
@@ -246,7 +246,7 @@ static int track_init(struct track* t, const char* importer, const char* path)
  * Pre: track is initialised
  */
 
-static void track_clear(struct track* tr)
+static void track_clear(Track* tr)
 {
 	assert(tr->pid == 0);
 
@@ -267,12 +267,12 @@ static void track_clear(struct track* tr)
  * Return: pointer, or NULL if no such track exists
  */
 
-static struct track* track_get_again(const char* importer, const char* path)
+static Track* track_get_again(const char* importer, const char* path)
 {
 	// O(1) lookup in the track registry
 	auto it = g_track_registry.find(path);
 	if (it != g_track_registry.end()) {
-		struct track* t = it->second;
+		Track* t = it->second;
 		// Verify importer matches (should always be the same in practice)
 		if (t->importer == importer) {
 			track_acquire(t);
@@ -289,9 +289,9 @@ static struct track* track_get_again(const char* importer, const char* path)
  * Return: pointer, or NULL if not enough resources
  */
 
-struct track* track_acquire_by_import(const char* importer, const char* path)
+Track* track_acquire_by_import(const char* importer, const char* path)
 {
-	struct track* t;
+	Track* t;
 
 	t = track_get_again(importer, path);
 	if (t != nullptr)
@@ -299,7 +299,7 @@ struct track* track_acquire_by_import(const char* importer, const char* path)
 		return t;
 	}
 
-	t = static_cast<struct track*>(malloc(sizeof *t));
+	t = static_cast<Track*>(malloc(sizeof *t));
 	if (t == nullptr)
 	{
 		perror("malloc");
@@ -323,7 +323,7 @@ struct track* track_acquire_by_import(const char* importer, const char* path)
  * Return: pointer, not NULL
  */
 
-struct track* track_acquire_empty(void)
+Track* track_acquire_empty()
 {
 	empty.refcount++;
 	return &empty;
@@ -337,9 +337,9 @@ struct track* track_acquire_empty(void)
  *
  * Return: pointer to track, or NULL on failure
  */
-struct track* track_acquire_for_recording(int sample_rate)
+Track* track_acquire_for_recording(int sample_rate)
 {
-	struct track* t = static_cast<struct track*>(malloc(sizeof *t));
+	Track* t = static_cast<Track*>(malloc(sizeof *t));
 	if (t == nullptr)
 	{
 		perror("malloc");
@@ -367,7 +367,7 @@ struct track* track_acquire_for_recording(int sample_rate)
  *
  * Return: 0 on success, -1 if allocation failed
  */
-int track::ensure_space(unsigned int samples)
+int Track::ensure_space(unsigned int samples)
 {
 	unsigned int blocks_needed = (samples + TRACK_BLOCK_SAMPLES - 1) / TRACK_BLOCK_SAMPLES;
 
@@ -386,13 +386,13 @@ int track::ensure_space(unsigned int samples)
  * Set track length (for direct recording)
  * Uses atomic increment for thread safety
  */
-void track::set_length(unsigned int samples)
+void Track::set_length(unsigned int samples)
 {
 	__sync_lock_test_and_set(&length, samples);
 	bytes = samples * SAMPLE;
 }
 
-void track_acquire(struct track* t)
+void track_acquire(Track* t)
 {
 	t->refcount++;
 }
@@ -401,7 +401,7 @@ void track_acquire(struct track* t)
  * Request premature termination of an import operation
  */
 
-static void terminate(struct track* t)
+static void terminate(Track* t)
 {
 	assert(t->pid != 0);
 
@@ -417,7 +417,7 @@ static void terminate(struct track* t)
  * Finish use of a track object
  */
 
-void track_release(struct track* t)
+void track_release(Track* t)
 {
 	t->refcount--;
 
@@ -445,7 +445,7 @@ void track_release(struct track* t)
  * Post: *pe contains poll entry
  */
 
-void track::pollfd(struct pollfd* poll_entry)
+void Track::pollfd(struct pollfd* poll_entry)
 {
 	assert(pid != 0);
 
@@ -462,7 +462,7 @@ void track::pollfd(struct pollfd* poll_entry)
  * Return: -1 on completion, otherwise zero
  */
 
-static int read_from_pipe(struct track* tr)
+static int read_from_pipe(Track* tr)
 {
 	for (;;)
 	{
@@ -508,7 +508,7 @@ static int read_from_pipe(struct track* tr)
  * Post: track is not importing
  */
 
-static void stop_import(struct track* t)
+static void stop_import(Track* t)
 {
 	int status;
 
@@ -547,7 +547,7 @@ static void stop_import(struct track* t)
  * Return: true if import has completed, otherwise false
  */
 
-void track::handle()
+void Track::handle()
 {
 	assert(pid != 0);
 

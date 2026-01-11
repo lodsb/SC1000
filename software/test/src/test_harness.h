@@ -30,13 +30,13 @@ public:
     ~TestHarness();
 
     // Access to components
-    sc1000& engine() { return engine_; }
+    Sc1000& engine() { return engine_; }
     TestAudioBackend& audio() { return *audio_; }
     InputSequence& sequence() { return sequence_; }
     TestInputProvider& input() { return *input_; }
 
     // Load a test track onto a deck
-    void load_track(int deck, struct track* t);
+    void load_track(int deck, Track* t);
 
     // Set up player input state at a point in time
     // (Simulates what sc_input normally does)
@@ -60,9 +60,9 @@ public:
     bool run_assertions(const std::vector<AssertFunc>& assertions) const;
 
 private:
-    sc1000 engine_;
+    Sc1000 engine_;
     TestAudioBackend* audio_ = nullptr;  // Owned by engine_.audio unique_ptr
-    std::unique_ptr<sc_settings> settings_;
+    std::unique_ptr<ScSettings> settings_;
 
     InputSequence sequence_;
     std::unique_ptr<TestInputProvider> input_;

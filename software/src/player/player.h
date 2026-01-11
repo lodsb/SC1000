@@ -39,10 +39,10 @@ enum class PlaybackMode {
 // How many samples each beep stage lasts
 #define BEEPSPEED 4800
 
-struct track;
-struct sc_settings;
+struct Track;
+struct ScSettings;
 
-struct player
+struct Player
 {
     // Timing
     double sample_dt;
@@ -51,7 +51,7 @@ struct player
     spin lock;
 
     // Current track
-    struct track* track;
+    Track* track;
 
     // Unified input state - all input fields in one place
     // Audio engine reads this at buffer boundaries
@@ -63,9 +63,9 @@ struct player
     bool stopped = false;       // Motor stopped (braking)
 
     // C++ member functions
-    void init(unsigned int sample_rate, struct track* track, struct sc_settings* settings);
+    void init(unsigned int sample_rate, Track* track, struct ScSettings* settings);
     void clear();
-    void set_track(struct track* track);
+    void set_track(Track* track);
 
     // Centralized state reset for track loading
     void reset_for_track_load();

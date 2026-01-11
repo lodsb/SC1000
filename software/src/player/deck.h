@@ -36,15 +36,15 @@ struct Playlist;
 typedef struct Playlist Playlist;
 #endif
 
-struct sc_settings;
-struct track;
-struct sc1000;
+struct ScSettings;
+struct Track;
+struct Sc1000;
 
-struct deck
+struct Deck
 {
    std::string importer;
 
-   struct player player;
+   struct Player player;
    Cues cues;
 
    // Punch-in point (nullopt = not punching)
@@ -64,29 +64,29 @@ struct deck
 
 #ifdef __cplusplus
    // C++ member functions
-   ~deck();  // Destructor defined in .cpp where Playlist is complete
-   int init(struct sc_settings* settings);
+   ~Deck();  // Destructor defined in .cpp where Playlist is complete
+   int init(struct ScSettings* settings);
    void clear();
-   bool is_locked(struct sc1000* engine) const;
-   void recue(struct sc1000* engine);
-   void clone(const deck& from, struct sc1000* engine);
+   bool is_locked(struct Sc1000* engine) const;
+   void recue(struct Sc1000* engine);
+   void clone(const Deck& from, struct Sc1000* engine);
    void unset_cue(unsigned int label);
-   void cue(unsigned int label, struct sc1000* engine);
-   void punch_in(unsigned int label, struct sc1000* engine);
-   void punch_out(struct sc1000* engine);
+   void cue(unsigned int label, struct Sc1000* engine);
+   void punch_in(unsigned int label, struct Sc1000* engine);
+   void punch_out(struct Sc1000* engine);
    void load_folder(const char* folder_name);
-   void next_file(struct sc1000* engine, struct sc_settings* settings);
-   void prev_file(struct sc1000* engine, struct sc_settings* settings);
-   void next_folder(struct sc1000* engine, struct sc_settings* settings);
-   void prev_folder(struct sc1000* engine, struct sc_settings* settings);
-   void random_file(struct sc1000* engine, struct sc_settings* settings);
-   void record(struct sc1000* engine);
-   bool recall_loop(struct sc_settings* settings);
+   void next_file(struct Sc1000* engine, struct ScSettings* settings);
+   void prev_file(struct Sc1000* engine, struct ScSettings* settings);
+   void next_folder(struct Sc1000* engine, struct ScSettings* settings);
+   void prev_folder(struct Sc1000* engine, struct ScSettings* settings);
+   void random_file(struct Sc1000* engine, struct ScSettings* settings);
+   void record(struct Sc1000* engine);
+   bool recall_loop(struct ScSettings* settings);
    bool has_loop() const;
 
    // Loop navigation helpers
    bool is_at_loop() const { return nav_state.is_at_loop(); }
-   void goto_loop(struct sc1000* engine, struct sc_settings* settings);
+   void goto_loop(struct Sc1000* engine, struct ScSettings* settings);
 #endif
 };
 

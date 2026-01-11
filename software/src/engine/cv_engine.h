@@ -26,7 +26,7 @@
 
 //
 // CV Engine Configuration
-// These could be moved to sc_settings.json if runtime configurability is needed
+// These could be moved to ScSettings.json if runtime configurability is needed
 //
 
 // Gate threshold (fader position where gates trigger)
@@ -49,7 +49,7 @@
 // CV State Structure
 //
 
-struct cv_state {
+struct CvState {
     // Processed CV values (ready for output)
     struct {
         float speed;          // -1.0 to +1.0 (clamped, filtered)
@@ -101,7 +101,7 @@ struct cv_state {
 //
 // Raw controller input (passed from audio thread)
 //
-struct cv_controller_input {
+struct CvControllerInput {
     // Platter
     double pitch;              // Raw pitch value (can be any value, will be clamped)
     int encoder_angle;         // Raw 12-bit encoder (0-4095)
@@ -121,17 +121,17 @@ struct cv_controller_input {
 //
 
 // Initialize CV engine
-void cv_engine_init(struct cv_state* state, int sample_rate);
+void cv_engine_init(struct CvState* state, int sample_rate);
 
 // Cache channel mappings from audio interface (call once after init)
-void cv_engine_set_mapping(struct cv_state* state, struct audio_interface* iface);
+void cv_engine_set_mapping(struct CvState* state, struct AudioInterface* iface);
 
 // Update all CV inputs from controller state (call once per audio block)
-void cv_engine_update(struct cv_state* state, const struct cv_controller_input* input);
+void cv_engine_update(struct CvState* state, const struct CvControllerInput* input);
 
 // Process one block - generates CV output samples (S16 version)
 void cv_engine_process(
-    struct cv_state* state,
+    struct CvState* state,
     int16_t* buffer,
     int num_channels,
     unsigned long frames
@@ -140,7 +140,7 @@ void cv_engine_process(
 // Process one block - generates CV output samples (format-aware version)
 // format: ALSA format (SND_PCM_FORMAT_S16_LE, SND_PCM_FORMAT_S24_3LE, etc.)
 void cv_engine_process_format(
-    struct cv_state* state,
+    struct CvState* state,
     void* buffer,
     int num_channels,
     int format,

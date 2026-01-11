@@ -29,7 +29,7 @@
 /*
  * Add a deck to this controller, if possible
  */
-void controller_add_deck(Controller* c, struct deck* d)
+void controller_add_deck(Controller* c, struct Deck* d)
 {
     debug("%p adding deck %p", c, d);
 

@@ -25,8 +25,8 @@
 #include <sys/poll.h>
 #include <sys/types.h>
 
-struct deck;
-struct rt;
+struct Deck;
+struct Rt;
 
 /*
  * Controller - abstract base class for input controllers
@@ -51,7 +51,7 @@ public:
      * Add a deck to this controller
      * Return: 0 on success, -1 if deck could not be added
      */
-    virtual int add_deck(struct deck* d) = 0;
+    virtual int add_deck(struct Deck* d) = 0;
 
     /*
      * Get file descriptors for poll()
@@ -79,7 +79,7 @@ protected:
 };
 
 // Helper functions that work with Controller*
-void controller_add_deck(Controller* c, struct deck* d);
+void controller_add_deck(Controller* c, struct Deck* d);
 ssize_t controller_pollfds(Controller* c, struct pollfd* pe, size_t z);
 void controller_handle(Controller* c);
 void controller_clear(Controller* c);

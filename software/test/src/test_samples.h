@@ -24,7 +24,7 @@ namespace test {
 
 // Generate a pure sine wave
 // Returns a track that must be released with track_release()
-struct track* generate_sine(
+Track* generate_sine(
     double frequency,           // Hz
     int sample_rate,           // Samples per second
     unsigned int length_samples,  // Total samples
@@ -32,7 +32,7 @@ struct track* generate_sine(
 );
 
 // Generate a frequency sweep (chirp)
-struct track* generate_sweep(
+Track* generate_sweep(
     double start_freq,         // Start frequency in Hz
     double end_freq,           // End frequency in Hz
     int sample_rate,
@@ -41,7 +41,7 @@ struct track* generate_sweep(
 );
 
 // Generate white noise
-struct track* generate_noise(
+Track* generate_noise(
     int sample_rate,
     unsigned int length_samples,
     double amplitude = 0.9,
@@ -49,7 +49,7 @@ struct track* generate_noise(
 );
 
 // Generate impulse train (clicks at regular intervals)
-struct track* generate_impulses(
+Track* generate_impulses(
     int sample_rate,
     unsigned int length_samples,
     double interval_seconds,   // Time between impulses
@@ -57,13 +57,13 @@ struct track* generate_impulses(
 );
 
 // Generate silence
-struct track* generate_silence(
+Track* generate_silence(
     int sample_rate,
     unsigned int length_samples
 );
 
 // Generate a track from raw float samples (normalized -1 to 1, stereo interleaved)
-struct track* generate_from_buffer(
+Track* generate_from_buffer(
     const std::vector<float>& buffer,
     int sample_rate
 );

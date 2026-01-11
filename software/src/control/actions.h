@@ -24,9 +24,9 @@
 
 #include "../core/sc_input.h"
 
-struct deck;
-struct sc1000;
-struct sc_settings;
+struct Deck;
+struct Sc1000;
+struct ScSettings;
 
 namespace sc {
 namespace control {
@@ -34,14 +34,14 @@ namespace control {
 class InputState;  // Forward declaration
 
 // Execute an action on a specific deck
-void perform_action_for_deck(deck* d, const mapping* map,
+void perform_action_for_deck(Deck* d, const Mapping* map,
                              const unsigned char midi_buffer[3],
-                             sc1000* engine, sc_settings* settings,
+                             Sc1000* engine, ScSettings* settings,
                              InputState& input_state);
 
 // Dispatch an input event to the appropriate deck
-void dispatch_event(const mapping* map, const unsigned char midi_buffer[3],
-                    sc1000* engine, sc_settings* settings,
+void dispatch_event(const Mapping* map, const unsigned char midi_buffer[3],
+                    Sc1000* engine, ScSettings* settings,
                     InputState& input_state);
 
 } // namespace control

@@ -119,7 +119,7 @@ bool AudioEngine<InterpPolicy, FormatPolicy>::start_recording(int deck, double p
     }
 
     // For punch-in, sync write position to current playback position
-    loop_buffer* lb = &loop_[deck];
+    LoopBuffer* lb = &loop_[deck];
     if (loop_buffer_has_loop(lb)) {
         if (playback_position < 0) playback_position = 0;
         auto pos_samples = static_cast<unsigned int>(playback_position * lb->sample_rate);
@@ -145,17 +145,17 @@ void AudioEngine<InterpPolicy, FormatPolicy>::stop_recording(int deck) {
 template<typename InterpPolicy, typename FormatPolicy>
 bool AudioEngine<InterpPolicy, FormatPolicy>::is_recording(int deck) const {
     if (deck < 0 || deck > 1) return false;
-    return loop_buffer_is_recording(const_cast<loop_buffer*>(&loop_[deck]));
+    return loop_buffer_is_recording(const_cast<LoopBuffer*>(&loop_[deck]));
 }
 
 template<typename InterpPolicy, typename FormatPolicy>
-struct track* AudioEngine<InterpPolicy, FormatPolicy>::get_loop_track(int deck) {
+Track* AudioEngine<InterpPolicy, FormatPolicy>::get_loop_track(int deck) {
     if (deck < 0 || deck > 1) return nullptr;
     return loop_buffer_get_track(&loop_[deck]);
 }
 
 template<typename InterpPolicy, typename FormatPolicy>
-struct track* AudioEngine<InterpPolicy, FormatPolicy>::peek_loop_track(int deck) {
+Track* AudioEngine<InterpPolicy, FormatPolicy>::peek_loop_track(int deck) {
     if (deck < 0 || deck > 1) return nullptr;
     return loop_[deck].track;
 }
@@ -163,7 +163,7 @@ struct track* AudioEngine<InterpPolicy, FormatPolicy>::peek_loop_track(int deck)
 template<typename InterpPolicy, typename FormatPolicy>
 bool AudioEngine<InterpPolicy, FormatPolicy>::has_loop(int deck) const {
     if (deck < 0 || deck > 1) return false;
-    return loop_buffer_has_loop(const_cast<loop_buffer*>(&loop_[deck]));
+    return loop_buffer_has_loop(const_cast<LoopBuffer*>(&loop_[deck]));
 }
 
 template<typename InterpPolicy, typename FormatPolicy>
@@ -199,10 +199,10 @@ void AudioEngine<InterpPolicy, FormatPolicy>::reset_loop(int deck) {
 
 template<typename InterpPolicy, typename FormatPolicy>
 void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
-    struct player* pl,
+    struct Player* pl,
     DeckProcessingState* state,
     unsigned long samples,
-    const struct sc_settings* settings,
+    const struct ScSettings* settings,
     double* target_volume,
     double* filtered_pitch)
 {
@@ -304,14 +304,14 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
 
 template<typename InterpPolicy, typename FormatPolicy>
 void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
-    sc1000* engine,
-    audio_capture* capture,
+    Sc1000* engine,
+    AudioCapture* capture,
     void* playback,
     int channels,
     unsigned long frames)
 {
-    struct player* pl1 = &engine->beat_deck.player;
-    struct player* pl2 = &engine->scratch_deck.player;
+    struct Player* pl1 = &engine->beat_deck.player;
+    struct Player* pl2 = &engine->scratch_deck.player;
 
     DeckProcessingState* state1 = &deck_state_[0];
     DeckProcessingState* state2 = &deck_state_[1];
@@ -345,8 +345,8 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     // Select track for each player based on source
     bool use_loop_1 = (in1.source == sc::PlaybackSource::Loop) && has_loop(0);
     bool use_loop_2 = (in2.source == sc::PlaybackSource::Loop) && has_loop(1);
-    struct track* tr1 = use_loop_1 ? peek_loop_track(0) : pl1->track;
-    struct track* tr2 = use_loop_2 ? peek_loop_track(1) : pl2->track;
+    Track* tr1 = use_loop_1 ? peek_loop_track(0) : pl1->track;
+    Track* tr2 = use_loop_2 ? peek_loop_track(1) : pl2->track;
 
     const int tr_1_len = static_cast<int>(tr1->length);
     const int tr_2_len = static_cast<int>(tr2->length);
@@ -504,8 +504,8 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
 
 template<typename InterpPolicy, typename FormatPolicy>
 void AudioEngine<InterpPolicy, FormatPolicy>::process(
-    sc1000* engine,
-    audio_capture* capture,
+    Sc1000* engine,
+    AudioCapture* capture,
     void* playback,
     int playback_channels,
     unsigned long frames)
@@ -612,8 +612,8 @@ static sc::audio::AudioEngineBase* get_legacy_engine() {
 }
 
 void audio_engine_process(
-    struct sc1000* engine,
-    struct audio_capture* capture,
+    struct Sc1000* engine,
+    struct AudioCapture* capture,
     int16_t* playback,
     int playback_channels,
     unsigned long frames)
@@ -626,7 +626,7 @@ void audio_engine_process(
     sc::audio::g_dsp_stats = stats;
 }
 
-void audio_engine_get_stats(struct dsp_stats* stats) {
+void audio_engine_get_stats(struct DspStats* stats) {
     stats->load_percent = sc::audio::g_dsp_stats.load_percent;
     stats->load_peak = sc::audio::g_dsp_stats.load_peak;
     stats->process_time_us = sc::audio::g_dsp_stats.process_time_us;
@@ -640,7 +640,7 @@ void audio_engine_update_global_stats(sc::audio::AudioEngineBase* engine) {
     }
 }
 
-void audio_engine_reset_peak(void) {
+void audio_engine_reset_peak() {
     sc::audio::g_dsp_stats.load_peak = 0.0;
     sc::audio::g_dsp_stats.xruns = 0;
 
@@ -655,6 +655,6 @@ void audio_engine_set_interpolation(interpolation_mode_t mode) {
     g_legacy_engine.reset();
 }
 
-interpolation_mode_t audio_engine_get_interpolation(void) {
+interpolation_mode_t audio_engine_get_interpolation() {
     return g_interpolation_mode;
 }

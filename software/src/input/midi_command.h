@@ -27,7 +27,7 @@
 // MidiCommand - Type-safe MIDI message wrapper
 //
 // Encapsulates a 3-byte MIDI message with semantic helpers.
-// Used for mapping lookups and action dispatch.
+// Used for Mapping lookups and action dispatch.
 //
 
 struct MidiCommand {

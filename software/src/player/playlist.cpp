@@ -61,7 +61,7 @@ bool Playlist::load(const char* base_folder_path)
 			continue;
 		}
 
-		sc_folder folder;
+		ScFolder folder;
 		folder.full_path = subfolder_path;
 
 		for (int f = 0; f < num_files; f++) {
@@ -72,7 +72,7 @@ bool Playlist::load(const char* base_folder_path)
 				continue;
 			}
 
-			sc_file file;
+			ScFile file;
 			file.full_path = subfolder_path + "/" + file_list[f]->d_name;
 			file.global_index = static_cast<unsigned int>(total_files_);
 			total_files_++;
@@ -104,7 +104,7 @@ bool Playlist::load(const char* base_folder_path)
 	return total_files_ > 0;
 }
 
-sc_file* Playlist::get_file_at_index(unsigned int index)
+ScFile* Playlist::get_file_at_index(unsigned int index)
 {
 	if (index >= all_files_.size()) {
 		return nullptr;
@@ -112,7 +112,7 @@ sc_file* Playlist::get_file_at_index(unsigned int index)
 	return all_files_[index];
 }
 
-sc_folder* Playlist::get_folder(size_t folder_idx)
+ScFolder* Playlist::get_folder(size_t folder_idx)
 {
 	if (folder_idx >= folders_.size()) {
 		return nullptr;
@@ -120,7 +120,7 @@ sc_folder* Playlist::get_folder(size_t folder_idx)
 	return &folders_[folder_idx];
 }
 
-sc_file* Playlist::get_file(size_t folder_idx, size_t file_idx)
+ScFile* Playlist::get_file(size_t folder_idx, size_t file_idx)
 {
 	if (folder_idx >= folders_.size()) {
 		return nullptr;

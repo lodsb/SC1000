@@ -32,7 +32,7 @@
 #include <cstring>
 #include <cstdio>
 
-void loop_buffer_init(struct loop_buffer* lb, int sample_rate, int max_seconds)
+void loop_buffer_init(struct LoopBuffer* lb, int sample_rate, int max_seconds)
 {
     lb->write_pos = 0;
     lb->max_samples = static_cast<unsigned int>(sample_rate * max_seconds);
@@ -49,23 +49,23 @@ void loop_buffer_init(struct loop_buffer* lb, int sample_rate, int max_seconds)
         // Pre-allocate all the space we'll need
         if (lb->track->ensure_space(lb->max_samples) < 0)
         {
-            fprintf(stderr, "loop_buffer: failed to pre-allocate %u samples\n", lb->max_samples);
+            fprintf(stderr, "LoopBuffer: failed to pre-allocate %u samples\n", lb->max_samples);
             track_release(lb->track);
             lb->track = nullptr;
         }
         else
         {
-            printf("loop_buffer: pre-allocated %u samples (%.1f sec)\n",
+            printf("LoopBuffer: pre-allocated %u samples (%.1f sec)\n",
                    lb->max_samples, static_cast<float>(lb->max_samples) / sample_rate);
         }
     }
     else
     {
-        fprintf(stderr, "loop_buffer: failed to create track\n");
+        fprintf(stderr, "LoopBuffer: failed to create track\n");
     }
 }
 
-void loop_buffer_clear(struct loop_buffer* lb)
+void loop_buffer_clear(struct LoopBuffer* lb)
 {
     if (lb->track)
     {
@@ -79,7 +79,7 @@ void loop_buffer_clear(struct loop_buffer* lb)
     lb->max_reached = false;
 }
 
-bool loop_buffer_start(struct loop_buffer* lb)
+bool loop_buffer_start(struct LoopBuffer* lb)
 {
     if (lb->recording)
     {
@@ -88,7 +88,7 @@ bool loop_buffer_start(struct loop_buffer* lb)
 
     if (!lb->track)
     {
-        fprintf(stderr, "loop_buffer: no track available (not pre-allocated)\n");
+        fprintf(stderr, "LoopBuffer: no track available (not pre-allocated)\n");
         return false;
     }
 
@@ -97,7 +97,7 @@ bool loop_buffer_start(struct loop_buffer* lb)
         // Punch-in mode: keep existing data, start overwriting from current write_pos
         lb->recording = true;
         lb->max_reached = false;
-        printf("loop_buffer: punch-in recording started at pos %u (loop length %u samples, %.2f sec)\n",
+        printf("LoopBuffer: punch-in recording started at pos %u (loop length %u samples, %.2f sec)\n",
                lb->write_pos, lb->loop_length,
                static_cast<float>(lb->loop_length) / lb->sample_rate);
         return true;
@@ -110,11 +110,11 @@ bool loop_buffer_start(struct loop_buffer* lb)
     lb->max_reached = false;
     lb->recording = true;
 
-    printf("loop_buffer: fresh recording started (max %u samples)\n", lb->max_samples);
+    printf("LoopBuffer: fresh recording started (max %u samples)\n", lb->max_samples);
     return true;
 }
 
-void loop_buffer_stop(struct loop_buffer* lb)
+void loop_buffer_stop(struct LoopBuffer* lb)
 {
     if (!lb->recording)
     {
@@ -131,18 +131,18 @@ void loop_buffer_stop(struct loop_buffer* lb)
             lb->loop_length = lb->write_pos;
             lb->length_locked = true;
             lb->track->set_length(lb->loop_length);
-            printf("loop_buffer: loop defined, %u samples (%.2f sec)\n",
+            printf("LoopBuffer: loop defined, %u samples (%.2f sec)\n",
                    lb->loop_length, static_cast<float>(lb->loop_length) / lb->sample_rate);
         }
         else
         {
-            printf("loop_buffer: recording stopped (empty)\n");
+            printf("LoopBuffer: recording stopped (empty)\n");
         }
     }
     else
     {
         // Punch-in complete
-        printf("loop_buffer: punch-in stopped at pos %u\n", lb->write_pos);
+        printf("LoopBuffer: punch-in stopped at pos %u\n", lb->write_pos);
     }
 }
 
@@ -156,7 +156,7 @@ static inline int16_t float_to_s16(float sample)
     return static_cast<int16_t>(clamped * 32767.0f);
 }
 
-unsigned int loop_buffer_write_float(struct loop_buffer* lb,
+unsigned int loop_buffer_write_float(struct LoopBuffer* lb,
                                      float left,
                                      float right)
 {
@@ -192,7 +192,7 @@ unsigned int loop_buffer_write_float(struct loop_buffer* lb,
             if (!lb->max_reached)
             {
                 lb->max_reached = true;
-                printf("loop_buffer: max length reached\n");
+                printf("LoopBuffer: max length reached\n");
             }
             return 0;
         }
@@ -212,7 +212,7 @@ unsigned int loop_buffer_write_float(struct loop_buffer* lb,
     return 1;
 }
 
-struct track* loop_buffer_get_track(struct loop_buffer* lb)
+Track* loop_buffer_get_track(struct LoopBuffer* lb)
 {
     if (!lb->track)
     {
@@ -230,22 +230,22 @@ struct track* loop_buffer_get_track(struct loop_buffer* lb)
     return lb->track;
 }
 
-bool loop_buffer_is_recording(struct loop_buffer* lb)
+bool loop_buffer_is_recording(struct LoopBuffer* lb)
 {
     return lb->recording;
 }
 
-bool loop_buffer_has_loop(struct loop_buffer* lb)
+bool loop_buffer_has_loop(struct LoopBuffer* lb)
 {
     return lb->length_locked && lb->loop_length > 0;
 }
 
-unsigned int loop_buffer_get_length(struct loop_buffer* lb)
+unsigned int loop_buffer_get_length(struct LoopBuffer* lb)
 {
     return lb->length_locked ? lb->loop_length : lb->write_pos;
 }
 
-void loop_buffer_reset(struct loop_buffer* lb)
+void loop_buffer_reset(struct LoopBuffer* lb)
 {
     // Stop recording if active
     if (lb->recording)
@@ -259,10 +259,10 @@ void loop_buffer_reset(struct loop_buffer* lb)
     lb->length_locked = false;
     lb->max_reached = false;
 
-    printf("loop_buffer: reset/erased\n");
+    printf("LoopBuffer: reset/erased\n");
 }
 
-void loop_buffer_set_position(struct loop_buffer* lb, unsigned int position_samples)
+void loop_buffer_set_position(struct LoopBuffer* lb, unsigned int position_samples)
 {
     if (!lb->length_locked || lb->loop_length == 0)
     {

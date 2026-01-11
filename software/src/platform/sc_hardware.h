@@ -24,7 +24,7 @@
 
 #include <memory>
 
-struct sc1000;
+struct Sc1000;
 
 namespace sc {
 namespace platform {
@@ -40,13 +40,13 @@ public:
     virtual ~HardwareInput() = default;
 
     // Lifecycle
-    virtual bool init(sc1000* engine) = 0;
+    virtual bool init(Sc1000* engine) = 0;
 
     // Called every input loop iteration
-    virtual void poll(sc1000* engine) = 0;
+    virtual void poll(Sc1000* engine) = 0;
 
     // Stats/debugging (called once per second)
-    virtual void log_stats(sc1000* engine) = 0;
+    virtual void log_stats(Sc1000* engine) = 0;
 
     // Capability queries (override to advertise features)
     virtual bool has_motor_control() const { return false; }

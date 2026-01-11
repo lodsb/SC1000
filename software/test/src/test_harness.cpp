@@ -27,7 +27,7 @@ TestHarness::~TestHarness()
 void TestHarness::setup_engine()
 {
     // Create minimal settings
-    settings_ = std::make_unique<sc_settings>();
+    settings_ = std::make_unique<ScSettings>();
     settings_->sample_rate = sample_rate_;
     settings_->period_size = 256;
     settings_->buffer_period_factor = 4;
@@ -64,7 +64,7 @@ void TestHarness::setup_engine()
     audio_->start();
 }
 
-void TestHarness::load_track(int deck, struct track* t)
+void TestHarness::load_track(int deck, Track* t)
 {
     if (!t) return;
 

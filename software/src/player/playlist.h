@@ -26,15 +26,15 @@
 #include <string>
 
 // File entry (beat or sample)
-struct sc_file {
+struct ScFile {
 	std::string full_path;
 	unsigned int global_index = 0;  // Index across all files
 };
 
 // Folder containing files
-struct sc_folder {
+struct ScFolder {
 	std::string full_path;
-	std::vector<sc_file> files;
+	std::vector<ScFile> files;
 };
 
 /*
@@ -66,19 +66,19 @@ public:
 	 * Get file by global index (for random access / shuffle)
 	 * Return: pointer to file, or nullptr if index out of range
 	 */
-	sc_file* get_file_at_index(unsigned int index);
+	ScFile* get_file_at_index(unsigned int index);
 
 	/*
 	 * Get folder by index
 	 * Return: pointer to folder, or nullptr if index out of range
 	 */
-	sc_folder* get_folder(size_t folder_idx);
+	ScFolder* get_folder(size_t folder_idx);
 
 	/*
 	 * Get file within a folder by index
 	 * Return: pointer to file, or nullptr if indices out of range
 	 */
-	sc_file* get_file(size_t folder_idx, size_t file_idx);
+	ScFile* get_file(size_t folder_idx, size_t file_idx);
 
 	// Counts
 	size_t folder_count() const { return folders_.size(); }
@@ -95,7 +95,7 @@ public:
 	void dump() const;
 
 private:
-	std::vector<sc_folder> folders_;
-	std::vector<sc_file*> all_files_;  // Flat view for O(1) random access
+	std::vector<ScFolder> folders_;
+	std::vector<ScFile*> all_files_;  // Flat view for O(1) random access
 	size_t total_files_ = 0;
 };

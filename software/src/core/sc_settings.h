@@ -57,7 +57,7 @@ enum output_channel_type {
 
 // Audio interface configuration
 // Devices are listed in priority order - first available match is used
-struct audio_interface {
+struct AudioInterface {
    std::string name;              // Human-readable name, e.g., "Bitwig Connect"
    std::string device;            // ALSA device name, e.g., "hw:0", "plughw:1"
    audio_interface_type type = AUDIO_TYPE_MAIN;
@@ -72,13 +72,13 @@ struct audio_interface {
    int input_left = 0;            // Which capture channel is left
    int input_right = 1;           // Which capture channel is right
 
-   // Output channel mapping: output_map[hw_channel] = logical_type
+   // Output channel Mapping: output_map[hw_channel] = logical_type
    // e.g., output_map[4] = OUT_CV1 means hardware channel 4 outputs CV1
    output_channel_type output_map[MAX_OUTPUT_CHANNELS] = {};
    int num_mapped_outputs = 0;    // How many channels are mapped
 };
 
-struct sc_settings
+struct ScSettings
 {
    // output buffer size, probably 256
    unsigned int period_size;
@@ -154,7 +154,7 @@ struct sc_settings
    std::string importer;
 
    // Audio interfaces (listed in priority order)
-   std::vector<audio_interface> audio_interfaces;
+   std::vector<AudioInterface> audio_interfaces;
 
    // Loop recording settings
    int loop_max_seconds;        // Maximum loop recording duration (default 60)
@@ -171,10 +171,10 @@ struct sc_settings
 #include "sc_input.h"
 
 // Settings loading and utility functions
-void sc_settings_load_user_configuration(sc_settings* settings, sc::control::MappingRegistry& mappings);
+void sc_settings_load_user_configuration(ScSettings* settings, sc::control::MappingRegistry& mappings);
 void sc_settings_print_gpio_mappings(const sc::control::MappingRegistry& mappings);
-audio_interface* sc_settings_get_audio_interface(sc_settings* settings, audio_interface_type type);
-void sc_settings_init_default_audio(sc_settings* settings);
-int sc_settings_get_output_channel(audio_interface* iface, output_channel_type logical);
-audio_interface* sc_settings_find_cv_interface(sc_settings* settings);
+AudioInterface* sc_settings_get_audio_interface(ScSettings* settings, audio_interface_type type);
+void sc_settings_init_default_audio(ScSettings* settings);
+int sc_settings_get_output_channel(AudioInterface* iface, output_channel_type logical);
+AudioInterface* sc_settings_find_cv_interface(ScSettings* settings);
 

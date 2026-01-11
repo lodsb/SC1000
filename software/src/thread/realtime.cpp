@@ -71,7 +71,7 @@ static int raise_priority(int priority)
 /*
  * The realtime thread
  */
-static void rt_main(struct rt* rt)
+static void rt_main(struct Rt* rt)
 {
     int r;
     size_t n;
@@ -111,7 +111,7 @@ static void rt_main(struct rt* rt)
 
 static void* launch(void* p)
 {
-    rt_main(static_cast<struct rt*>(p));
+    rt_main(static_cast<struct Rt*>(p));
     return nullptr;
 }
 
@@ -119,7 +119,7 @@ static void* launch(void* p)
 // C++ member function implementations
 //
 
-void rt::init()
+void Rt::init()
 {
     debug("%p", this);
     finished = false;
@@ -127,12 +127,12 @@ void rt::init()
     npt = 0;
 }
 
-void rt::clear()
+void Rt::clear()
 {
     // No resources to clear currently
 }
 
-int rt::set_engine(struct sc1000* eng)
+int Rt::set_engine(struct Sc1000* eng)
 {
     ssize_t z;
 
@@ -150,7 +150,7 @@ int rt::set_engine(struct sc1000* eng)
     return 0;
 }
 
-int rt::add_controller(Controller* c)
+int Rt::add_controller(Controller* c)
 {
     ssize_t z;
 
@@ -173,7 +173,7 @@ int rt::add_controller(Controller* c)
     return 0;
 }
 
-int rt::start(int prio)
+int Rt::start(int prio)
 {
     assert(prio >= 0);
     priority = prio;
@@ -218,7 +218,7 @@ int rt::start(int prio)
     return 0;
 }
 
-void rt::stop()
+void Rt::stop()
 {
     finished = true;
 

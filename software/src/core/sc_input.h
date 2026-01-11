@@ -27,7 +27,7 @@
 #define CONTROL_CC 2
 
 
-// Defines a mapping between a MIDI event and an action
+// Defines a Mapping between a MIDI event and an action
 
 enum IOType
 {
@@ -86,7 +86,7 @@ enum ActionType
    NOTHING,
 };
 
-struct mapping {
+struct Mapping {
 
    // Event type (MIDI or IO)
    IOType type = IOType::MIDI;
@@ -115,11 +115,11 @@ struct mapping {
 extern "C" {
 #endif
 
-void start_sc_input_thread(void);
-void stop_sc_input_thread(void);
+void start_sc_input_thread();
+void stop_sc_input_thread();
 
 #ifdef __cplusplus
 }
 #endif
 
-// Action dispatch and mapping lookup are now in control/actions.h
+// Action dispatch and Mapping lookup are now in control/actions.h

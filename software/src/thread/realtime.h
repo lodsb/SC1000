@@ -32,13 +32,13 @@ class Controller;
  * stop()
  */
 
-struct rt {
+struct Rt {
     pthread_t ph;
     sem_t sem;
     bool finished;
     int priority;
 
-    struct sc1000 *engine;
+    struct Sc1000 *engine;
 
     size_t nctl;
     Controller *ctl[3];
@@ -49,7 +49,7 @@ struct rt {
     // Member functions
     void init();
     void clear();
-    int set_engine(struct sc1000 *engine);
+    int set_engine(struct Sc1000 *engine);
     int add_controller(Controller *c);
     int start(int priority);
     void stop();

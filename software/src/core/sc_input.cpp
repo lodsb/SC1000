@@ -59,9 +59,9 @@ static InputContext g_input_ctx;
 static volatile bool g_input_running = true;
 static pthread_t g_input_thread_handle;
 
-void* run_sc_input_thread(sc1000* engine)
+void* run_sc_input_thread(Sc1000* engine)
 {
-    sc_settings* settings = engine->settings.get();
+    ScSettings* settings = engine->settings.get();
     MidiContext* midi_ctx = &g_input_ctx.midi;
 
     // Create and initialize hardware layer

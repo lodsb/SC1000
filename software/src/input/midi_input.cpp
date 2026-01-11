@@ -44,7 +44,7 @@ void init_midi(MidiContext* ctx)
     ctx->old_device_count = 0;
 }
 
-void poll_midi_devices(MidiContext* ctx, sc1000* engine)
+void poll_midi_devices(MidiContext* ctx, Sc1000* engine)
 {
     // Enumerate MIDI devices
     ctx->device_count = listdev("rawmidi", ctx->device_names);
@@ -82,9 +82,9 @@ void poll_midi_devices(MidiContext* ctx, sc1000* engine)
     }
 }
 
-void process_midi_events(sc1000* engine)
+void process_midi_events(Sc1000* engine)
 {
-    sc_settings* settings = engine->settings.get();
+    ScSettings* settings = engine->settings.get();
 
     // Process MIDI events from the lock-free queue
     unsigned char midi_bytes[3];
@@ -96,13 +96,13 @@ void process_midi_events(sc1000* engine)
         MidiCommand cmd = MidiCommand::from_bytes(midi_bytes);
         cmd.normalize();  // Note-on with velocity 0 becomes note-off
 
-        mapping* midi_map = engine->mappings.find_midi(cmd, edge);
+        Mapping* midi_map = engine->mappings.find_midi(cmd, edge);
         if (midi_map != nullptr) {
-            LOG_DEBUG("MIDI mapping found: action=%d deck=%d param=%d",
+            LOG_DEBUG("MIDI Mapping found: action=%d deck=%d param=%d",
                      midi_map->action_type, midi_map->deck_no, midi_map->parameter);
             dispatch_event(midi_map, midi_bytes, engine, settings, engine->input_state);
         } else {
-            LOG_DEBUG("MIDI no mapping for [%02X %02X %02X] shifted=%d",
+            LOG_DEBUG("MIDI no Mapping for [%02X %02X %02X] shifted=%d",
                      midi_bytes[0], midi_bytes[1], midi_bytes[2], midi_shifted);
         }
     }

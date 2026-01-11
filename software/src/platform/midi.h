@@ -27,14 +27,14 @@
  * State information for an open, non-blocking MIDI device
  */
 
-struct midi {
+struct Midi {
     snd_rawmidi_t *in, *out;
 };
 
-int midi_open(struct midi *m, const char *name);
-void midi_close(struct midi *m);
+int midi_open(struct Midi *m, const char *name);
+void midi_close(struct Midi *m);
 
-ssize_t midi_pollfds(struct midi *m, struct pollfd *pe, size_t len);
-ssize_t midi_read(struct midi *m, void *buf, size_t len);
-ssize_t midi_write(struct midi *m, const void *buf, size_t len);
+ssize_t midi_pollfds(struct Midi *m, struct pollfd *pe, size_t len);
+ssize_t midi_read(struct Midi *m, void *buf, size_t len);
+ssize_t midi_write(struct Midi *m, const void *buf, size_t len);
 int listdev(const char *devname, char names[64][64]);

@@ -38,33 +38,31 @@
 namespace sc {
 namespace control {
 
-void perform_action_for_deck(deck* deck, const mapping* map,
+void perform_action_for_deck(Deck* deck, const Mapping* map,
                              const unsigned char midi_buffer[3],
-                             sc1000* engine, sc_settings* settings,
+                             Sc1000* engine, ScSettings* settings,
                              InputState& input_state)
 {
-    if (map->action_type == CUE) {
-        unsigned int cuenum = 0;
-        if (map->type == MIDI)
-            cuenum = map->midi_command_bytes[1];
-        else
-            cuenum = (map->gpio_port * 32) + map->pin + 128;
+    switch (map->action_type) {
+    case CUE: {
+        unsigned int cuenum = (map->type == MIDI)
+            ? map->midi_command_bytes[1]
+            : (map->gpio_port * 32) + map->pin + 128;
         deck->cue(cuenum, engine);
+        break;
     }
-    else if (map->action_type == DELETECUE) {
-        unsigned int cuenum = 0;
-        if (map->type == MIDI)
-            cuenum = map->midi_command_bytes[1];
-        else
-            cuenum = (map->gpio_port * 32) + map->pin + 128;
+    case DELETECUE: {
+        unsigned int cuenum = (map->type == MIDI)
+            ? map->midi_command_bytes[1]
+            : (map->gpio_port * 32) + map->pin + 128;
         deck->unset_cue(cuenum);
+        break;
     }
-    else if (map->action_type == NOTE) {
+    case NOTE: {
         // Check for note-off: status 0x80 or note-on with velocity 0
         bool is_note_off = (midi_buffer[0] & 0xF0) == 0x80 ||
                            ((midi_buffer[0] & 0xF0) == 0x90 && midi_buffer[2] == 0);
         if (is_note_off) {
-            // Reset pitch to normal on note-off
             deck->player.input.pitch_note = 1.0;
             LOG_DEBUG("NOTE action: note-off, pitch reset to 1.0");
         } else {
@@ -73,64 +71,69 @@ void perform_action_for_deck(deck* deck, const mapping* map,
             deck->player.input.pitch_note = new_pitch;
             LOG_INFO("NOTE action: note=%d -> pitch=%.3f", midi_buffer[1], new_pitch);
         }
+        break;
     }
-    else if (map->action_type == STARTSTOP) {
+    case STARTSTOP:
         deck->player.input.stopped = !deck->player.input.stopped;
-    }
-    else if (map->action_type == SHIFTON) {
+        break;
+
+    case SHIFTON:
         LOG_DEBUG("SHIFTON action fired, shifted: %d -> true", input_state.is_shifted());
         input_state.set_shifted(true);
-    }
-    else if (map->action_type == SHIFTOFF) {
+        break;
+
+    case SHIFTOFF:
         LOG_DEBUG("SHIFTOFF action fired, shifted: %d -> false", input_state.is_shifted());
         input_state.set_shifted(false);
-    }
-    else if (map->action_type == NEXTFILE) {
+        break;
+
+    case NEXTFILE:
         deck->next_file(engine, settings);
-    }
-    else if (map->action_type == PREVFILE) {
+        break;
+
+    case PREVFILE:
         deck->prev_file(engine, settings);
-    }
-    else if (map->action_type == RANDOMFILE) {
+        break;
+
+    case RANDOMFILE:
         deck->random_file(engine, settings);
-    }
-    else if (map->action_type == NEXTFOLDER) {
+        break;
+
+    case NEXTFOLDER:
         deck->next_folder(engine, settings);
-    }
-    else if (map->action_type == PREVFOLDER) {
+        break;
+
+    case PREVFOLDER:
         deck->prev_folder(engine, settings);
-    }
-    else if (map->action_type == VOLUME) {
+        break;
+
+    case VOLUME:
         deck->player.input.volume_knob = static_cast<double>(midi_buffer[2]) / 128.0;
-    }
-    else if (map->action_type == PITCH) {
+        break;
+
+    case PITCH:
         if (map->type == MIDI) {
             double pitch = 1.0;
-            // Check if parameter specifies semitone range (0 = use global pitch_range percentage)
             int semitone_range = map->parameter;
 
             // Pitch bend message: use 14-bit accuracy
             if ((midi_buffer[0] & 0xF0) == 0xE0) {
                 unsigned int pval = (static_cast<unsigned int>(midi_buffer[2]) << 7) |
                                     static_cast<unsigned int>(midi_buffer[1]);
-                // Normalized position: -1.0 to +1.0
                 double normalized = (static_cast<double>(pval) - 8192.0) / 8192.0;
 
                 if (semitone_range > 0) {
-                    // Semitone mode: pitch = 2^(semitones/12)
                     double semitones = normalized * static_cast<double>(semitone_range);
                     pitch = std::pow(2.0, semitones / 12.0);
                     LOG_DEBUG("PITCH action: 14-bit pval=%u norm=%.3f semi=%.1f pitch=%.4f deck=%d",
                              pval, normalized, semitones, pitch, map->deck_no);
                 } else {
-                    // Legacy percentage mode
                     pitch = (normalized * (static_cast<double>(settings->pitch_range) / 100.0)) + 1.0;
                     LOG_DEBUG("PITCH action: 14-bit pval=%u pitch=%.4f range=%d%% deck=%d",
                              pval, pitch, settings->pitch_range, map->deck_no);
                 }
-            }
-            // Otherwise 7-bit CC
-            else {
+            } else {
+                // 7-bit CC
                 double normalized = (static_cast<double>(midi_buffer[2]) - 64.0) / 64.0;
 
                 if (semitone_range > 0) {
@@ -146,64 +149,78 @@ void perform_action_for_deck(deck* deck, const mapping* map,
             }
             deck->player.input.pitch_fader = pitch;
         }
-    }
-    else if (map->action_type == JOGPIT) {
+        break;
+
+    case JOGPIT:
         input_state.set_pitch_mode(map->deck_no + 1);
         LOG_DEBUG("Set Pitch Mode %d", input_state.pitch_mode());
-    }
-    else if (map->action_type == JOGPSTOP) {
+        break;
+
+    case JOGPSTOP:
         input_state.set_pitch_mode(0);
-    }
-    else if (map->action_type == SC500) {
+        break;
+
+    case SC500:
         LOG_DEBUG("SC500 detected");
-    }
-    else if (map->action_type == VOLUP) {
+        break;
+
+    case VOLUP:
         deck->player.input.volume_knob += settings->volume_amount;
         if (deck->player.input.volume_knob > 1.0)
             deck->player.input.volume_knob = 1.0;
-    }
-    else if (map->action_type == VOLDOWN) {
+        break;
+
+    case VOLDOWN:
         deck->player.input.volume_knob -= settings->volume_amount;
         if (deck->player.input.volume_knob < 0.0)
             deck->player.input.volume_knob = 0.0;
-    }
-    else if (map->action_type == VOLUHOLD) {
+        break;
+
+    case VOLUHOLD:
         deck->player.input.volume_knob += settings->volume_amount_held;
         if (deck->player.input.volume_knob > 1.0)
             deck->player.input.volume_knob = 1.0;
-    }
-    else if (map->action_type == VOLDHOLD) {
+        break;
+
+    case VOLDHOLD:
         deck->player.input.volume_knob -= settings->volume_amount_held;
         if (deck->player.input.volume_knob < 0.0)
             deck->player.input.volume_knob = 0.0;
-    }
-    else if (map->action_type == JOGREVERSE) {
+        break;
+
+    case JOGREVERSE:
         LOG_DEBUG("Reversed Jog Wheel: %d", settings->jog_reverse);
         settings->jog_reverse = !settings->jog_reverse;
         LOG_DEBUG(" -> %d", settings->jog_reverse);
-    }
-    else if (map->action_type == BEND) {
+        break;
+
+    case BEND:
         // Temporary pitch bend on top of other pitch values
         deck->player.input.pitch_bend = pow(pow(2.0, 1.0 / 12.0), map->parameter - 0x3C);
+        break;
+
+    default:
+        break;
     }
 }
 
-void dispatch_event(const mapping* map, const unsigned char midi_buffer[3],
-                    sc1000* engine, sc_settings* settings,
+void dispatch_event(const Mapping* map, const unsigned char midi_buffer[3],
+                    Sc1000* engine, ScSettings* settings,
                     InputState& input_state)
 {
     if (map == nullptr) return;
 
-    // Determine target deck from mapping (0=beat, 1=scratch)
-    deck* target = (map->deck_no == 0)
+    // Determine target deck from Mapping (0=beat, 1=scratch)
+    Deck* target = (map->deck_no == 0)
         ? &engine->beat_deck
         : &engine->scratch_deck;
 
-    if (map->action_type == RECORD) {
-        // Toggle loop recording for the target deck
+    switch (map->action_type) {
+    case RECORD:
         target->record(engine);
-    }
-    else if (map->action_type == LOOPERASE) {
+        break;
+
+    case LOOPERASE:
         // Long-hold RECORD erases the loop and navigates to first file
         LOG_DEBUG("LOOPERASE triggered on deck %d, was source=%d, was current_file_idx=%d",
                   map->deck_no, static_cast<int>(target->player.input.source), target->nav_state.file_idx);
@@ -214,9 +231,8 @@ void dispatch_event(const mapping* map, const unsigned char midi_buffer[3],
         target->nav_state.file_idx = 0;
         LOG_DEBUG("LOOPERASE set source=File, current_file_idx=0");
         if (target->nav_state.files_present) {
-            sc_file* file = target->playlist->get_file(target->nav_state.folder_idx, 0);
+            ScFile* file = target->playlist->get_file(target->nav_state.folder_idx, 0);
             if (file != nullptr) {
-                // Load the first file in current folder
                 target->player.set_track(track_acquire_by_import(target->importer.c_str(), file->full_path.c_str()));
                 target->player.input.seek_to = 0.0;
                 target->player.input.position_offset = 0.0;
@@ -224,20 +240,22 @@ void dispatch_event(const mapping* map, const unsigned char midi_buffer[3],
             }
         }
 
-        target->player.input.beep_request = sc::BeepType::RecordingError;  // Use error beep as "erased" feedback
+        target->player.input.beep_request = sc::BeepType::RecordingError;
         LOG_DEBUG("Loop erased on deck %d, navigated to file 0", map->deck_no);
-    }
-    else if (map->action_type == LOOPRECALL) {
-        // Recall the last recorded loop
+        break;
+
+    case LOOPRECALL:
         LOG_DEBUG("Loop recall triggered on deck %d", map->deck_no);
         if (target->recall_loop(settings)) {
-            target->player.input.beep_request = sc::BeepType::RecordingStart;  // Success feedback
+            target->player.input.beep_request = sc::BeepType::RecordingStart;
         } else {
-            target->player.input.beep_request = sc::BeepType::RecordingError;  // No loop to recall
+            target->player.input.beep_request = sc::BeepType::RecordingError;
         }
-    }
-    else {
+        break;
+
+    default:
         perform_action_for_deck(target, map, midi_buffer, engine, settings, input_state);
+        break;
     }
 }
 

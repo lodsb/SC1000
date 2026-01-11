@@ -34,7 +34,7 @@ static pthread_key_t key;
  *
  * Return: 0 on success, otherwise -1
  */
-int thread_global_init(void)
+int thread_global_init()
 {
     int r;
 
@@ -52,7 +52,7 @@ int thread_global_init(void)
     return 0;
 }
 
-void thread_global_clear(void)
+void thread_global_clear()
 {
     if (pthread_key_delete(key) != 0) {
         abort();
@@ -62,7 +62,7 @@ void thread_global_clear(void)
 /*
  * Inform that this thread is a realtime thread, for assertions later
  */
-void thread_to_realtime(void)
+void thread_to_realtime()
 {
     if (pthread_setspecific(key, reinterpret_cast<void*>(true)) != 0) {
         abort();
@@ -74,7 +74,7 @@ void thread_to_realtime(void)
  *
  * Pre: the current thread is non realtime
  */
-void rt_not_allowed(void)
+void rt_not_allowed()
 {
     bool rt = (pthread_getspecific(key) != nullptr);
     if (rt) {

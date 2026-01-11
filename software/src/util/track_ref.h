@@ -33,14 +33,14 @@
 namespace sc {
 
 class TrackRef {
-    struct track* ptr = nullptr;
+    Track* ptr = nullptr;
 
 public:
     // Construct empty reference
     TrackRef() = default;
 
     // Take ownership of a track (assumes refcount already incremented)
-    explicit TrackRef(struct track* t) : ptr(t) {}
+    explicit TrackRef(Track* t) : ptr(t) {}
 
     // No copy - tracks have reference semantics
     TrackRef(const TrackRef&) = delete;
@@ -71,27 +71,27 @@ public:
     }
 
     // Access the underlying track
-    struct track* get() const { return ptr; }
+    Track* get() const { return ptr; }
 
     // Arrow operator for convenience
-    struct track* operator->() const { return ptr; }
+    Track* operator->() const { return ptr; }
 
     // Dereference operator
-    struct track& operator*() const { return *ptr; }
+    Track& operator*() const { return *ptr; }
 
     // Boolean conversion for null checks
     explicit operator bool() const { return ptr != nullptr; }
 
     // Release ownership without decrementing refcount
     // Used when transferring to C code that takes ownership
-    struct track* release() {
-        struct track* t = ptr;
+    Track* release() {
+        Track* t = ptr;
         ptr = nullptr;
         return t;
     }
 
     // Reset with a new track (releases old one if any)
-    void reset(struct track* t = nullptr) {
+    void reset(Track* t = nullptr) {
         if (ptr) {
             track_release(ptr);
         }

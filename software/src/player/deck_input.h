@@ -32,7 +32,7 @@
 // No locks needed - worst case is audio engine sees slightly stale value.
 //
 
-struct track;  // Forward declaration
+struct Track;  // Forward declaration
 
 namespace sc {
 
@@ -76,7 +76,7 @@ struct DeckInput {
 
     // === Track Loading ===
     // Set load_track to request a track change. Audio engine applies and clears.
-    struct track* load_track = nullptr;
+    Track* load_track = nullptr;
     double load_start_position = 0.0;
 
     // === Recording Requests ===

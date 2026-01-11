@@ -51,8 +51,8 @@ struct CubicInterpolation {
     static constexpr const char* name = "Cubic";
 
     static inline DualDeckSamples interpolate(
-        struct track* tr1, double sample_pos1, int tr_len1, float /* pitch1 */,
-        struct track* tr2, double sample_pos2, int tr_len2, float /* pitch2 */)
+        Track* tr1, double sample_pos1, int tr_len1, float /* pitch1 */,
+        Track* tr2, double sample_pos2, int tr_len2, float /* pitch2 */)
     {
         // Cubic doesn't use pitch for bandwidth selection
         auto result = dsp::cubic_interpolate_dual_deck_opt(
@@ -71,8 +71,8 @@ struct SincInterpolation {
     static constexpr const char* name = "Sinc";
 
     static inline DualDeckSamples interpolate(
-        struct track* tr1, double sample_pos1, int tr_len1, float pitch1,
-        struct track* tr2, double sample_pos2, int tr_len2, float pitch2)
+        Track* tr1, double sample_pos1, int tr_len1, float pitch1,
+        Track* tr2, double sample_pos2, int tr_len2, float pitch2)
     {
         // Sinc uses absolute pitch for bandwidth selection
         auto result = dsp::sinc_interpolate_dual_deck_opt(

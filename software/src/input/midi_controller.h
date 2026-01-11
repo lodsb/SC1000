@@ -34,7 +34,7 @@
 
 #define NUMDECKS 2
 
-struct rt;
+struct Rt;
 
 /*
  * MidiController - handles MIDI input devices
@@ -57,10 +57,10 @@ public:
      * Initialize the MIDI controller
      * Return: 0 on success, -1 on failure
      */
-    int init(struct rt* rt, const char* hw);
+    int init(struct Rt* rt, const char* hw);
 
     // Controller interface implementation
-    int add_deck(struct deck* d) override;
+    int add_deck(struct Deck* d) override;
     ssize_t pollfds(struct pollfd* pe, size_t z) override;
     int realtime() override;
     void clear() override;
@@ -70,9 +70,9 @@ public:
 private:
     void process_midi_message();
 
-    struct rt* rt_ = nullptr;  // For accessing engine->input_state
-    struct midi midi_;
-    struct deck* deck_[NUMDECKS] = {nullptr, nullptr};
+    struct Rt* rt_ = nullptr;  // For accessing engine->input_state
+    struct Midi midi_;
+    struct Deck* deck_[NUMDECKS] = {nullptr, nullptr};
 
     char obuf_[180] = {};
     size_t ofill_ = 0;
@@ -89,4 +89,4 @@ private:
  * Factory function to create a MidiController
  * Returns nullptr on failure
  */
-std::unique_ptr<MidiController> create_midi_controller(struct rt* rt, const char* hw);
+std::unique_ptr<MidiController> create_midi_controller(struct Rt* rt, const char* hw);

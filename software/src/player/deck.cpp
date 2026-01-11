@@ -48,9 +48,9 @@ bool LoopState::has_loop() const
 // Helper function (internal)
 //
 
-static void load_track_internal(struct deck* d, struct track* track, struct sc_settings* settings)
+static void load_track_internal(struct Deck* d, Track* track, struct ScSettings* settings)
 {
-	struct player* pl = &d->player;
+	struct Player* pl = &d->player;
 	d->cues.save_to_file(pl->track->path);
 	pl->set_track(track);
 
@@ -84,9 +84,9 @@ static void load_track_internal(struct deck* d, struct track* track, struct sc_s
 //
 
 // Destructor must be defined where Playlist is complete (for unique_ptr deletion)
-deck::~deck() = default;
+Deck::~Deck() = default;
 
-int deck::init(struct sc_settings* settings)
+int Deck::init(struct ScSettings* settings)
 {
 	punch = std::nullopt;
 	assert(!settings->importer.empty());
@@ -100,7 +100,7 @@ int deck::init(struct sc_settings* settings)
 	nav_state.folder_idx = 0;
 	nav_state.file_idx = 0;
 	nav_state.files_present = false;
-	deck_no = -1;  // Will be set by sc1000 init
+	deck_no = -1;  // Will be set by Sc1000 init
 
 	encoder_state.offset = 0;
 	encoder_state.angle = 0xffff;
@@ -111,7 +111,7 @@ int deck::init(struct sc_settings* settings)
 	return 0;
 }
 
-void deck::clear()
+void Deck::clear()
 {
 	player.clear();
 	playlist.reset();
@@ -123,13 +123,13 @@ void deck::clear()
 	}
 }
 
-bool deck::is_locked(struct sc1000* /* engine */) const
+bool Deck::is_locked(struct Sc1000* /* engine */) const
 {
 	// Protection feature removed - decks are never locked
 	return false;
 }
 
-void deck::recue(struct sc1000* engine)
+void Deck::recue(struct Sc1000* engine)
 {
 	if (is_locked(engine))
 	{
@@ -142,7 +142,7 @@ void deck::recue(struct sc1000* engine)
 	player.input.position_offset = current_pos;
 }
 
-void deck::clone(const deck& from, struct sc1000* engine)
+void Deck::clone(const Deck& from, struct Sc1000* engine)
 {
 	// Copy input state and preserve elapsed time
 	double from_elapsed = 0.0;
@@ -154,12 +154,12 @@ void deck::clone(const deck& from, struct sc1000* engine)
 	player.input.position_offset = to_current - from_elapsed;
 }
 
-void deck::unset_cue(unsigned int label)
+void Deck::unset_cue(unsigned int label)
 {
 	cues.unset(label);
 }
 
-void deck::cue(unsigned int label, struct sc1000* engine)
+void Deck::cue(unsigned int label, struct Sc1000* engine)
 {
 	auto p = cues.get(label);
 	if (!p.has_value()) {
@@ -175,7 +175,7 @@ void deck::cue(unsigned int label, struct sc1000* engine)
 	}
 }
 
-void deck::punch_in(unsigned int label, struct sc1000* engine)
+void Deck::punch_in(unsigned int label, struct Sc1000* engine)
 {
 	double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
 	auto p = cues.get(label);
@@ -195,7 +195,7 @@ void deck::punch_in(unsigned int label, struct sc1000* engine)
 	punch = p.value() - e;
 }
 
-void deck::punch_out(struct sc1000* engine)
+void Deck::punch_out(struct Sc1000* engine)
 {
 	if (!punch.has_value())
 		return;
@@ -207,7 +207,7 @@ void deck::punch_out(struct sc1000* engine)
 	punch = std::nullopt;
 }
 
-void deck::load_folder(const char* folder_name)
+void Deck::load_folder(const char* folder_name)
 {
 	playlist = std::make_unique<Playlist>();
 
@@ -220,7 +220,7 @@ void deck::load_folder(const char* folder_name)
 
 		LOG_DEBUG("deck_load_folder");
 
-		sc_file* file = playlist->get_file(0, 0);
+		ScFile* file = playlist->get_file(0, 0);
 		player.set_track(track_acquire_by_import(importer.c_str(), file->full_path.c_str()));
 		LOG_DEBUG("deck_load_folder set track ok");
 		cues.load_from_file(player.track->path);
@@ -232,7 +232,7 @@ void deck::load_folder(const char* folder_name)
 	}
 }
 
-void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
+void Deck::next_file(struct Sc1000* engine, struct ScSettings* settings)
 {
 	LOG_DEBUG("deck %d next_file called, nav_state.files_present=%d, nav_state.file_idx=%d, source=%d",
 	          deck_no, nav_state.files_present, nav_state.file_idx, static_cast<int>(player.input.source));
@@ -244,7 +244,7 @@ void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 		// At loop, go to first file
 		nav_state.file_idx = 0;
 		player.input.source = sc::PlaybackSource::File;
-		sc_file* file = playlist->get_file(nav_state.folder_idx, 0);
+		ScFile* file = playlist->get_file(nav_state.folder_idx, 0);
 		if (file != nullptr)
 		{
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
@@ -258,7 +258,7 @@ void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 	else if (playlist->has_next_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx)))
 	{
 		nav_state.file_idx++;
-		sc_file* file = playlist->get_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx));
+		ScFile* file = playlist->get_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx));
 		if (file != nullptr)
 		{
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
@@ -267,7 +267,7 @@ void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 	}
 }
 
-void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
+void Deck::prev_file(struct Sc1000* engine, struct ScSettings* settings)
 {
 	LOG_DEBUG("deck %d prev_file called, nav_state.files_present=%d, nav_state.file_idx=%d, source=%d",
 	          deck_no, nav_state.files_present, nav_state.file_idx, static_cast<int>(player.input.source));
@@ -297,7 +297,7 @@ void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 		// Normal prev behavior
 		nav_state.file_idx--;
 		player.input.source = sc::PlaybackSource::File;
-		sc_file* file = playlist->get_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx));
+		ScFile* file = playlist->get_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx));
 		if (file != nullptr)
 		{
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
@@ -306,7 +306,7 @@ void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 	}
 }
 
-void deck::next_folder(struct sc1000* engine, struct sc_settings* settings)
+void Deck::next_folder(struct Sc1000* engine, struct ScSettings* settings)
 {
 	if (!nav_state.files_present) return;
 
@@ -326,13 +326,13 @@ void deck::next_folder(struct sc1000* engine, struct sc_settings* settings)
 	{
 		nav_state.folder_idx++;
 		nav_state.file_idx = 0;
-		sc_file* file = playlist->get_file(nav_state.folder_idx, 0);
+		ScFile* file = playlist->get_file(nav_state.folder_idx, 0);
 		load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
 		LOG_DEBUG("Deck %d: next_folder to %zu, file 0", deck_no, nav_state.folder_idx);
 	}
 }
 
-void deck::prev_folder(struct sc1000* engine, struct sc_settings* settings)
+void Deck::prev_folder(struct Sc1000* engine, struct ScSettings* settings)
 {
 	if (!nav_state.files_present) return;
 
@@ -352,20 +352,20 @@ void deck::prev_folder(struct sc1000* engine, struct sc_settings* settings)
 	{
 		nav_state.folder_idx--;
 		nav_state.file_idx = 0;
-		sc_file* file = playlist->get_file(nav_state.folder_idx, 0);
+		ScFile* file = playlist->get_file(nav_state.folder_idx, 0);
 		load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
 		LOG_DEBUG("Deck %d: prev_folder to %zu, file 0", deck_no, nav_state.folder_idx);
 	}
 }
 
-void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
+void Deck::random_file(struct Sc1000* engine, struct ScSettings* settings)
 {
 	if (nav_state.files_present)
 	{
 		unsigned int num_files = static_cast<unsigned int>(playlist->total_files());
 		unsigned int r = static_cast<unsigned int>(rand()) % num_files;
 		LOG_DEBUG("Deck %d: random_file %d/%d", deck_no, r, num_files);
-		sc_file* file = playlist->get_file_at_index(r);
+		ScFile* file = playlist->get_file_at_index(r);
 		if (file != nullptr)
 		{
 			// Random file exits loop mode
@@ -377,7 +377,7 @@ void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 	}
 }
 
-void deck::record(struct sc1000* engine)
+void Deck::record(struct Sc1000* engine)
 {
 	// Query current recording state and set appropriate request
 	bool currently_recording = engine->audio && engine->audio->is_recording(deck_no);
@@ -388,7 +388,7 @@ void deck::record(struct sc1000* engine)
 	}
 }
 
-bool deck::recall_loop(struct sc_settings* settings)
+bool Deck::recall_loop(struct ScSettings* settings)
 {
 	if (!loop_state.track || loop_state.track->length == 0)
 	{
@@ -412,12 +412,12 @@ bool deck::recall_loop(struct sc_settings* settings)
 	return true;
 }
 
-bool deck::has_loop() const
+bool Deck::has_loop() const
 {
 	return loop_state.track != nullptr && loop_state.track->length > 0;
 }
 
-void deck::goto_loop(struct sc1000* engine, struct sc_settings* settings)
+void Deck::goto_loop(struct Sc1000* engine, struct ScSettings* settings)
 {
 	nav_state.file_idx = -1;
 	player.input.source = sc::PlaybackSource::Loop;

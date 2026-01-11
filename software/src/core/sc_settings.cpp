@@ -109,11 +109,11 @@ namespace sc {
 namespace config {
 
 // Default importer path
-constexpr const char* DEFAULT_IMPORTER_PATH = "/root/sc1000-import";
+constexpr const char* DEFAULT_IMPORTER_PATH = "/root/Sc1000-import";
 
 void add_mapping(sc::control::MappingRegistry& registry, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter)
 {
-   mapping new_map{};
+   Mapping new_map{};
 
    new_map.type      = type;
    new_map.pin       = pin;
@@ -138,7 +138,7 @@ void add_mapping(sc::control::MappingRegistry& registry, IOType type, unsigned c
    registry.add(new_map);
 }
 
-void settings_from_json(sc_settings* settings, const nlohmann::json& json)
+void settings_from_json(ScSettings* settings, const nlohmann::json& json)
 {
    // Set defaults first - these are used if JSON keys are missing
    settings->period_size = json.value("period_size", 256u);
@@ -237,7 +237,7 @@ void add_gpio_mapping_from_json(sc::control::MappingRegistry& mappings, const nl
 
 // Note: Legacy sc_settings_old_format() function removed - now using JSON config only
 
-void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappings)
+void load_json_config(ScSettings* settings, sc::control::MappingRegistry& mappings)
 {
    std::ifstream f;
 
@@ -246,10 +246,10 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
    // 2. Root path from settings (if already set)
    // 3. Default hardware paths
    const char* paths[] = {
-      "./sc_settings.json",
-      "../sc_settings.json",
-      "/media/sda/sc_settings.json",
-      "/var/sc_settings.json",
+      "./ScSettings.json",
+      "../ScSettings.json",
+      "/media/sda/ScSettings.json",
+      "/var/ScSettings.json",
       nullptr
    };
 
@@ -267,7 +267,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
    if (f.fail())
    {
       std::cerr << "Could not open any settings file, exiting" << std::endl;
-      std::cerr << "Searched: ./sc_settings.json, ../sc_settings.json, /media/sda/sc_settings.json, /var/sc_settings.json" << std::endl;
+      std::cerr << "Searched: ./ScSettings.json, ../ScSettings.json, /media/sda/ScSettings.json, /var/ScSettings.json" << std::endl;
       exit(-1);
    }
 
@@ -276,7 +276,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
       auto json_main = nlohmann::json::parse(f);
 
       // Get settings section, use empty object if missing
-      auto json_settings = json_main.value("sc1000", nlohmann::json::object());
+      auto json_settings = json_main.value("Sc1000", nlohmann::json::object());
       settings_from_json(settings, json_settings);
 
       // Load GPIO mappings if present
@@ -287,7 +287,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
             try {
                add_gpio_mapping_from_json(mappings, m);
             } catch (const nlohmann::json::exception& e) {
-               std::cerr << "Warning: Invalid GPIO mapping entry: " << e.what() << std::endl;
+               std::cerr << "Warning: Invalid GPIO Mapping entry: " << e.what() << std::endl;
             }
          }
       }
@@ -300,7 +300,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
             try {
                add_midi_mapping_from_json(mappings, m);
             } catch (const nlohmann::json::exception& e) {
-               std::cerr << "Warning: Invalid MIDI mapping entry: " << e.what() << std::endl;
+               std::cerr << "Warning: Invalid MIDI Mapping entry: " << e.what() << std::endl;
             }
          }
       }
@@ -312,7 +312,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
          for (const auto& dev : json_main["audio_devices"])
          {
             try {
-               audio_interface iface{};
+               AudioInterface iface{};
 
                // Human-readable name
                iface.name = dev.value("name", "Audio Device");
@@ -351,7 +351,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
                iface.num_mapped_outputs = 0;
 
                // Parse output_map if present: { "audio": 0, "cv_platter_speed": 2, ... }
-               // Auto-detect required channels from mapping
+               // Auto-detect required channels from Mapping
                int max_channel_needed = 0;
 
                if (dev.contains("output_map") && dev["output_map"].is_object())
@@ -393,7 +393,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
                      }
                   }
 
-                  // Auto-set channels from mapping (override config if mapping requires more)
+                  // Auto-set channels from Mapping (override config if Mapping requires more)
                   if (max_channel_needed > iface.channels)
                   {
                      iface.channels = max_channel_needed;
@@ -472,7 +472,7 @@ void load_json_config(sc_settings* settings, sc::control::MappingRegistry& mappi
 } // namespace sc
 
 // C++ API for loading configuration
-void sc_settings_load_user_configuration(sc_settings* settings, sc::control::MappingRegistry& mappings)
+void sc_settings_load_user_configuration(ScSettings* settings, sc::control::MappingRegistry& mappings)
 {
    sc::config::load_json_config(settings, mappings);
 }
@@ -536,7 +536,7 @@ void sc_settings_print_gpio_mappings(const sc::control::MappingRegistry& mapping
    }
 }
 
-audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_interface_type type )
+AudioInterface* sc_settings_get_audio_interface( ScSettings* settings, audio_interface_type type )
 {
    for (auto& iface : settings->audio_interfaces)
    {
@@ -548,11 +548,11 @@ audio_interface* sc_settings_get_audio_interface( sc_settings* settings, audio_i
    return nullptr;
 }
 
-void sc_settings_init_default_audio( sc_settings* settings )
+void sc_settings_init_default_audio( ScSettings* settings )
 {
    settings->audio_interfaces.clear();
 
-   audio_interface iface{};
+   AudioInterface iface{};
    iface.name = "Internal Codec";
    iface.device = "hw:0";
    iface.type = AUDIO_TYPE_MAIN;
@@ -565,14 +565,14 @@ void sc_settings_init_default_audio( sc_settings* settings )
    iface.input_left = 0;
    iface.input_right = 1;
 
-   // Default stereo mapping (output_map already zeroed by default initialization)
+   // Default stereo Mapping (output_map already zeroed by default initialization)
    iface.output_map[0] = OUT_AUDIO;
    iface.num_mapped_outputs = 2;  // Audio is stereo
 
    settings->audio_interfaces.push_back(std::move(iface));
 }
 
-int sc_settings_get_output_channel( audio_interface* iface, output_channel_type logical )
+int sc_settings_get_output_channel( AudioInterface* iface, output_channel_type logical )
 {
    if (iface == nullptr) return -1;
 
@@ -586,7 +586,7 @@ int sc_settings_get_output_channel( audio_interface* iface, output_channel_type 
    return -1;  // Not mapped
 }
 
-audio_interface* sc_settings_find_cv_interface( sc_settings* settings )
+AudioInterface* sc_settings_find_cv_interface( ScSettings* settings )
 {
    for (auto& iface : settings->audio_interfaces)
    {

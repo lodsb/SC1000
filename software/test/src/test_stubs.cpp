@@ -18,7 +18,7 @@
 #include <cstdio>
 
 // Stub for ALSA audio backend creation
-std::unique_ptr<AudioHardware> alsa_create(sc1000* engine, sc_settings* settings)
+std::unique_ptr<AudioHardware> alsa_create(Sc1000* engine, ScSettings* settings)
 {
     // In test mode, audio backend is provided by TestAudioBackend
     return nullptr;
@@ -30,7 +30,7 @@ void alsa_clear_config_cache()
 }
 
 // Stub for realtime thread
-int rt::set_engine(sc1000* engine)
+int Rt::set_engine(Sc1000* engine)
 {
     this->engine = engine;
     return 0;
@@ -78,34 +78,34 @@ void status_printf(int level, const char* format, ...)
 }
 
 // Stub for rig thread - global instance
-struct rig g_rig;
+struct Rig g_rig;
 
-int rig::init()
+int Rig::init()
 {
     return 0;
 }
 
-void rig::clear()
+void Rig::clear()
 {
 }
 
-void rig::post_track(struct track* t)
+void Rig::post_track(Track* t)
 {
     // No-op in test mode - tracks are managed directly
     (void)t;
 }
 
-void rig::remove_track(struct track* t)
+void Rig::remove_track(Track* t)
 {
     // No-op in test mode
     (void)t;
 }
 
-void rig::acquire_lock()
+void Rig::acquire_lock()
 {
 }
 
-void rig::release_lock()
+void Rig::release_lock()
 {
 }
 
@@ -128,12 +128,12 @@ pid_t fork_pipe_nb(int* fd, const char* path, char* arg, ...)
     return -1;
 }
 
-void rb_reset(struct rb* rb)
+void rb_reset(struct Rb* rb)
 {
     rb->len = 0;
 }
 
-ssize_t get_line(int fd, struct rb* rb, char** string)
+ssize_t get_line(int fd, struct Rb* rb, char** string)
 {
     (void)fd;
     (void)rb;

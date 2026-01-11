@@ -21,7 +21,7 @@
 
 #include "dummy.h"
 
-static unsigned int sample_rate(struct sc1000* /*d*/)
+static unsigned int sample_rate(struct Sc1000* /*d*/)
 {
     return 48000;
 }
@@ -35,7 +35,7 @@ static struct sc1000_ops dummy_ops = {
     .clear = nullptr,
 };
 
-void dummy_init(struct sc1000* d)
+void dummy_init(struct Sc1000* d)
 {
     sc1000_audio_engine_init(d, &dummy_ops);
 }

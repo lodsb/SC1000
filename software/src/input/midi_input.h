@@ -28,8 +28,8 @@
 #include <vector>
 #include <memory>
 
-struct sc1000;
-struct sc_settings;
+struct Sc1000;
+struct ScSettings;
 
 namespace sc {
 namespace input {
@@ -50,11 +50,11 @@ void init_midi(MidiContext* ctx);
 
 // Poll for new MIDI devices (call periodically, e.g., once per second)
 // Adds newly detected devices to the controller list
-void poll_midi_devices(MidiContext* ctx, sc1000* engine);
+void poll_midi_devices(MidiContext* ctx, Sc1000* engine);
 
 // Process MIDI events from the lock-free queue
 // Dispatches events to the appropriate action handlers
-void process_midi_events(sc1000* engine);
+void process_midi_events(Sc1000* engine);
 
 } // namespace input
 } // namespace sc

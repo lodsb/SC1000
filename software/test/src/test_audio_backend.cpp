@@ -13,7 +13,7 @@
 namespace sc {
 namespace test {
 
-TestAudioBackend::TestAudioBackend(sc1000* engine, unsigned int sample_rate)
+TestAudioBackend::TestAudioBackend(Sc1000* engine, unsigned int sample_rate)
     : engine_(engine)
     , sample_rate_(sample_rate)
     , period_size_(DEFAULT_PERIOD_SIZE)
@@ -58,12 +58,12 @@ void TestAudioBackend::reset_loop(int deck)
     audio_engine_->reset_loop(deck);
 }
 
-struct track* TestAudioBackend::get_loop_track(int deck)
+Track* TestAudioBackend::get_loop_track(int deck)
 {
     return audio_engine_->get_loop_track(deck);
 }
 
-struct track* TestAudioBackend::peek_loop_track(int deck)
+Track* TestAudioBackend::peek_loop_track(int deck)
 {
     return audio_engine_->peek_loop_track(deck);
 }
@@ -101,7 +101,7 @@ void TestAudioBackend::render(unsigned long frames)
     std::fill(period_buffer_.begin(), period_buffer_.begin() + frames * 2, 0.0f);
 
     // Set up capture if available
-    audio_capture capture = {};
+    AudioCapture capture = {};
     std::vector<float> capture_buffer;
 
     if (capture_enabled_ && capture_offset_ < capture_input_.size()) {

@@ -23,4 +23,4 @@
 
 #include "../core/sc1000.h"
 
-void dummy_init(struct sc1000 *d);
+void dummy_init(struct Sc1000 *d);

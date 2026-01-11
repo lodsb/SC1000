@@ -55,7 +55,7 @@ static float calc_lowpass_alpha(int sample_rate, float cutoff_hz)
 }
 
 // Find which hardware channel has a given output type
-static int find_channel(struct audio_interface* iface, output_channel_type type)
+static int find_channel(struct AudioInterface* iface, output_channel_type type)
 {
     for (int i = 0; i < MAX_OUTPUT_CHANNELS; i++)
     {
@@ -78,7 +78,7 @@ static inline float clamp(float val, float min_val, float max_val)
 } // namespace cv
 } // namespace sc
 
-void cv_engine_init(struct cv_state* state, int sample_rate)
+void cv_engine_init(struct CvState* state, int sample_rate)
 {
     memset(state, 0, sizeof(*state));
 
@@ -101,7 +101,7 @@ void cv_engine_init(struct cv_state* state, int sample_rate)
     state->channels.direction_pulse = -1;
 }
 
-void cv_engine_set_mapping(struct cv_state* state, struct audio_interface* iface)
+void cv_engine_set_mapping(struct CvState* state, struct AudioInterface* iface)
 {
     using namespace sc::cv;
 
@@ -129,7 +129,7 @@ void cv_engine_set_mapping(struct cv_state* state, struct audio_interface* iface
     state->channels.direction_pulse = find_channel(iface, OUT_CV_DIRECTION_PULSE);
 }
 
-void cv_engine_update(struct cv_state* state, const struct cv_controller_input* input)
+void cv_engine_update(struct CvState* state, const struct CvControllerInput* input)
 {
     using namespace sc::cv;
 
@@ -200,7 +200,7 @@ void cv_engine_update(struct cv_state* state, const struct cv_controller_input* 
 }
 
 void cv_engine_process(
-    struct cv_state* state,
+    struct CvState* state,
     int16_t* buffer,
     int num_channels,
     unsigned long frames)
@@ -292,7 +292,7 @@ namespace cv {
 
 template<typename FormatPolicy>
 static void cv_process_typed(
-    struct cv_state* state,
+    struct CvState* state,
     void* buffer,
     int num_channels,
     unsigned long frames)
@@ -383,7 +383,7 @@ static void cv_process_typed(
 } // namespace sc
 
 void cv_engine_process_format(
-    struct cv_state* state,
+    struct CvState* state,
     void* buffer,
     int num_channels,
     int format,

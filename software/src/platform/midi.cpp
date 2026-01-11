@@ -69,7 +69,7 @@ static void alsa_error(const char* msg, int r)
     LOG_ERROR("ALSA %s: %s", msg, snd_strerror(r));
 }
 
-int midi_open(struct midi* m, const char* name)
+int midi_open(struct Midi* m, const char* name)
 {
     int r;
 
@@ -82,7 +82,7 @@ int midi_open(struct midi* m, const char* name)
     return 0;
 }
 
-void midi_close(struct midi* m)
+void midi_close(struct Midi* m)
 {
     if (snd_rawmidi_close(m->in) < 0) {
         abort();
@@ -99,7 +99,7 @@ void midi_close(struct midi* m)
  * Return: -1 if len is not large enough, otherwise n on success
  * Post: on success, pe is filled with n entries
  */
-ssize_t midi_pollfds(struct midi* m, struct pollfd* pe, size_t len)
+ssize_t midi_pollfds(struct Midi* m, struct pollfd* pe, size_t len)
 {
     int r;
 
@@ -120,7 +120,7 @@ ssize_t midi_pollfds(struct midi* m, struct pollfd* pe, size_t len)
  * Return: -1 on error, otherwise n on success
  * Post: on success, buf is filled with n bytes of data
  */
-ssize_t midi_read(struct midi* m, void* buf, size_t len)
+ssize_t midi_read(struct Midi* m, void* buf, size_t len)
 {
     ssize_t r;
 
@@ -136,7 +136,7 @@ ssize_t midi_read(struct midi* m, void* buf, size_t len)
     return r;
 }
 
-ssize_t midi_write(struct midi* m, const void* buf, size_t len)
+ssize_t midi_write(struct Midi* m, const void* buf, size_t len)
 {
     ssize_t r;
 

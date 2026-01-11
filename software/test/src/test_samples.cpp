@@ -19,7 +19,7 @@ static constexpr double PI = 3.14159265358979323846;
 static constexpr double TWO_PI = 2.0 * PI;
 
 // Helper to write samples to a track
-static void write_sample(struct track* t, unsigned int sample_idx,
+static void write_sample(Track* t, unsigned int sample_idx,
                          signed short left, signed short right)
 {
     if (sample_idx >= t->length) return;
@@ -33,10 +33,10 @@ static void write_sample(struct track* t, unsigned int sample_idx,
     }
 }
 
-struct track* generate_sine(double frequency, int sample_rate,
+Track* generate_sine(double frequency, int sample_rate,
                             unsigned int length_samples, double amplitude)
 {
-    struct track* t = track_acquire_for_recording(sample_rate);
+    Track* t = track_acquire_for_recording(sample_rate);
     if (!t) return nullptr;
 
     t->ensure_space(length_samples);
@@ -57,11 +57,11 @@ struct track* generate_sine(double frequency, int sample_rate,
     return t;
 }
 
-struct track* generate_sweep(double start_freq, double end_freq,
+Track* generate_sweep(double start_freq, double end_freq,
                              int sample_rate, unsigned int length_samples,
                              double amplitude)
 {
-    struct track* t = track_acquire_for_recording(sample_rate);
+    Track* t = track_acquire_for_recording(sample_rate);
     if (!t) return nullptr;
 
     t->ensure_space(length_samples);
@@ -88,10 +88,10 @@ struct track* generate_sweep(double start_freq, double end_freq,
     return t;
 }
 
-struct track* generate_noise(int sample_rate, unsigned int length_samples,
+Track* generate_noise(int sample_rate, unsigned int length_samples,
                              double amplitude, unsigned int seed)
 {
-    struct track* t = track_acquire_for_recording(sample_rate);
+    Track* t = track_acquire_for_recording(sample_rate);
     if (!t) return nullptr;
 
     t->ensure_space(length_samples);
@@ -109,10 +109,10 @@ struct track* generate_noise(int sample_rate, unsigned int length_samples,
     return t;
 }
 
-struct track* generate_impulses(int sample_rate, unsigned int length_samples,
+Track* generate_impulses(int sample_rate, unsigned int length_samples,
                                 double interval_seconds, double amplitude)
 {
-    struct track* t = track_acquire_for_recording(sample_rate);
+    Track* t = track_acquire_for_recording(sample_rate);
     if (!t) return nullptr;
 
     t->ensure_space(length_samples);
@@ -137,9 +137,9 @@ struct track* generate_impulses(int sample_rate, unsigned int length_samples,
     return t;
 }
 
-struct track* generate_silence(int sample_rate, unsigned int length_samples)
+Track* generate_silence(int sample_rate, unsigned int length_samples)
 {
-    struct track* t = track_acquire_for_recording(sample_rate);
+    Track* t = track_acquire_for_recording(sample_rate);
     if (!t) return nullptr;
 
     t->ensure_space(length_samples);
@@ -156,9 +156,9 @@ struct track* generate_silence(int sample_rate, unsigned int length_samples)
     return t;
 }
 
-struct track* generate_from_buffer(const std::vector<float>& buffer, int sample_rate)
+Track* generate_from_buffer(const std::vector<float>& buffer, int sample_rate)
 {
-    struct track* t = track_acquire_for_recording(sample_rate);
+    Track* t = track_acquire_for_recording(sample_rate);
     if (!t) return nullptr;
 
     unsigned int length_samples = static_cast<unsigned int>(buffer.size() / 2);  // Stereo

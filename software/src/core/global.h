@@ -30,7 +30,7 @@
 #define TARGET_SAMPLE_RATE 48000                 // 48khz
 #define TARGET_SAMPLE_FORMAT SND_PCM_FORMAT_S16  // 16-bit signed little-endian format
 
-#define DEFAULT_IMPORTER "/root/sc1000-import"
+#define DEFAULT_IMPORTER "/root/Sc1000-import"
 
-extern struct sc1000      g_sc1000_engine;
-extern struct rt          g_rt;
+extern struct Sc1000      g_sc1000_engine;
+extern struct Rt          g_rt;

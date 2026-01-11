@@ -35,11 +35,11 @@
 #include "sc1000.h"
 #include "sc_settings.h"
 
-void sc1000::setup(struct rt* rt, const char* root_path)
+void Sc1000::setup(struct Rt* rt, const char* root_path)
 {
     LOG_INFO("SC1000 engine init (root: %s)", root_path);
 
-    settings = std::make_unique<sc_settings>();
+    settings = std::make_unique<ScSettings>();
     mappings.clear();
 
     // Store root path in settings for use by other components
@@ -71,7 +71,7 @@ void sc1000::setup(struct rt* rt, const char* root_path)
     alsa_clear_config_cache();
 }
 
-void sc1000::load_sample_folders()
+void Sc1000::load_sample_folders()
 {
     const std::string& root = settings->root_path;
     std::string samples_path = root + "/samples";
@@ -120,7 +120,7 @@ void sc1000::load_sample_folders()
     }
 }
 
-void sc1000::clear()
+void Sc1000::clear()
 {
     beat_deck.clear();
     scratch_deck.clear();
@@ -132,21 +132,21 @@ void sc1000::clear()
     settings.reset();
 }
 
-void sc1000::audio_start()
+void Sc1000::audio_start()
 {
     if (audio) {
         audio->start();
     }
 }
 
-void sc1000::audio_stop()
+void Sc1000::audio_stop()
 {
     if (audio) {
         audio->stop();
     }
 }
 
-ssize_t sc1000::audio_pollfds(struct pollfd* pe, size_t z)
+ssize_t Sc1000::audio_pollfds(struct pollfd* pe, size_t z)
 {
     if (audio) {
         return audio->pollfds(pe, z);
@@ -154,7 +154,7 @@ ssize_t sc1000::audio_pollfds(struct pollfd* pe, size_t z)
     return 0;
 }
 
-void sc1000::audio_handle()
+void Sc1000::audio_handle()
 {
     if (fault || !audio) {
         return;
@@ -167,9 +167,9 @@ void sc1000::audio_handle()
 }
 
 // Helper to handle recording for a single deck
-static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
+static void handle_single_deck_recording(Sc1000* engine, Deck* dk, int deck_no)
 {
-    player* pl = &dk->player;
+    Player* pl = &dk->player;
 
     if (!engine->audio) return;
 
@@ -219,7 +219,7 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
     }
 }
 
-void sc1000::handle_deck_recording()
+void Sc1000::handle_deck_recording()
 {
     // Handle loop buffer recording for both decks (memory-based, for immediate scratching)
     handle_single_deck_recording(this, &beat_deck, 0);     // Beat deck = 0

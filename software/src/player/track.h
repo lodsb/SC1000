@@ -21,85 +21,69 @@
 
 #pragma once
 
-#include <stdbool.h>
+#include <cstddef>
 #include <sys/poll.h>
 #include <sys/types.h>
 
-#define TRACK_CHANNELS 2
+constexpr int TRACK_CHANNELS = 2;
+constexpr int TRACK_MAX_BLOCKS = 64;
+constexpr int TRACK_BLOCK_SAMPLES = 2048 * 1024;
+constexpr int TRACK_PPM_RES = 64;
+constexpr int TRACK_OVERVIEW_RES = 2048;
 
-#define TRACK_MAX_BLOCKS 64
-#define TRACK_BLOCK_SAMPLES (2048 * 1024)
-#define TRACK_PPM_RES 64
-#define TRACK_OVERVIEW_RES 2048
-
-struct track_block {
+struct TrackBlock {
     signed short pcm[TRACK_BLOCK_SAMPLES * TRACK_CHANNELS];
 };
 
-struct track {
+struct Track {
     unsigned int refcount;
     int rate;
 
-    /* pointers to external data */
+    // Pointers to external data (owned by caller)
+    const char* importer;
+    const char* path;
 
-    const char *importer, *path;
+    size_t bytes;           // Bytes loaded
+    unsigned int length;    // Track length in samples
+    unsigned int blocks;    // Number of blocks allocated
+    TrackBlock* block[TRACK_MAX_BLOCKS];
 
-    size_t bytes; /* loaded in */
-    unsigned int length, /* track length in samples */
-        blocks; /* number of blocks allocated */
-    struct track_block *block[TRACK_MAX_BLOCKS];
-
-    /* State of audio import */
-
+    // State of audio import
     pid_t pid;
     int fd;
-    struct pollfd *pe;
+    struct pollfd* pe;
     bool terminated;
-
     bool finished;
 
-#ifdef __cplusplus
-    // C++ member functions
-
-    /* Return true if the track importer is running, otherwise false */
+    // Return true if the track importer is running
     bool is_importing() const { return pid != 0; }
 
-    /* Return a pointer to (not value of) the sample data for each channel */
+    // Return a pointer to the sample data at position s
     signed short* get_sample(int s) {
-        struct track_block* b = block[s / TRACK_BLOCK_SAMPLES];
+        TrackBlock* b = block[s / TRACK_BLOCK_SAMPLES];
         return &b->pcm[(s % TRACK_BLOCK_SAMPLES) * TRACK_CHANNELS];
     }
 
-    /* Ensure track has enough space for the given number of samples */
+    // Ensure track has enough space for the given number of samples
     int ensure_space(unsigned int samples);
 
-    /* Set track length (for direct recording) */
+    // Set track length (for direct recording)
     void set_length(unsigned int samples);
 
-    /* Get entry for use by poll() */
-    void pollfd(struct pollfd* pe);
+    // Get entry for use by poll()
+    void pollfd(struct pollfd* poll_entry);
 
-    /* Handle any file descriptor activity on this track */
+    // Handle any file descriptor activity on this track
     void handle();
-#endif
 };
 
-// Global function to enable memory locking
-#ifdef __cplusplus
-extern "C" {
-#endif
+// Enable memory locking for track allocations
+void track_use_mlock();
 
-void track_use_mlock(void);
-
-/* Tracks are dynamically allocated and reference counted */
-
-struct track* track_acquire_by_import(const char *importer, const char *path);
-struct track* track_acquire_empty(void);
-struct track* track_acquire_for_recording(int sample_rate);
-void track_acquire(struct track *t);
-void track_release(struct track *t);
-
-#ifdef __cplusplus
-}
-#endif
+// Track acquisition functions (reference counted)
+Track* track_acquire_by_import(const char* importer, const char* path);
+Track* track_acquire_empty();
+Track* track_acquire_for_recording(int sample_rate);
+void track_acquire(Track* t);
+void track_release(Track* t);
 

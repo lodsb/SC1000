@@ -33,7 +33,7 @@
  * non-blocking file descriptors
  */
 
-struct rb {
+struct Rb {
     char buf[4096];
     size_t len;
 };
@@ -41,5 +41,5 @@ struct rb {
 pid_t fork_pipe(int *fd, const char *path, char *arg, ...);
 pid_t fork_pipe_nb(int *fd, const char *path, char *arg, ...);
 
-void rb_reset(struct rb *rb);
-ssize_t get_line(int fd, struct rb *rb, char **string);
+void rb_reset(struct Rb *rb);
+ssize_t get_line(int fd, struct Rb *rb, char **string);

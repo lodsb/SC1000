@@ -23,13 +23,13 @@
 
 #include <memory>
 
-struct sc1000;
-struct sc_settings;
+struct Sc1000;
+struct ScSettings;
 class AudioHardware;
 
 // Factory: creates ALSA audio hardware instance
 // Returns nullptr on failure
-std::unique_ptr<AudioHardware> alsa_create(sc1000* engine, sc_settings* settings);
+std::unique_ptr<AudioHardware> alsa_create(Sc1000* engine, ScSettings* settings);
 
 // Clear ALSA config cache (call after device setup to free memory)
 void alsa_clear_config_cache();

@@ -49,7 +49,7 @@ MidiController::~MidiController()
     }
 }
 
-int MidiController::init(struct rt* rt, const char* hw)
+int MidiController::init(struct Rt* rt, const char* hw)
 {
     LOG_INFO("MIDI controller init %p from %s", static_cast<void*>(this), hw);
 
@@ -80,7 +80,7 @@ int MidiController::init(struct rt* rt, const char* hw)
     return 0;
 }
 
-int MidiController::add_deck(struct deck* k)
+int MidiController::add_deck(struct Deck* k)
 {
     debug("%p add deck %p", this, k);
 
@@ -176,7 +176,7 @@ void MidiController::clear()
     }
 }
 
-std::unique_ptr<MidiController> create_midi_controller(struct rt* rt, const char* hw)
+std::unique_ptr<MidiController> create_midi_controller(struct Rt* rt, const char* hw)
 {
     auto controller = std::make_unique<MidiController>();
     if (controller->init(rt, hw) == -1) {

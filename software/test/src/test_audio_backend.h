@@ -30,7 +30,7 @@ public:
     static constexpr unsigned int DEFAULT_SAMPLE_RATE = 48000;
     static constexpr unsigned int DEFAULT_PERIOD_SIZE = 256;
 
-    TestAudioBackend(sc1000* engine, unsigned int sample_rate = DEFAULT_SAMPLE_RATE);
+    TestAudioBackend(Sc1000* engine, unsigned int sample_rate = DEFAULT_SAMPLE_RATE);
     ~TestAudioBackend() override;
 
     // AudioHardware interface (mostly no-ops for testing)
@@ -47,8 +47,8 @@ public:
     bool has_loop(int deck) const override;
     bool has_capture() const override { return capture_enabled_; }
     void reset_loop(int deck) override;
-    struct track* get_loop_track(int deck) override;
-    struct track* peek_loop_track(int deck) override;
+    Track* get_loop_track(int deck) override;
+    Track* peek_loop_track(int deck) override;
 
     // Query API
     sc::audio::DeckProcessingState get_deck_state(int deck) const override;
@@ -82,7 +82,7 @@ public:
     double render_time() const { return static_cast<double>(total_samples_) / sample_rate_; }
 
 private:
-    sc1000* engine_;
+    Sc1000* engine_;
     std::unique_ptr<sc::audio::AudioEngineBase> audio_engine_;
 
     unsigned int sample_rate_;

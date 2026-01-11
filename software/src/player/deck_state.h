@@ -21,7 +21,7 @@
 
 #include <cstdint>
 
-struct track;
+struct Track;
 
 //
 // Deck state substates - grouped for clarity and maintainability
@@ -63,12 +63,12 @@ struct EncoderState {
 
 // Loop recording state (deck-level, persists across track changes)
 struct LoopState {
-    struct track* track = nullptr;  // Recorded loop track (ref-counted)
+    Track* track = nullptr;  // Recorded loop track (ref-counted)
 
     bool has_loop() const;  // Defined in deck.cpp where track is complete
 
     void reset() {
-        // Note: Does NOT release the track - that's handled by deck::clear()
+        // Note: Does NOT release the track - that's handled by Deck::clear()
         // This just resets the pointer for state tracking
         track = nullptr;
     }

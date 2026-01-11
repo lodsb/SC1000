@@ -127,25 +127,35 @@ void deck::clear()
 	}
 }
 
-bool deck::is_locked() const
+bool deck::is_locked(struct sc1000* engine) const
 {
-	return (protect && player.is_active());
+	if (!engine || !engine->audio) return false;
+	return (protect && engine->audio->get_deck_state(deck_no).is_active());
 }
 
-void deck::recue()
+void deck::recue(struct sc1000* engine)
 {
-	if (is_locked())
+	if (is_locked(engine))
 	{
 		status_printf(STATUS_WARN, "Stop deck to recue");
 		return;
 	}
 
-	player.recue();
+	// Set offset to current position (elapsed = 0)
+	double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
+	player.input.position_offset = current_pos;
 }
 
-void deck::clone(const deck& from)
+void deck::clone(const deck& from, struct sc1000* engine)
 {
-	player.clone(from.player);
+	// Copy input state and preserve elapsed time
+	double from_elapsed = 0.0;
+	double to_current = 0.0;
+	if (engine && engine->audio) {
+		from_elapsed = engine->audio->get_deck_state(from.deck_no).elapsed();
+		to_current = engine->audio->get_position(deck_no);
+	}
+	player.input.position_offset = to_current - from_elapsed;
 }
 
 void deck::unset_cue(unsigned int label)
@@ -153,42 +163,51 @@ void deck::unset_cue(unsigned int label)
 	cues.unset(label);
 }
 
-void deck::cue(unsigned int label)
+void deck::cue(unsigned int label, struct sc1000* engine)
 {
 	double p = cues.get_or_unset(label);
 	if (p == CUE_UNSET) {
-		cues.set(label, player.get_elapsed());
+		// Set cue at current elapsed time
+		double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
+		cues.set(label, elapsed);
 		cues.save_to_file(player.track->path);
 	}
 	else {
-		player.seek_to(p);
+		// Seek to cue point: set offset so elapsed = p
+		double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
+		player.input.position_offset = current_pos - p;
 	}
 }
 
-void deck::punch_in(unsigned int label)
+void deck::punch_in(unsigned int label, struct sc1000* engine)
 {
-	double e = player.get_elapsed();
+	double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
 	double p = cues.get_or_unset(label);
 	if (p == CUE_UNSET)
 	{
-		cues.set(label, e);
+		cues.set(label, elapsed);
 		return;
 	}
 
+	double e = elapsed;
 	if (punch != NO_PUNCH)
 		e -= punch;
 
-	player.seek_to(p);
+	// Seek to cue point
+	double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
+	player.input.position_offset = current_pos - p;
 	punch = p - e;
 }
 
-void deck::punch_out()
+void deck::punch_out(struct sc1000* engine)
 {
 	if (punch == NO_PUNCH)
 		return;
 
-	double e = player.get_elapsed();
-	player.seek_to(e - punch);
+	double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
+	double target = elapsed - punch;
+	double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
+	player.input.position_offset = current_pos - target;
 	punch = NO_PUNCH;
 }
 

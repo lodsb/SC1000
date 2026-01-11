@@ -49,7 +49,7 @@ void perform_action_for_deck(deck* deck, const mapping* map,
             cuenum = map->midi_command_bytes[1];
         else
             cuenum = (map->gpio_port * 32) + map->pin + 128;
-        deck->cue(cuenum);
+        deck->cue(cuenum, engine);
     }
     else if (map->action_type == DELETECUE) {
         unsigned int cuenum = 0;

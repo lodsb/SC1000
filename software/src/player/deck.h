@@ -77,13 +77,13 @@ struct deck
    ~deck();  // Destructor defined in .cpp where Playlist is complete
    int init(struct sc_settings* settings);
    void clear();
-   bool is_locked() const;
-   void recue();
-   void clone(const deck& from);
+   bool is_locked(struct sc1000* engine) const;
+   void recue(struct sc1000* engine);
+   void clone(const deck& from, struct sc1000* engine);
    void unset_cue(unsigned int label);
-   void cue(unsigned int label);
-   void punch_in(unsigned int label);
-   void punch_out();
+   void cue(unsigned int label, struct sc1000* engine);
+   void punch_in(unsigned int label, struct sc1000* engine);
+   void punch_out(struct sc1000* engine);
    void load_folder(const char* folder_name);
    void next_file(struct sc1000* engine, struct sc_settings* settings);
    void prev_file(struct sc1000* engine, struct sc_settings* settings);

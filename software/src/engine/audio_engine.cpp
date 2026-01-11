@@ -454,21 +454,6 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     state2->position += r2;
     state2->volume = target_volume_2;
 
-    // LEGACY: Sync back to old player fields for code that hasn't migrated yet.
-    // TODO: Remove once all external code uses query API.
-    pl1->pos_state.current = state1->position;
-    pl2->pos_state.current = state2->position;
-    pl1->pitch_state.current = state1->pitch;
-    pl2->pitch_state.current = state2->pitch;
-    pl1->pitch_state.motor_speed = state1->motor_speed;
-    pl2->pitch_state.motor_speed = state2->motor_speed;
-    pl1->volume_state.fader_current = state1->fader_current;
-    pl2->volume_state.fader_current = state2->fader_current;
-    pl1->volume_state.playback = state1->volume;
-    pl2->volume_state.playback = state2->volume;
-    pl1->platter_state.touched_prev = state1->touched_prev;
-    pl2->platter_state.touched_prev = state2->touched_prev;
-
     // Handle capture: loop recording and monitoring
     int deck = active_recording_deck_;
     bool recording = (deck >= 0 && deck < 2);

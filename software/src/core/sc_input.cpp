@@ -444,9 +444,7 @@ void process_pic(struct sc1000* sc1000_engine)
 
     process_io(sc1000_engine);
 
-    // Apply volume and fader
-    // Note: We use local variables for fader targets to avoid race with audio thread
-    // (audio engine also writes to volume_state.set for smoothing purposes)
+    // Apply volume and fader from ADC values
 
     if (!settings->disable_volume_adc)
     {
@@ -785,16 +783,7 @@ void process_rot(struct sc1000* sc1000_engine)
 
             sc1000_engine->scratch_deck.player.input.target_position = (double)(sc1000_engine->scratch_deck.encoder_state.angle +
                 sc1000_engine->scratch_deck.encoder_state.offset) / settings->platter_speed;
-
-            // Loop when track gets to end
-
-            /*if (deck[1].player.pos_state.target > ((double)deck[1].player.track->length / (double)deck[1].player.track->rate))
-                    {
-                        deck[1].player.pos_state.target = 0;
-                        angleOffset = encoderAngle;
-                    }*/
         }
-        //}
         old_pitch_mode = sc1000_engine->input_state.pitch_mode();
     }
 }

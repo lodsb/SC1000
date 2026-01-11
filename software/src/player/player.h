@@ -75,13 +75,20 @@ struct player
     void init(unsigned int sample_rate, struct track* track, struct sc_settings* settings);
     void clear();
     void set_track(struct track* track);
+
+    // DEPRECATED - use query API and DeckInput instead:
+    //   get_elapsed() -> AudioHardware::get_deck_state(deck).elapsed()
+    //   is_active() -> AudioHardware::get_deck_state(deck).is_active()
+    //   seek_to() -> set player.input.position_offset
+    //   recue() -> set player.input.position_offset = current_position
+    //   clone() -> copy input state and calculate offset from elapsed
     void clone(const player& from);
     double get_elapsed() const;
     bool is_active() const;
     void seek_to(double seconds);
     void recue();
 
-    // New: centralized state reset for track loading
+    // Centralized state reset for track loading
     void reset_for_track_load();
 };
 

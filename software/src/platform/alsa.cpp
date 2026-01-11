@@ -351,12 +351,18 @@ static alsa_device_info* find_matching_device(audio_interface* config) {
     if (sscanf(config->device.c_str(), "hw:%d", &card_num) == 1 ||
         sscanf(config->device.c_str(), "plughw:%d", &card_num) == 1) {
         if (card_num >= 0 && card_num < MAX_ALSA_DEVICES && alsa_devices[card_num].is_present) {
-            return &alsa_devices[card_num];
+            // Verify device has audio output capability (not just MIDI)
+            if (alsa_devices[card_num].output_channels > 0) {
+                return &alsa_devices[card_num];
+            }
+            LOG_DEBUG("Device hw:%d has no audio output, skipping", card_num);
         }
     }
 
+    // Substring match on card name - only consider devices with audio output
     for (int i = 0; i < MAX_ALSA_DEVICES; i++) {
         if (!alsa_devices[i].is_present) continue;
+        if (alsa_devices[i].output_channels == 0) continue;  // Skip MIDI-only devices
         if (contains_substring_ci(alsa_devices[i].card_name, config->device.c_str()) ||
             contains_substring_ci(alsa_devices[i].card_name, config->name.c_str())) {
             return &alsa_devices[i];
@@ -774,7 +780,7 @@ std::unique_ptr<AudioHardware> alsa_create(sc1000* engine, sc_settings* settings
 
     LOG_INFO("No config match, using fallback");
     for (int i = 0; i < MAX_ALSA_DEVICES; i++) {
-        if (alsa_devices[i].is_present) {
+        if (alsa_devices[i].is_present && alsa_devices[i].output_channels > 0) {
             LOG_INFO("Using fallback device %d (%s)", i, alsa_devices[i].card_name);
             auto alsa = std::make_unique<AlsaAudio>(engine);
             if (alsa->setup(&alsa_devices[i], nullptr, DEVICE_CHANNELS, settings)) {

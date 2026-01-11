@@ -110,6 +110,7 @@ void audio_engine_update_global_stats(sc::audio::AudioEngineBase* engine);
 #include "sample_format.h"
 #include "interpolation_policy.h"
 #include "loop_buffer.h"
+#include "deck_processing_state.h"
 #include <alsa/asoundlib.h>
 
 namespace sc {
@@ -169,6 +170,20 @@ public:
     virtual const DspStats& get_stats() const = 0;
     virtual void reset_peak() = 0;
 
+    // === Query API for external code ===
+    // These provide read-only access to deck state.
+    // Thread-safe: audio engine writes, external code reads.
+
+    // Get full deck state (returns copy for thread safety)
+    virtual DeckProcessingState get_deck_state(int deck) const = 0;
+
+    // Convenience getters for common queries
+    virtual double get_position(int deck) const = 0;
+    virtual double get_pitch(int deck) const = 0;
+    virtual double get_volume(int deck) const = 0;
+    virtual double get_elapsed(int deck) const = 0;
+    virtual bool is_deck_active(int deck) const = 0;
+
     // Factory: creates correct template instantiation based on mode and format
     static std::unique_ptr<AudioEngineBase> create(
         InterpolationMode interp,
@@ -219,16 +234,48 @@ public:
         stats_.xruns = 0;
     }
 
+    // Query API
+    DeckProcessingState get_deck_state(int deck) const override {
+        if (deck < 0 || deck > 1) return DeckProcessingState{};
+        return deck_state_[deck];  // Returns copy
+    }
+
+    double get_position(int deck) const override {
+        if (deck < 0 || deck > 1) return 0.0;
+        return deck_state_[deck].position;
+    }
+
+    double get_pitch(int deck) const override {
+        if (deck < 0 || deck > 1) return 0.0;
+        return deck_state_[deck].pitch;
+    }
+
+    double get_volume(int deck) const override {
+        if (deck < 0 || deck > 1) return 0.0;
+        return deck_state_[deck].volume;
+    }
+
+    double get_elapsed(int deck) const override {
+        if (deck < 0 || deck > 1) return 0.0;
+        return deck_state_[deck].elapsed();
+    }
+
+    bool is_deck_active(int deck) const override {
+        if (deck < 0 || deck > 1) return false;
+        return deck_state_[deck].is_active();
+    }
+
 private:
     DspStats stats_{};
+    DeckProcessingState deck_state_[2]{};  // Per-deck audio engine internal state
     loop_buffer loop_[2]{};              // Loop buffers for both decks
     int active_recording_deck_ = -1;     // Which deck is recording (-1 = none)
     float monitoring_volume_ = 0.0f;     // Monitoring volume for recording
     bool loop_buffers_initialized_ = false;
 
     // Setup player parameters for the block
-    void setup_player(player* pl, unsigned long samples, const sc_settings* settings,
-                      double* target_volume, double* filtered_pitch);
+    void setup_player(player* pl, DeckProcessingState* state, unsigned long samples,
+                      const sc_settings* settings, double* target_volume, double* filtered_pitch);
 
     // Process and mix both players
     void process_players(

@@ -58,6 +58,7 @@
 
 using namespace sc::platform;
 using sc::control::dispatch_event;
+using sc::control::ButtonState;
 
 namespace sc {
 namespace input {
@@ -70,6 +71,10 @@ namespace input {
 struct InputContext {
     // Platform hardware (GPIO, encoder, PIC)
     HardwareState hw;
+
+    // Button runtime state (separate from mapping config)
+    // Key is index into MappingRegistry::all()
+    std::unordered_map<size_t, ButtonState> button_states;
 
     // Shift key state
     bool shift_latched = false;
@@ -232,8 +237,13 @@ void process_io(struct sc1000* sc1000_engine)
     // This ensures all mappings for the same button see the same pre-press shifted state
     bool shifted_at_start = sc1000_engine->input_state.is_shifted();
 
-    for (auto& m : sc1000_engine->mappings.all())
+    // Use index-based iteration to associate ButtonState with each mapping
+    auto& mappings = sc1000_engine->mappings.all();
+    for (size_t idx = 0; idx < mappings.size(); ++idx)
     {
+        const mapping& m = mappings[idx];
+        ButtonState& bs = g_input_ctx.button_states[idx];  // Creates if not exists
+
         // Only digital pins
         if (m.type == IO && (!(m.gpio_port == 0 && !gpio->mcp23017_present)))
         {
@@ -259,7 +269,7 @@ void process_io(struct sc1000* sc1000_engine)
             // > -scsettings.debounce_time and < 0 when debouncing negative edge
 
             // Button not pressed, check for button
-            if (m.debounce == 0)
+            if (bs.debounce == 0)
             {
                 if (pin_value)
                 {
@@ -278,14 +288,14 @@ void process_io(struct sc1000* sc1000_engine)
                                                                  "/var/os-version.mp3"));
                         sc1000_engine->beat_deck.cues.load_from_file(
                                             sc1000_engine->beat_deck.player.track->path);
-                        sc1000_engine->scratch_deck.player.set_volume = 0.0;
+                        sc1000_engine->scratch_deck.player.input.volume_knob = 0.0;
                     }
                     else
                     {
                         // IMPORTANT: Use the shifted state captured at start of process_io()
                         // This ensures ALL mappings for the same button see the same pre-press state
                         // (prevents SHIFTON from affecting SHIFTOFF's latch value)
-                        m.shifted_at_press = shifted_at_start;
+                        bs.shifted_at_press = shifted_at_start;
 
                         // Debug: show when mapping check happens for nav buttons
                         if (m.action_type == NEXTFILE || m.action_type == PREVFILE ||
@@ -312,55 +322,55 @@ void process_io(struct sc1000* sc1000_engine)
                         }
 
                         // start the counter
-                        m.debounce++;
+                        bs.debounce++;
                     }
                 }
             }
 
             // Debouncing positive edge, increment value
-            else if (m.debounce > 0 && m.debounce < settings->debounce_time)
+            else if (bs.debounce > 0 && bs.debounce < settings->debounce_time)
             {
-                m.debounce++;
+                bs.debounce++;
             }
 
             // debounce finished, keep incrementing until hold reached
-            else if (m.debounce >= settings->debounce_time && m.debounce < settings->hold_time)
+            else if (bs.debounce >= settings->debounce_time && bs.debounce < settings->hold_time)
             {
                 // check to see if unpressed
                 if (!pin_value)
                 {
                     LOG_DEBUG("Button %d released", m.pin);
                     // Use latched shifted state for release detection
-                    if ((!m.shifted_at_press && m.edge_type == BUTTON_RELEASED) ||
-                        (m.shifted_at_press && m.edge_type == BUTTON_RELEASED_SHIFTED))
+                    if ((!bs.shifted_at_press && m.edge_type == BUTTON_RELEASED) ||
+                        (bs.shifted_at_press && m.edge_type == BUTTON_RELEASED_SHIFTED))
                         dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                     // start the counter
-                    m.debounce = -settings->debounce_time;
+                    bs.debounce = -settings->debounce_time;
                 }
 
                 else
-                    m.debounce++;
+                    bs.debounce++;
             }
             // Button has been held for a while
-            else if (m.debounce == settings->hold_time)
+            else if (bs.debounce == settings->hold_time)
             {
                 // Debug: log all hold events
                 LOG_DEBUG("Button port=%d pin=%d HELD, shifted_at_press=%d, edge_type=%d, action=%d",
-                          m.gpio_port, m.pin, m.shifted_at_press,
+                          m.gpio_port, m.pin, bs.shifted_at_press,
                           m.edge_type, m.action_type);
                 // Use latched shifted state from when button was first pressed
-                if ((!m.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
-                    (m.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
+                if ((!bs.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
+                    (bs.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
                 {
                     LOG_DEBUG("Triggering held action for port=%d pin=%d action=%d",
                               m.gpio_port, m.pin, m.action_type);
                     dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                 }
-                m.debounce++;
+                bs.debounce++;
             }
 
             // Button still holding, check for release
-            else if (m.debounce > settings->hold_time)
+            else if (bs.debounce > settings->hold_time)
             {
                 if (pin_value)
                 {
@@ -368,8 +378,8 @@ void process_io(struct sc1000* sc1000_engine)
                     {
                         // keep running the vol up/down actions if they're held
                         // Use latched shifted state from when button was first pressed
-                        if ((!m.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
-                            (m.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
+                        if ((!bs.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
+                            (bs.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
                             dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                     }
                 }
@@ -379,17 +389,17 @@ void process_io(struct sc1000* sc1000_engine)
                     LOG_DEBUG("Button %d released", m.pin);
                     // Note: After hold time, release events don't fire (button was held too long)
                     // Only unshifted BUTTON_RELEASED fires here (for legacy compatibility)
-                    if (m.edge_type == BUTTON_RELEASED && !m.shifted_at_press)
+                    if (m.edge_type == BUTTON_RELEASED && !bs.shifted_at_press)
                         dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
                     // start the counter
-                    m.debounce = -settings->debounce_time;
+                    bs.debounce = -settings->debounce_time;
                 }
             }
 
             // Debouncing negative edge, increment value - will reset when zero is reached
-            else if (m.debounce < 0)
+            else if (bs.debounce < 0)
             {
-                m.debounce++;
+                bs.debounce++;
             }
         }
     }
@@ -435,11 +445,22 @@ void process_pic(struct sc1000* sc1000_engine)
     process_io(sc1000_engine);
 
     // Apply volume and fader
+    // Note: We use local variables for fader targets to avoid race with audio thread
+    // (audio engine also writes to volume_state.set for smoothing purposes)
 
     if (!settings->disable_volume_adc)
     {
-        sc1000_engine->beat_deck.player.set_volume = ((double)ADCs[2]) / 1024;
-        sc1000_engine->scratch_deck.player.set_volume = ((double)ADCs[3]) / 1024;
+        fadertarget0 = ((double)ADCs[2]) / 1024;
+        fadertarget1 = ((double)ADCs[3]) / 1024;
+        LOG_DEBUG("VOL ADC: ADC2=%d ADC3=%d -> ft0=%.2f ft1=%.2f",
+                  ADCs[2], ADCs[3], fadertarget0, fadertarget1);
+    }
+    else
+    {
+        // SC500 or MIDI-only mode: use knob value (from buttons/MIDI or initial_volume)
+        fadertarget0 = sc1000_engine->beat_deck.player.input.volume_knob;
+        fadertarget1 = sc1000_engine->scratch_deck.player.input.volume_knob;
+        LOG_DEBUG("VOL SC500: knob0=%.2f knob1=%.2f", fadertarget0, fadertarget1);
     }
 
     // Fader Hysteresis
@@ -449,25 +470,24 @@ void process_pic(struct sc1000* sc1000_engine)
     fader_open1 = 1;
     fader_open2 = 1;
 
-    fadertarget0 = sc1000_engine->beat_deck.player.set_volume;
-    fadertarget1 = sc1000_engine->scratch_deck.player.set_volume;
-
 
     if (ADCs[0] < fader_cut_point1)
     {
         if (settings->cut_beats == 1) fadertarget0 = 0.0;
         else fadertarget1 = 0.0;
         fader_open1 = 0;
+        LOG_DEBUG("CUT1: ADC0=%d < cut_pt=%d, cut_beats=%d", ADCs[0], fader_cut_point1, settings->cut_beats);
     }
     if (ADCs[1] < fader_cut_point2)
     {
         if (settings->cut_beats == 2) fadertarget0 = 0.0;
         else fadertarget1 = 0.0;
         fader_open2 = 0;
+        LOG_DEBUG("CUT2: ADC1=%d < cut_pt=%d, cut_beats=%d", ADCs[1], fader_cut_point2, settings->cut_beats);
     }
 
-    sc1000_engine->beat_deck.player.fader_target = fadertarget0;
-    sc1000_engine->scratch_deck.player.fader_target = fadertarget1;
+    sc1000_engine->beat_deck.player.input.crossfader = fadertarget0;
+    sc1000_engine->scratch_deck.player.input.crossfader = fadertarget1;
 
     // Update crossfader from ADC (handles calibration and normalization)
     sc1000_engine->crossfader.update(ADCs[0]);
@@ -537,22 +557,22 @@ void process_pic(struct sc1000* sc1000_engine)
                 LOG_DEBUG("Pitch mode Disabled");
             }
             else if (totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
-                scratch_deck.files_present)
+                scratch_deck.nav_state.files_present)
                 sc1000_engine->scratch_deck.prev_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
-                scratch_deck.files_present)
+                scratch_deck.nav_state.files_present)
                 sc1000_engine->scratch_deck.next_file(sc1000_engine, settings);
             else if (totalbuttons[0] && totalbuttons[1] && !totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
-                scratch_deck.files_present)
+                scratch_deck.nav_state.files_present)
                 sc1000_engine->input_state.set_pitch_mode(2);
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && !totalbuttons[3] && sc1000_engine->
-                beat_deck.files_present)
+                beat_deck.nav_state.files_present)
                 sc1000_engine->beat_deck.prev_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && !totalbuttons[2] && totalbuttons[3] && sc1000_engine->
-                beat_deck.files_present)
+                beat_deck.nav_state.files_present)
                 sc1000_engine->beat_deck.next_file(sc1000_engine, settings);
             else if (!totalbuttons[0] && !totalbuttons[1] && totalbuttons[2] && totalbuttons[3] && sc1000_engine->
-                beat_deck.files_present)
+                beat_deck.nav_state.files_present)
                 sc1000_engine->input_state.set_pitch_mode(1);
             else if (totalbuttons[0] && totalbuttons[1] && totalbuttons[2] && totalbuttons[3])
                 shift_latched = true;
@@ -565,24 +585,22 @@ void process_pic(struct sc1000* sc1000_engine)
 
         // Act on whatever buttons are being held down when the timeout happens
         case BUTTONSTATE_ACTING_HELD:
-            if (buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.files_present)
+            if (buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.nav_state.files_present)
                 sc1000_engine->scratch_deck.prev_folder(sc1000_engine, settings);
-            else if (!buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.
-                files_present)
+            else if (!buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.nav_state.files_present)
                 sc1000_engine->scratch_deck.next_folder(sc1000_engine, settings);
-            else if (buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.
-                files_present)
+            else if (buttons[0] && buttons[1] && !buttons[2] && !buttons[3] && sc1000_engine->scratch_deck.nav_state.files_present)
                 sc1000_engine->scratch_deck.random_file(sc1000_engine, settings);
-            else if (!buttons[0] && !buttons[1] && buttons[2] && !buttons[3] && sc1000_engine->beat_deck.files_present)
+            else if (!buttons[0] && !buttons[1] && buttons[2] && !buttons[3] && sc1000_engine->beat_deck.nav_state.files_present)
                 sc1000_engine->beat_deck.prev_folder(sc1000_engine, settings);
-            else if (!buttons[0] && !buttons[1] && !buttons[2] && buttons[3] && sc1000_engine->beat_deck.files_present)
+            else if (!buttons[0] && !buttons[1] && !buttons[2] && buttons[3] && sc1000_engine->beat_deck.nav_state.files_present)
                 sc1000_engine->beat_deck.next_folder(sc1000_engine, settings);
-            else if (!buttons[0] && !buttons[1] && buttons[2] && buttons[3] && sc1000_engine->beat_deck.files_present)
+            else if (!buttons[0] && !buttons[1] && buttons[2] && buttons[3] && sc1000_engine->beat_deck.nav_state.files_present)
                 sc1000_engine->beat_deck.random_file(sc1000_engine, settings);
             else if (buttons[0] && buttons[1] && buttons[2] && buttons[3])
             {
                 LOG_DEBUG("All buttons held!");
-                if (sc1000_engine->scratch_deck.files_present)
+                if (sc1000_engine->scratch_deck.nav_state.files_present)
                     sc1000_engine->beat_deck.record();
             }
             else
@@ -624,44 +642,44 @@ void process_rot(struct sc1000* sc1000_engine)
     int wrapped_angle = 0x0000;
 
     // Read encoder angle using platform module
-    sc1000_engine->scratch_deck.new_encoder_angle = encoder_read_angle(&g_input_ctx.hw.encoder);
+    sc1000_engine->scratch_deck.encoder_state.angle_raw = encoder_read_angle(&g_input_ctx.hw.encoder);
 
     if (settings->jog_reverse)
     {
         //printf("%d,",deck[1].newEncoderAngle);
-        sc1000_engine->scratch_deck.new_encoder_angle = 4095 - sc1000_engine->scratch_deck.new_encoder_angle;
+        sc1000_engine->scratch_deck.encoder_state.angle_raw = 4095 - sc1000_engine->scratch_deck.encoder_state.angle_raw;
         //printf("%d\n",deck[1].newEncoderAngle);
     }
 
     // First time, make sure there's no difference
-    if (sc1000_engine->scratch_deck.encoder_angle == 0xffff)
-        sc1000_engine->scratch_deck.encoder_angle = sc1000_engine->scratch_deck.new_encoder_angle;
+    if (sc1000_engine->scratch_deck.encoder_state.angle == 0xffff)
+        sc1000_engine->scratch_deck.encoder_state.angle = sc1000_engine->scratch_deck.encoder_state.angle_raw;
 
     // Handle wrapping at zero
 
-    if (sc1000_engine->scratch_deck.new_encoder_angle < 1024 && sc1000_engine->scratch_deck.encoder_angle >= 3072)
+    if (sc1000_engine->scratch_deck.encoder_state.angle_raw < 1024 && sc1000_engine->scratch_deck.encoder_state.angle >= 3072)
     {
         // We crossed zero in the positive direction
 
         crossed_zero = 1;
-        wrapped_angle = sc1000_engine->scratch_deck.encoder_angle - 4096;
+        wrapped_angle = sc1000_engine->scratch_deck.encoder_state.angle - 4096;
     }
-    else if (sc1000_engine->scratch_deck.new_encoder_angle >= 3072 && sc1000_engine->scratch_deck.encoder_angle < 1024)
+    else if (sc1000_engine->scratch_deck.encoder_state.angle_raw >= 3072 && sc1000_engine->scratch_deck.encoder_state.angle < 1024)
     {
         // We crossed zero in the negative direction
         crossed_zero = -1;
-        wrapped_angle = sc1000_engine->scratch_deck.encoder_angle + 4096;
+        wrapped_angle = sc1000_engine->scratch_deck.encoder_state.angle + 4096;
     }
     else
     {
         crossed_zero = 0;
-        wrapped_angle = sc1000_engine->scratch_deck.encoder_angle;
+        wrapped_angle = sc1000_engine->scratch_deck.encoder_state.angle;
     }
 
     // Blip filter: rotary sensor sometimes returns incorrect values
     // Ignore jumps > 100 ticks, accept after 3 consecutive blips
     // (Part of encoder glitch protection chain - see audio_engine.cpp:173)
-    if (abs(sc1000_engine->scratch_deck.new_encoder_angle - wrapped_angle) > 100 && num_blips < 2)
+    if (abs(sc1000_engine->scratch_deck.encoder_state.angle_raw - wrapped_angle) > 100 && num_blips < 2)
     {
         //printf("blip! %d %d %d\n", deck[1].newEncoderAngle, deck[1].encoderAngle, wrappedAngle);
         num_blips++;
@@ -669,7 +687,7 @@ void process_rot(struct sc1000* sc1000_engine)
     else
     {
         num_blips = 0;
-        sc1000_engine->scratch_deck.encoder_angle = sc1000_engine->scratch_deck.new_encoder_angle;
+        sc1000_engine->scratch_deck.encoder_state.angle = sc1000_engine->scratch_deck.encoder_state.angle_raw;
 
         int current_pitch_mode = sc1000_engine->input_state.pitch_mode();
         if (current_pitch_mode)
@@ -680,40 +698,40 @@ void process_rot(struct sc1000* sc1000_engine)
 
                 if (current_pitch_mode == 0)
                 {
-                    sc1000_engine->beat_deck.player.note_pitch = 1.0;
+                    sc1000_engine->beat_deck.player.input.pitch_note = 1.0;
                 }
                 else
                 {
-                    sc1000_engine->scratch_deck.player.note_pitch = 1.0;
+                    sc1000_engine->scratch_deck.player.input.pitch_note = 1.0;
                 }
 
-                sc1000_engine->scratch_deck.angle_offset = -sc1000_engine->scratch_deck.encoder_angle;
+                sc1000_engine->scratch_deck.encoder_state.offset = -sc1000_engine->scratch_deck.encoder_state.angle;
                 old_pitch_mode = 1;
-                sc1000_engine->scratch_deck.player.cap_touch = false;
+                sc1000_engine->scratch_deck.player.input.touched = false;
             }
 
             // Handle wrapping at zero
 
             if (crossed_zero > 0)
             {
-                sc1000_engine->scratch_deck.angle_offset += 4096;
+                sc1000_engine->scratch_deck.encoder_state.offset += 4096;
             }
             else if (crossed_zero < 0)
             {
-                sc1000_engine->scratch_deck.angle_offset -= 4096;
+                sc1000_engine->scratch_deck.encoder_state.offset -= 4096;
             }
 
             // Use the angle of the platter to control sample pitch
 
             if (current_pitch_mode == 0)
             {
-                sc1000_engine->scratch_deck.player.note_pitch = (((double)(sc1000_engine->scratch_deck.encoder_angle +
-                    sc1000_engine->scratch_deck.angle_offset)) / 16384) + 1.0;
+                sc1000_engine->scratch_deck.player.input.pitch_note = (((double)(sc1000_engine->scratch_deck.encoder_state.angle +
+                    sc1000_engine->scratch_deck.encoder_state.offset)) / 16384) + 1.0;
             }
             else
             {
-                sc1000_engine->scratch_deck.player.note_pitch = (((double)(sc1000_engine->scratch_deck.encoder_angle +
-                    sc1000_engine->scratch_deck.angle_offset)) / 16384) + 1.0;
+                sc1000_engine->scratch_deck.player.input.pitch_note = (((double)(sc1000_engine->scratch_deck.encoder_state.angle +
+                    sc1000_engine->scratch_deck.encoder_state.offset)) / 16384) + 1.0;
             }
         }
         else
@@ -721,30 +739,33 @@ void process_rot(struct sc1000* sc1000_engine)
             if (settings->platter_enabled)
             {
                 // Handle touch sensor
-                if (cap_is_touched || sc1000_engine->scratch_deck.player.motor_speed == 0.0)
+                // Use query API to get output state from audio engine
+                double scratch_pos = sc1000_engine->audio ? sc1000_engine->audio->get_position(1) : 0.0;
+                double scratch_motor = sc1000_engine->audio ? sc1000_engine->audio->get_deck_state(1).motor_speed : 1.0;
+
+                if (cap_is_touched || scratch_motor == 0.0)
                 {
                     // Positive touching edge
-                    if (!sc1000_engine->scratch_deck.player.cap_touch || (old_pitch_mode && !sc1000_engine->scratch_deck
-                        .player.stopped))
+                    if (!sc1000_engine->scratch_deck.player.input.touched || (old_pitch_mode && !sc1000_engine->scratch_deck
+                        .player.input.stopped))
                     {
-                        sc1000_engine->scratch_deck.angle_offset = (int32_t)(
-                            (sc1000_engine->scratch_deck.player.position * settings->platter_speed) -
-                            sc1000_engine->scratch_deck.encoder_angle);
+                        sc1000_engine->scratch_deck.encoder_state.offset = static_cast<int32_t>(
+                            (scratch_pos * settings->platter_speed) -
+                            sc1000_engine->scratch_deck.encoder_state.angle);
 
                         LOG_DEBUG("touch!");
-                        sc1000_engine->scratch_deck.player.target_position = sc1000_engine->scratch_deck.player.
-                            position;
-                        sc1000_engine->scratch_deck.player.cap_touch = true;
+                        sc1000_engine->scratch_deck.player.input.target_position = scratch_pos;
+                        sc1000_engine->scratch_deck.player.input.touched = true;
                     }
                 }
                 else
                 {
-                    sc1000_engine->scratch_deck.player.cap_touch = false;
+                    sc1000_engine->scratch_deck.player.input.touched = false;
                 }
             }
 
             else
-                sc1000_engine->scratch_deck.player.cap_touch = true;
+                sc1000_engine->scratch_deck.player.input.touched = true;
 
             /*if (deck[1].player.capTouch) we always want to dump the target position so we can do lasers etc
             {*/
@@ -753,23 +774,23 @@ void process_rot(struct sc1000* sc1000_engine)
 
             if (crossed_zero > 0)
             {
-                sc1000_engine->scratch_deck.angle_offset += 4096;
+                sc1000_engine->scratch_deck.encoder_state.offset += 4096;
             }
             else if (crossed_zero < 0)
             {
-                sc1000_engine->scratch_deck.angle_offset -= 4096;
+                sc1000_engine->scratch_deck.encoder_state.offset -= 4096;
             }
 
             // Convert the raw value to track position and set player to that pos
 
-            sc1000_engine->scratch_deck.player.target_position = (double)(sc1000_engine->scratch_deck.encoder_angle +
-                sc1000_engine->scratch_deck.angle_offset) / settings->platter_speed;
+            sc1000_engine->scratch_deck.player.input.target_position = (double)(sc1000_engine->scratch_deck.encoder_state.angle +
+                sc1000_engine->scratch_deck.encoder_state.offset) / settings->platter_speed;
 
             // Loop when track gets to end
 
-            /*if (deck[1].player.target_position > ((double)deck[1].player.track->length / (double)deck[1].player.track->rate))
+            /*if (deck[1].player.pos_state.target > ((double)deck[1].player.track->length / (double)deck[1].player.track->rate))
                     {
-                        deck[1].player.target_position = 0;
+                        deck[1].player.pos_state.target = 0;
                         angleOffset = encoderAngle;
                     }*/
         }
@@ -865,8 +886,8 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
                 frame_count, ADCs[0], ADCs[1], ADCs[2], ADCs[3],
                 sc1000_engine->crossfader.position(),
                 dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
-                sc1000_engine->scratch_deck.encoder_angle,
-                sc1000_engine->scratch_deck.player.cap_touch,
+                sc1000_engine->scratch_deck.encoder_state.angle,
+                sc1000_engine->scratch_deck.player.input.touched,
                 buttons[0], buttons[1], buttons[2], buttons[3]);
 
             frame_count = 0;
@@ -914,18 +935,19 @@ void* run_sc_input_thread(struct sc1000* sc1000_engine)
         }
         else // couldn't find input processor, just play the tracks
         {
-            sc1000_engine->scratch_deck.player.cap_touch = true;
-            sc1000_engine->beat_deck.player.fader_target = 0.0;
-            sc1000_engine->scratch_deck.player.fader_target = 0.5;
-            sc1000_engine->beat_deck.player.just_play = true;
-            sc1000_engine->beat_deck.player.pitch = 1;
+            sc1000_engine->scratch_deck.player.input.touched = true;
+            sc1000_engine->beat_deck.player.input.crossfader = 0.0;
+            sc1000_engine->scratch_deck.player.input.crossfader = 0.5;
+            sc1000_engine->beat_deck.player.input.just_play = true;
+            // Set input pitch values to 1.0 (audio engine computes actual pitch from these)
+            sc1000_engine->beat_deck.player.input.reset_pitch();
 
             clock_gettime(CLOCK_MONOTONIC, &ts);
             input_time = (double)ts.tv_sec + ((double)ts.tv_nsec / 1000000000.0);
 
             if (last_input_time != 0)
             {
-                sc1000_engine->scratch_deck.player.target_position += (input_time - last_input_time);
+                sc1000_engine->scratch_deck.player.input.target_position += (input_time - last_input_time);
             }
 
             last_input_time = input_time;

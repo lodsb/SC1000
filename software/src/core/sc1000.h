@@ -25,6 +25,7 @@
 #include "../platform/crossfader.h"
 #include "../control/mapping_registry.h"
 #include "../control/input_state.h"
+#include "../engine/deck_processing_state.h"
 #include "sc_input.h"
 #include <memory>
 
@@ -53,6 +54,12 @@ public:
     virtual void reset_loop(int deck) = 0;
     virtual struct track* get_loop_track(int deck) = 0;
     virtual struct track* peek_loop_track(int deck) = 0;
+
+    // Query API (reads audio engine output state)
+    virtual sc::audio::DeckProcessingState get_deck_state(int deck) const = 0;
+    virtual double get_position(int deck) const = 0;
+    virtual double get_pitch(int deck) const = 0;
+    virtual double get_volume(int deck) const = 0;
 };
 
 struct sc1000

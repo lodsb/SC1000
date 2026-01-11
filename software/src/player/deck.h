@@ -63,7 +63,7 @@ struct deck
    // If a shift modifier has been pressed recently
    bool shifted;
 
-   // === Grouped state (new structure) ===
+   // === Grouped state ===
    NavigationState nav_state;
    EncoderState encoder_state;
    LoopState loop_state;
@@ -71,17 +71,6 @@ struct deck
    // Playlist (owned)
    std::unique_ptr<Playlist> playlist;
    int deck_no;  // 0 = beat, 1 = scratch
-
-   // === Legacy field aliases (for gradual migration) ===
-   size_t& current_folder_idx = nav_state.folder_idx;
-   int& current_file_idx = nav_state.file_idx;
-   bool& files_present = nav_state.files_present;
-
-   int32_t& angle_offset = encoder_state.offset;
-   int& encoder_angle = encoder_state.angle;
-   int& new_encoder_angle = encoder_state.angle_raw;
-
-   struct track*& loop_track = loop_state.track;
 
 #ifdef __cplusplus
    // C++ member functions

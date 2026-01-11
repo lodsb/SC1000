@@ -22,7 +22,17 @@
 //
 // Player state substates - grouped for clarity and maintainability
 //
-// These structs organize the ~30 fields in player into logical groups.
+// These structs organize player state into logical groups with clear ownership:
+//
+// OWNERSHIP PATTERN:
+//   - "Input" fields: Written by input thread, read by audio engine
+//   - "Synced from audio engine" fields: Owned by DeckProcessingState in audio engine,
+//     synced back to player after each buffer for external code (display, cues, etc.)
+//
+// The audio engine (see src/engine/deck_processing_state.h) maintains its own
+// copy of processing state to avoid race conditions. It syncs to/from player
+// at buffer boundaries.
+//
 // Each group has a reset() method for centralized state initialization.
 //
 
@@ -36,7 +46,10 @@ enum class PlaybackMode {
 
 // Position tracking state
 struct PositionState {
+    // === Synced from audio engine (read-only for external code) ===
     double current = 0;         // Actual playback position (seconds)
+
+    // === Input (written by input thread, read by audio engine) ===
     double target = 0;          // Where platter says we should be (seconds)
     double offset = 0;          // Track start point offset
     double last_difference = 0; // Last known current - target (for sync)
@@ -52,12 +65,17 @@ struct PositionState {
 // Pitch control state
 // All pitch factors are multiplicative: final = base * fader * note * bend
 struct PitchState {
-    double current = 0;         // Final pitch after smoothing (used by audio engine)
-    double sync = 1.0;          // Pitch required to sync to timecode signal
+    // === Synced from audio engine (read-only for external code) ===
+    double current = 0;         // Final pitch after smoothing
     double motor_speed = 1.0;   // Virtual motor speed (brakes when stopped)
+
+    // === Input (written by input thread, read by audio engine) ===
+    double sync = 1.0;          // Pitch required to sync to timecode signal
     double fader = 1.0;         // From hardware/MIDI pitch fader
     double note = 1.0;          // From MIDI note (equal temperament transposition)
     double bend = 1.0;          // From MIDI pitch bend
+
+    // === Audio engine internal (synced internally, not used externally) ===
     double last_external = 1.0; // Previous external speed for change detection
 
     // Combined external pitch (everything except motor/sync)
@@ -83,26 +101,37 @@ struct PitchState {
 };
 
 // Volume control state
+// Separated into input targets (written by input thread) and
+// processing state (synced from audio engine) to avoid race conditions.
 struct VolumeState {
-    double set = 1.0;           // Target volume from knobs/buttons/MIDI
-    double fader_target = 1.0;  // Crossfader target (after cut logic)
-    double fader_current = 1.0; // Crossfader after smoothing
+    // === Input (written by input thread, read by audio engine) ===
+    double knob = 1.0;          // Volume pot ADC value or MIDI CC (0-1)
+    double fader_target = 1.0;  // Crossfader position after cut logic (0-1)
+
+    // === Synced from audio engine (read-only for external code) ===
+    double fader_current = 1.0; // Crossfader after smoothing (approaches fader_target)
+    double playback = 0.0;      // Current playback volume (for inter-buffer smoothing)
 
     void reset() {
-        set = 1.0;
+        knob = 1.0;
         fader_target = 1.0;
         fader_current = 1.0;
+        playback = 0.0;
     }
 };
 
 // Platter/touch sensor state
 struct PlatterState {
+    // === Input (written by input thread, read by audio engine) ===
     bool touched = false;       // Current touch state
-    bool touched_prev = false;  // Previous frame touch state
+
+    // === Synced from audio engine (read-only for external code, can be reset externally) ===
+    bool touched_prev = false;  // Previous frame touch state (reset on track load)
 
     bool just_touched() const { return touched && !touched_prev; }
     bool just_released() const { return !touched && touched_prev; }
 
+    // Note: update() is now handled by audio engine, kept for compatibility
     void update() { touched_prev = touched; }
 
     void reset() {

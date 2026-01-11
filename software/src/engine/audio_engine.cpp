@@ -39,6 +39,8 @@
 #include "../player/track.h"
 #include "../player/deck.h"
 
+#include "../util/log.h"
+
 namespace sc {
 namespace audio {
 
@@ -198,90 +200,104 @@ void AudioEngine<InterpPolicy, FormatPolicy>::reset_loop(int deck) {
 template<typename InterpPolicy, typename FormatPolicy>
 void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
     struct player* pl,
+    DeckProcessingState* state,
     unsigned long samples,
     const struct sc_settings* settings,
     double* target_volume,
     double* filtered_pitch)
 {
+    // Read from unified input struct
+    const sc::DeckInput& in = pl->input;
+
     double target_pitch;
     auto samples_i = 1.0 / static_cast<double>(samples);
 
     // === External pitch (MIDI note/bend) ===
     // These transpose the sample directly, like changing the speed on a sampler
-    double external_speed = pl->note_pitch * pl->fader_pitch * pl->bend_pitch;
+    double external_speed = in.external_pitch();
 
     // Detect significant external pitch changes for instant response
     // Only triggers on actual MIDI note/bend changes, not on play/pause
-    bool external_changed = std::fabs(external_speed - pl->last_external_speed) > 0.01;
-    pl->last_external_speed = external_speed;
+    bool external_changed = std::fabs(external_speed - state->last_external_speed) > 0.01;
+    state->last_external_speed = external_speed;
 
     // === Motor/platter behavior ===
-    if (pl->stopped) {
+    if (in.stopped) {
         // Simulate braking: motor decelerates toward 0
-        if (pl->motor_speed > 0.1) {
-            pl->motor_speed = pl->motor_speed - samples_i * (settings->brake_speed * 10);
+        if (state->motor_speed > 0.1) {
+            state->motor_speed -= samples_i * (settings->brake_speed * 10);
         } else {
-            pl->motor_speed = 0.0;
+            state->motor_speed = 0.0;
         }
     } else {
-        pl->motor_speed = external_speed;
+        state->motor_speed = external_speed;
     }
 
     // === Pitch calculation based on mode ===
-    if (pl->just_play ||  // Platter is always released on beat deck
-        (!pl->cap_touch && !pl->cap_touch_old))  // Don't do it on first iteration for backspins
+    if (in.just_play ||  // Platter is always released on beat deck
+        (!in.touched && !state->touched_prev))  // Don't do it on first iteration for backspins
     {
         // Platter released: slipmat simulation toward motor_speed
-        if (pl->pitch > 20.0) pl->pitch = 20.0;
-        if (pl->pitch < -20.0) pl->pitch = -20.0;
+        if (state->pitch > 20.0) state->pitch = 20.0;
+        if (state->pitch < -20.0) state->pitch = -20.0;
 
         // Simulate slipmat
-        if (pl->pitch < pl->motor_speed - 0.1) {
-            target_pitch = pl->pitch + samples_i * settings->slippiness;
-        } else if (pl->pitch > pl->motor_speed + 0.1) {
-            target_pitch = pl->pitch - samples_i * settings->slippiness;
+        if (state->pitch < state->motor_speed - 0.1) {
+            target_pitch = state->pitch + samples_i * settings->slippiness;
+        } else if (state->pitch > state->motor_speed + 0.1) {
+            target_pitch = state->pitch - samples_i * settings->slippiness;
         } else {
-            target_pitch = pl->motor_speed;
+            target_pitch = state->motor_speed;
         }
     } else {
         // Platter touched: position-based control (user scratching)
-        double diff = pl->position - pl->target_position;
+        double diff = state->position - in.target_position;
 
         // Sanity check: if diff is unreasonably large (>0.5 sec), assume encoder glitch
         // and snap to current position instead of trying to catch up at high speed
         constexpr double MAX_REASONABLE_DIFF = 0.5;
         if (std::fabs(diff) > MAX_REASONABLE_DIFF) {
-            pl->target_position = pl->position;
+            // Note: can't modify input here, just snap our position
             diff = 0.0;
         }
 
         target_pitch = (-diff) * 40;
     }
-    pl->cap_touch_old = pl->cap_touch;
+    state->touched_prev = in.touched;
 
     // === Final pitch smoothing ===
-    if (external_changed && !pl->cap_touch) {
+    if (external_changed && !in.touched) {
         // Instant response for MIDI note/bend changes when not scratching
         *filtered_pitch = external_speed;
-        pl->pitch = external_speed;  // Also snap current pitch for immediate effect
+        state->pitch = external_speed;  // Also snap current pitch for immediate effect
     } else {
         // Normal IIR smoothing for all other cases
-        *filtered_pitch = (0.1 * target_pitch) + (0.9 * pl->pitch);
+        *filtered_pitch = (0.1 * target_pitch) + (0.9 * state->pitch);
     }
 
     // Volume fader decay
     double vol_decay_amount = samples_i * DECAY_SAMPLES;
 
-    if (nearly_equal(pl->fader_target, pl->fader_volume, vol_decay_amount)) {
-        pl->fader_volume = pl->fader_target;
-    } else if (pl->fader_target > pl->fader_volume) {
-        pl->fader_volume += vol_decay_amount;
+    if (nearly_equal(in.crossfader, state->fader_current, vol_decay_amount)) {
+        state->fader_current = in.crossfader;
+    } else if (in.crossfader > state->fader_current) {
+        state->fader_current += vol_decay_amount;
     } else {
-        pl->fader_volume -= vol_decay_amount;
+        state->fader_current -= vol_decay_amount;
     }
 
-    *target_volume = std::fabs(pl->pitch) * BASE_VOLUME * pl->fader_volume;
+    *target_volume = std::fabs(state->pitch) * BASE_VOLUME * state->fader_current;
     if (*target_volume > 1.0) *target_volume = 1.0;
+
+
+    static int dbg_count = 0;
+    if (++dbg_count % 1000 == 0) {
+        LOG_DEBUG("vol: pitch=%.2f knob=%.2f fader_cur=%.2f fader_tgt=%.2f target=%.2f",
+                  state->pitch, in.volume_knob,
+                  state->fader_current,
+                  in.crossfader, *target_volume);
+    }
+
 }
 
 template<typename InterpPolicy, typename FormatPolicy>
@@ -295,19 +311,40 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     struct player* pl1 = &engine->beat_deck.player;
     struct player* pl2 = &engine->scratch_deck.player;
 
+    DeckProcessingState* state1 = &deck_state_[0];
+    DeckProcessingState* state2 = &deck_state_[1];
+
+    // Read input structs
+    sc::DeckInput& in1 = pl1->input;
+    sc::DeckInput& in2 = pl2->input;
+
+    // Handle seek requests (from cue jumps, track loads, etc.)
+    if (in1.seek_to >= 0.0) {
+        state1->position = in1.seek_to;
+        state1->position_offset = in1.position_offset;
+        in1.seek_to = -1.0;  // Clear request
+    }
+    if (in2.seek_to >= 0.0) {
+        state2->position = in2.seek_to;
+        state2->position_offset = in2.position_offset;
+        in2.seek_to = -1.0;  // Clear request
+    }
+
     double target_volume_1, filtered_pitch_1;
     double target_volume_2, filtered_pitch_2;
 
-    setup_player(pl1, frames, engine->settings.get(), &target_volume_1, &filtered_pitch_1);
-    setup_player(pl2, frames, engine->settings.get(), &target_volume_2, &filtered_pitch_2);
+    setup_player(pl1, state1, frames, engine->settings.get(), &target_volume_1, &filtered_pitch_1);
+    setup_player(pl2, state2, frames, engine->settings.get(), &target_volume_2, &filtered_pitch_2);
 
     // During fresh recording (recording active but no loop yet), mute track playback
-    if (pl1->recording_active && !pl1->use_loop) target_volume_1 = 0.0;
-    if (pl2->recording_active && !pl2->use_loop) target_volume_2 = 0.0;
+    if (state1->is_recording && !state1->has_loop) target_volume_1 = 0.0;
+    if (state2->is_recording && !state2->has_loop) target_volume_2 = 0.0;
 
-    // Select track for each player: use loop track if use_loop is set
-    struct track* tr1 = pl1->use_loop ? peek_loop_track(0) : pl1->track;
-    struct track* tr2 = pl2->use_loop ? peek_loop_track(1) : pl2->track;
+    // Select track for each player based on source
+    bool use_loop_1 = (in1.source == sc::PlaybackSource::Loop) && has_loop(0);
+    bool use_loop_2 = (in2.source == sc::PlaybackSource::Loop) && has_loop(1);
+    struct track* tr1 = use_loop_1 ? peek_loop_track(0) : pl1->track;
+    struct track* tr2 = use_loop_2 ? peek_loop_track(1) : pl2->track;
 
     const int tr_1_len = static_cast<int>(tr1->length);
     const int tr_2_len = static_cast<int>(tr2->length);
@@ -318,8 +355,8 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
     const double dt_rate_1 = pl1->sample_dt * tr_1_rate;
     const double dt_rate_2 = pl2->sample_dt * tr_2_rate;
 
-    double sample_1 = (pl1->position - pl1->offset) * tr_1_rate;
-    double sample_2 = (pl2->position - pl2->offset) * tr_2_rate;
+    double sample_1 = (state1->position - state1->position_offset) * tr_1_rate;
+    double sample_2 = (state2->position - state2->position_offset) * tr_2_rate;
 
     // Wrap sample positions once per buffer (avoids fmod per-sample in interpolation)
     if (tr_1_len > 0) {
@@ -333,10 +370,10 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
 
     const float ONE_OVER_SAMPLES = 1.0f / static_cast<float>(frames);
 
-    float pitch_1 = static_cast<float>(pl1->pitch);
-    float pitch_2 = static_cast<float>(pl2->pitch);
-    float vol_1 = static_cast<float>(pl1->volume);
-    float vol_2 = static_cast<float>(pl2->volume);
+    float pitch_1 = static_cast<float>(state1->pitch);
+    float pitch_2 = static_cast<float>(state2->pitch);
+    float vol_1 = static_cast<float>(state1->volume);
+    float vol_2 = static_cast<float>(state2->volume);
 
     const float volume_gradient_1 = (static_cast<float>(target_volume_1) - vol_1) * ONE_OVER_SAMPLES;
     const float pitch_gradient_1 = (static_cast<float>(filtered_pitch_1) - pitch_1) * ONE_OVER_SAMPLES;
@@ -401,21 +438,36 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
             pitch_2 += pitch_gradient_2;
         }
 
-        r1 = (sample_1 / tr_1_rate) - (pl1->position - pl1->offset);
-        r2 = (sample_2 / tr_2_rate) - (pl2->position - pl2->offset);
+        r1 = (sample_1 / tr_1_rate) - (state1->position - state1->position_offset);
+        r2 = (sample_2 / tr_2_rate) - (state2->position - state2->position_offset);
 
-        pl1->pitch = filtered_pitch_1;
-        pl2->pitch = filtered_pitch_2;
+        state1->pitch = filtered_pitch_1;
+        state2->pitch = filtered_pitch_2;
 
         spin_unlock(&pl1->lock);
         spin_unlock(&pl2->lock);
     }
 
-    pl1->position += r1;
-    pl1->volume = target_volume_1;
+    state1->position += r1;
+    state1->volume = target_volume_1;
 
-    pl2->position += r2;
-    pl2->volume = target_volume_2;
+    state2->position += r2;
+    state2->volume = target_volume_2;
+
+    // LEGACY: Sync back to old player fields for code that hasn't migrated yet.
+    // TODO: Remove once all external code uses query API.
+    pl1->pos_state.current = state1->position;
+    pl2->pos_state.current = state2->position;
+    pl1->pitch_state.current = state1->pitch;
+    pl2->pitch_state.current = state2->pitch;
+    pl1->pitch_state.motor_speed = state1->motor_speed;
+    pl2->pitch_state.motor_speed = state2->motor_speed;
+    pl1->volume_state.fader_current = state1->fader_current;
+    pl2->volume_state.fader_current = state2->fader_current;
+    pl1->volume_state.playback = state1->volume;
+    pl2->volume_state.playback = state2->volume;
+    pl1->platter_state.touched_prev = state1->touched_prev;
+    pl2->platter_state.touched_prev = state2->touched_prev;
 
     // Handle capture: loop recording and monitoring
     int deck = active_recording_deck_;

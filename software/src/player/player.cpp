@@ -47,28 +47,42 @@ void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings
 	sample_dt = 1.0 / sample_rate;
 	track = tr;
 
-	position = 0.0;
-	offset = 0.0;
-	target_position = 0.0;
-	last_difference = 0.0;
+	// Position state
+	pos_state.current = 0.0;
+	pos_state.offset = 0.0;
+	pos_state.target = 0.0;
+	pos_state.last_difference = 0.0;
 
-	pitch = 0.0;
-	sync_pitch = 1.0;
-	volume = 0.0;
-	set_volume = settings->initial_volume;
+	// Pitch state
+	pitch_state.current = 0.0;
+	pitch_state.sync = 1.0;
+	pitch_state.note = 1.0;
+	pitch_state.fader = 1.0;
+	pitch_state.bend = 1.0;
+	pitch_state.last_external = 1.0;
+	pitch_state.motor_speed = 1.0;
 
-	note_pitch = 1.0;
-	fader_pitch = 1.0;
-	bend_pitch = 1.0;
-	last_external_speed = 1.0;
-	fader_target = 0.0;  // Start silent until ADC values are read
-	fader_volume = 0.0;
+	// Volume state
+	volume_state.knob = settings->initial_volume;
+	volume_state.fader_target = 0.0;  // Start silent until ADC values are read
+	volume_state.fader_current = 0.0;
+	volume_state.playback = 0.0;      // Audio engine smoothing state
+
+	// Platter state
+	platter_state.touched = false;
+	platter_state.touched_prev = false;
+
+	// Recording state
+	recording_state.active = false;
+	recording_state.requested = false;
+	recording_state.use_loop = false;
+
+	// Feedback state
+	feedback_state.beep_position = 0;
+	feedback_state.beep_type = FeedbackState::NONE;
+
+	// Other state
 	stopped = false;
-	recording = false;
-	recording_started = false;
-	use_loop = false;
-	beep_pos = 0;
-	playing_beep = -1;
 }
 
 void player::clear()
@@ -79,17 +93,17 @@ void player::clear()
 
 double player::get_elapsed() const
 {
-	return position - offset;
+	return pos_state.current - pos_state.offset;
 }
 
 bool player::is_active() const
 {
-	return (std::fabs(pitch) > 0.01);
+	return (std::fabs(pitch_state.current) > 0.01);
 }
 
 void player::recue()
 {
-	offset = position;
+	pos_state.offset = pos_state.current;
 }
 
 void player::set_track(struct track* tr)
@@ -110,8 +124,8 @@ void player::clone(const player& from)
 	struct track* x;
 	struct track* t;
 
-	elapsed = from.position - from.offset;
-	offset = position - elapsed;
+	elapsed = from.pos_state.current - from.pos_state.offset;
+	pos_state.offset = pos_state.current - elapsed;
 
 	t = from.track;
 	track_acquire(t);
@@ -126,6 +140,6 @@ void player::clone(const player& from)
 
 void player::seek_to(double seconds)
 {
-	offset = position - seconds;
+	pos_state.offset = pos_state.current - seconds;
 }
 

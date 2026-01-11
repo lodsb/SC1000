@@ -62,7 +62,7 @@ void sc1000::setup(struct rt* rt, const char* root_path)
     scratch_deck.deck_no = 1;
 
     // Tell deck0 to just play without considering inputs
-    beat_deck.player.just_play = true;
+    beat_deck.player.input.just_play = true;
 
     // Initialize audio hardware (creates AudioHardware instance)
     audio = alsa_create(this, settings.get());
@@ -107,7 +107,7 @@ void sc1000::load_sample_folders()
     beat_deck.load_folder(beats_path.c_str());
     scratch_deck.load_folder(samples_path.c_str());
 
-    if (!scratch_deck.files_present) {
+    if (!scratch_deck.nav_state.files_present) {
         // Load the default sentence if no sample files found on usb stick
         scratch_deck.player.set_track(
                          track_acquire_by_import(scratch_deck.importer.c_str(), "/var/scratchsentence.mp3"));
@@ -115,8 +115,8 @@ void sc1000::load_sample_folders()
         scratch_deck.cues.load_from_file(scratch_deck.player.track->path);
         LOG_DEBUG("Set cues ok");
         // Set the time back a bit so the sample doesn't start too soon
-        scratch_deck.player.target_position = -4.0;
-        scratch_deck.player.position = -4.0;
+        scratch_deck.player.input.seek_to = -4.0;
+        scratch_deck.player.input.target_position = -4.0;
     }
 }
 
@@ -173,20 +173,23 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
 
     if (!engine->audio) return;
 
+    // Get current position from audio engine
+    double current_pos = engine->audio->get_position(deck_no);
+
     // Start recording if requested
-    if (pl->recording_started && !pl->recording_active) {
-        if (engine->audio->start_recording(deck_no, pl->position)) {
-            pl->recording_active = true;
-            pl->playing_beep = BEEP_RECORDINGSTART;
+    if (pl->recording_state.requested && !pl->recording_state.active) {
+        if (engine->audio->start_recording(deck_no, current_pos)) {
+            pl->recording_state.active = true;
+            pl->input.beep_request = sc::BeepType::RecordingStart;
         } else {
             // Failed to start recording
-            pl->recording_started = false;
-            pl->playing_beep = BEEP_RECORDINGERROR;
+            pl->recording_state.requested = false;
+            pl->input.beep_request = sc::BeepType::RecordingError;
         }
     }
 
     // Stop recording if requested
-    if (!pl->recording_started && pl->recording_active) {
+    if (!pl->recording_state.requested && pl->recording_state.active) {
         // Check if this was a first recording (will define loop) or punch-in
         bool was_first_recording = !engine->audio->has_loop(deck_no);
 
@@ -194,20 +197,20 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
         engine->audio->stop_recording(deck_no);
 
         // Navigate to loop position (position 0 in track list)
-        dk->current_file_idx = -1;
+        dk->nav_state.file_idx = -1;
 
-        // Switch player to use loop track (RT-safe: just a bool flag)
+        // Switch player to use loop track (RT-safe)
         // Audio engine will read from loop buffer instead of player->track
-        pl->use_loop = true;  // Always switch to loop after recording
-        LOG_DEBUG("Recording stopped on deck %d, set use_loop=true, current_file_idx=-1", deck_no);
+        pl->input.source = sc::PlaybackSource::Loop;  // Always switch to loop after recording
+        LOG_DEBUG("Recording stopped on deck %d, set source=Loop, current_file_idx=-1", deck_no);
         if (was_first_recording) {
-            pl->position = 0;
-            pl->target_position = 0;
-            pl->offset = 0;
+            pl->input.seek_to = 0.0;
+            pl->input.target_position = 0.0;
+            pl->input.position_offset = 0.0;
         }
 
-        pl->recording_active = false;
-        pl->playing_beep = BEEP_RECORDINGSTOP;
+        pl->recording_state.active = false;
+        pl->input.beep_request = sc::BeepType::RecordingStop;
         LOG_DEBUG("Recording stopped on deck %d, navigated to loop (position 0)", deck_no);
     }
 }

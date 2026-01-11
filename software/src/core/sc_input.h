@@ -107,8 +107,8 @@ struct mapping {
    ActionType action_type = ActionType::NOTHING;  // The action to take - cue, shift etc
    unsigned char   parameter = 0;    // for example the output note
 
-   int debounce = 0;
-   bool shifted_at_press = false;    // Latched shift state when button was pressed
+   // Runtime state (debounce, shifted_at_press) is stored separately in ButtonState
+   // See sc::control::ButtonState in control/mapping_registry.h
 };
 
 #ifdef __cplusplus

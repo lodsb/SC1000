@@ -34,13 +34,13 @@ namespace control {
 class InputState;  // Forward declaration
 
 // Execute an action on a specific deck
-void perform_action_for_deck(deck* d, mapping* map,
+void perform_action_for_deck(deck* d, const mapping* map,
                              const unsigned char midi_buffer[3],
                              sc1000* engine, sc_settings* settings,
                              InputState& input_state);
 
 // Dispatch an input event to the appropriate deck
-void dispatch_event(mapping* map, unsigned char midi_buffer[3],
+void dispatch_event(const mapping* map, const unsigned char midi_buffer[3],
                     sc1000* engine, sc_settings* settings,
                     InputState& input_state);
 

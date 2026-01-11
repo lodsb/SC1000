@@ -120,8 +120,7 @@ void add_mapping(sc::control::MappingRegistry& registry, IOType type, unsigned c
    new_map.gpio_port = port;
    new_map.pullup    = pullup;
 
-   new_map.debounce = 0;
-   new_map.shifted_at_press = false;
+   // Runtime state (debounce, shifted_at_press) is managed separately in ButtonState
 
    if (buf != nullptr)
    {

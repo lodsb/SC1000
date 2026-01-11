@@ -102,6 +102,12 @@ public:
     struct track* get_loop_track(int deck) override;
     struct track* peek_loop_track(int deck) override;
 
+    // Query API (delegated to audio engine)
+    sc::audio::DeckProcessingState get_deck_state(int deck) const override;
+    double get_position(int deck) const override;
+    double get_pitch(int deck) const override;
+    double get_volume(int deck) const override;
+
     // Setup (called by factory)
     bool setup(alsa_device_info* device_info, audio_interface* config, int num_channels, sc_settings* settings);
 
@@ -565,9 +571,9 @@ int AlsaAudio::process_audio() {
         constexpr float BASE_VOLUME = 7.0f / 8.0f;
         int rec_deck = audio_engine_->recording_deck();
         if (rec_deck == 0) {
-            audio_engine_->set_monitoring_volume(BASE_VOLUME * static_cast<float>(engine_->beat_deck.player.fader_volume));
+            audio_engine_->set_monitoring_volume(BASE_VOLUME * static_cast<float>(audio_engine_->get_volume(0)));
         } else if (rec_deck == 1) {
-            audio_engine_->set_monitoring_volume(BASE_VOLUME * static_cast<float>(engine_->scratch_deck.player.fader_volume));
+            audio_engine_->set_monitoring_volume(BASE_VOLUME * static_cast<float>(audio_engine_->get_volume(1)));
         } else {
             audio_engine_->set_monitoring_volume(0.0f);
         }
@@ -596,14 +602,15 @@ int AlsaAudio::process_audio() {
         }
 
         if (config_ && config_->supports_cv) {
-            player* pl = &engine_->scratch_deck.player;
+            // Use query API for audio engine output state
+            auto deck_state = audio_engine_->get_deck_state(1);  // Scratch deck = 1
             cv_controller_input cv_input = {
-                .pitch = pl->pitch,
-                .encoder_angle = engine_->scratch_deck.encoder_angle,
-                .sample_position = pl->position,
-                .sample_length = pl->track ? pl->track->length : 0,
-                .fader_volume = pl->fader_volume,
-                .fader_target = pl->fader_target,
+                .pitch = deck_state.pitch,
+                .encoder_angle = engine_->scratch_deck.encoder_state.angle,
+                .sample_position = deck_state.position,
+                .sample_length = engine_->scratch_deck.player.track ? engine_->scratch_deck.player.track->length : 0,
+                .fader_volume = deck_state.volume,
+                .fader_target = engine_->scratch_deck.player.input.crossfader,  // Input (target)
                 .crossfader_position = engine_->crossfader.position()
             };
             cv_engine_update(&cv_, &cv_input);
@@ -666,6 +673,22 @@ track* AlsaAudio::get_loop_track(int deck) {
 
 track* AlsaAudio::peek_loop_track(int deck) {
     return audio_engine_->peek_loop_track(deck);
+}
+
+sc::audio::DeckProcessingState AlsaAudio::get_deck_state(int deck) const {
+    return audio_engine_->get_deck_state(deck);
+}
+
+double AlsaAudio::get_position(int deck) const {
+    return audio_engine_->get_position(deck);
+}
+
+double AlsaAudio::get_pitch(int deck) const {
+    return audio_engine_->get_pitch(deck);
+}
+
+double AlsaAudio::get_volume(int deck) const {
+    return audio_engine_->get_volume(deck);
 }
 
 bool AlsaAudio::setup(alsa_device_info* device_info, audio_interface* config, int num_channels, sc_settings* settings) {

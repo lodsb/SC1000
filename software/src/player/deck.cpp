@@ -55,31 +55,29 @@ static void load_track_internal(struct deck* d, struct track* track, struct sc_s
 	struct player* pl = &d->player;
 	d->cues.save_to_file(pl->track->path);
 	pl->set_track(track);
-	pl->target_position = 0;
-	pl->position = 0;
-	pl->offset = 0;
-	pl->use_loop = false;  // Switch back to file track (loop is preserved for recall)
-	pl->stopped = false;   // Reset stopped state so scratching works immediately
+
+	// Use new input fields for position and state
+	pl->input.seek_to = 0.0;
+	pl->input.target_position = 0.0;
+	pl->input.position_offset = 0.0;
+	pl->input.source = sc::PlaybackSource::File;  // Switch back to file track (loop is preserved for recall)
+	pl->input.stopped = false;   // Reset stopped state so scratching works immediately
+
 	d->cues.load_from_file(pl->track->path);
-	pl->fader_pitch = 1.0;
-	pl->bend_pitch = 1.0;
-	pl->note_pitch = 1.0;
+
+	// Reset pitch to neutral
+	pl->input.pitch_fader = 1.0;
+	pl->input.pitch_bend = 1.0;
+	pl->input.pitch_note = 1.0;
 
 	// Reset cap_touch to force re-detection and proper angle_offset recalculation
 	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
-	pl->cap_touch = false;
-	pl->cap_touch_old = false;
+	pl->input.touched = false;
 
-	if (!d->player.just_play)
+	if (!pl->input.just_play)
 	{
-		if (settings->platter_enabled)
-		{
-			d->angle_offset = 0 - d->encoder_angle;
-		}
-		else
-		{
-			d->angle_offset = static_cast<int32_t>(pl->position * settings->platter_speed) - d->encoder_angle;
-		}
+		// Reset encoder offset (we're seeking to position 0)
+		d->encoder_state.offset = 0 - d->encoder_state.angle;
 	}
 }
 
@@ -103,16 +101,16 @@ int deck::init(struct sc_settings* settings)
 	cues.reset();
 
 	// playlist is default-initialized to nullptr via unique_ptr
-	current_folder_idx = 0;
-	current_file_idx = 0;
-	files_present = false;
+	nav_state.folder_idx = 0;
+	nav_state.file_idx = 0;
+	nav_state.files_present = false;
 	deck_no = -1;  // Will be set by sc1000 init
 
-	angle_offset = 0;
-	encoder_angle = 0xffff;
-	new_encoder_angle = 0xffff;
+	encoder_state.offset = 0;
+	encoder_state.angle = 0xffff;
+	encoder_state.angle_raw = 0xffff;
 
-	loop_track = nullptr;
+	loop_state.track = nullptr;
 
 	return 0;
 }
@@ -122,10 +120,10 @@ void deck::clear()
 	player.clear();
 	playlist.reset();
 
-	if (loop_track)
+	if (loop_state.track)
 	{
-		track_release(loop_track);
-		loop_track = nullptr;
+		track_release(loop_state.track);
+		loop_state.track = nullptr;
 	}
 }
 
@@ -201,9 +199,9 @@ void deck::load_folder(const char* folder_name)
 	if (playlist->load(folder_name) && playlist->total_files() > 0)
 	{
 		LOG_INFO("Folder '%s' indexed with %zu files", folder_name, playlist->total_files());
-		files_present = true;
-		current_folder_idx = 0;
-		current_file_idx = 0;
+		nav_state.files_present = true;
+		nav_state.folder_idx = 0;
+		nav_state.file_idx = 0;
 
 		LOG_DEBUG("deck_load_folder");
 
@@ -215,23 +213,23 @@ void deck::load_folder(const char* folder_name)
 	}
 	else
 	{
-		files_present = false;
+		nav_state.files_present = false;
 	}
 }
 
 void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 {
-	LOG_DEBUG("deck %d next_file called, files_present=%d, current_file_idx=%d, use_loop=%d",
-	          deck_no, files_present, current_file_idx, player.use_loop);
+	LOG_DEBUG("deck %d next_file called, nav_state.files_present=%d, nav_state.file_idx=%d, source=%d",
+	          deck_no, nav_state.files_present, nav_state.file_idx, static_cast<int>(player.input.source));
 
-	if (!files_present) return;
+	if (!nav_state.files_present) return;
 
-	if (current_file_idx == -1)
+	if (nav_state.file_idx == -1)
 	{
 		// At loop, go to first file
-		current_file_idx = 0;
-		player.use_loop = false;
-		sc_file* file = playlist->get_file(current_folder_idx, 0);
+		nav_state.file_idx = 0;
+		player.input.source = sc::PlaybackSource::File;
+		sc_file* file = playlist->get_file(nav_state.folder_idx, 0);
 		if (file != nullptr)
 		{
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
@@ -239,35 +237,35 @@ void deck::next_file(struct sc1000* engine, struct sc_settings* settings)
 		}
 		else
 		{
-			LOG_DEBUG("deck %d next_file: no file at folder %zu index 0", deck_no, current_folder_idx);
+			LOG_DEBUG("deck %d next_file: no file at folder %zu index 0", deck_no, nav_state.folder_idx);
 		}
 	}
-	else if (playlist->has_next_file(current_folder_idx, static_cast<size_t>(current_file_idx)))
+	else if (playlist->has_next_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx)))
 	{
-		current_file_idx++;
-		sc_file* file = playlist->get_file(current_folder_idx, static_cast<size_t>(current_file_idx));
+		nav_state.file_idx++;
+		sc_file* file = playlist->get_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx));
 		if (file != nullptr)
 		{
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
-			LOG_DEBUG("deck %d next_file: loaded file %d", deck_no, current_file_idx);
+			LOG_DEBUG("deck %d next_file: loaded file %d", deck_no, nav_state.file_idx);
 		}
 	}
 }
 
 void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 {
-	LOG_DEBUG("deck %d prev_file called, files_present=%d, current_file_idx=%d, use_loop=%d",
-	          deck_no, files_present, current_file_idx, player.use_loop);
+	LOG_DEBUG("deck %d prev_file called, nav_state.files_present=%d, nav_state.file_idx=%d, source=%d",
+	          deck_no, nav_state.files_present, nav_state.file_idx, static_cast<int>(player.input.source));
 
-	if (!files_present) return;
+	if (!nav_state.files_present) return;
 
-	if (current_file_idx == -1)
+	if (nav_state.file_idx == -1)
 	{
 		// Already at loop, do nothing
 		LOG_DEBUG("deck %d prev_file: already at loop, staying", deck_no);
 		return;
 	}
-	else if (current_file_idx == 0)
+	else if (nav_state.file_idx == 0)
 	{
 		// At first file, go to loop if exists
 		bool has_loop = engine->audio && engine->audio->has_loop(deck_no);
@@ -282,72 +280,72 @@ void deck::prev_file(struct sc1000* engine, struct sc_settings* settings)
 	else
 	{
 		// Normal prev behavior
-		current_file_idx--;
-		player.use_loop = false;
-		sc_file* file = playlist->get_file(current_folder_idx, static_cast<size_t>(current_file_idx));
+		nav_state.file_idx--;
+		player.input.source = sc::PlaybackSource::File;
+		sc_file* file = playlist->get_file(nav_state.folder_idx, static_cast<size_t>(nav_state.file_idx));
 		if (file != nullptr)
 		{
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
-			LOG_DEBUG("deck %d prev_file: loaded file %d", deck_no, current_file_idx);
+			LOG_DEBUG("deck %d prev_file: loaded file %d", deck_no, nav_state.file_idx);
 		}
 	}
 }
 
 void deck::next_folder(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (!files_present) return;
+	if (!nav_state.files_present) return;
 
 	// If at loop, stay at loop (folder change doesn't affect it)
-	if (current_file_idx == -1)
+	if (nav_state.file_idx == -1)
 	{
-		if (playlist->has_next_folder(current_folder_idx))
+		if (playlist->has_next_folder(nav_state.folder_idx))
 		{
-			current_folder_idx++;
-			LOG_DEBUG("Deck %d: next_folder to %zu (staying at loop)", deck_no, current_folder_idx);
+			nav_state.folder_idx++;
+			LOG_DEBUG("Deck %d: next_folder to %zu (staying at loop)", deck_no, nav_state.folder_idx);
 		}
 		return;  // Stay at loop
 	}
 
 	// Normal folder navigation
-	if (playlist->has_next_folder(current_folder_idx))
+	if (playlist->has_next_folder(nav_state.folder_idx))
 	{
-		current_folder_idx++;
-		current_file_idx = 0;
-		sc_file* file = playlist->get_file(current_folder_idx, 0);
+		nav_state.folder_idx++;
+		nav_state.file_idx = 0;
+		sc_file* file = playlist->get_file(nav_state.folder_idx, 0);
 		load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
-		LOG_DEBUG("Deck %d: next_folder to %zu, file 0", deck_no, current_folder_idx);
+		LOG_DEBUG("Deck %d: next_folder to %zu, file 0", deck_no, nav_state.folder_idx);
 	}
 }
 
 void deck::prev_folder(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (!files_present) return;
+	if (!nav_state.files_present) return;
 
 	// If at loop, stay at loop (folder change doesn't affect it)
-	if (current_file_idx == -1)
+	if (nav_state.file_idx == -1)
 	{
-		if (playlist->has_prev_folder(current_folder_idx))
+		if (playlist->has_prev_folder(nav_state.folder_idx))
 		{
-			current_folder_idx--;
-			LOG_DEBUG("Deck %d: prev_folder to %zu (staying at loop)", deck_no, current_folder_idx);
+			nav_state.folder_idx--;
+			LOG_DEBUG("Deck %d: prev_folder to %zu (staying at loop)", deck_no, nav_state.folder_idx);
 		}
 		return;  // Stay at loop
 	}
 
 	// Normal folder navigation
-	if (playlist->has_prev_folder(current_folder_idx))
+	if (playlist->has_prev_folder(nav_state.folder_idx))
 	{
-		current_folder_idx--;
-		current_file_idx = 0;
-		sc_file* file = playlist->get_file(current_folder_idx, 0);
+		nav_state.folder_idx--;
+		nav_state.file_idx = 0;
+		sc_file* file = playlist->get_file(nav_state.folder_idx, 0);
 		load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
-		LOG_DEBUG("Deck %d: prev_folder to %zu, file 0", deck_no, current_folder_idx);
+		LOG_DEBUG("Deck %d: prev_folder to %zu, file 0", deck_no, nav_state.folder_idx);
 	}
 }
 
 void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 {
-	if (files_present)
+	if (nav_state.files_present)
 	{
 		unsigned int num_files = static_cast<unsigned int>(playlist->total_files());
 		unsigned int r = static_cast<unsigned int>(rand()) % num_files;
@@ -356,8 +354,8 @@ void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 		if (file != nullptr)
 		{
 			// Random file exits loop mode
-			player.use_loop = false;
-			// We don't update current_file_idx here since random doesn't fit folder navigation
+			player.input.source = sc::PlaybackSource::File;
+			// We don't update nav_state.file_idx here since random doesn't fit folder navigation
 			// Just load the track
 			load_track_internal(this, track_acquire_by_import(importer.c_str(), file->full_path.c_str()), settings);
 		}
@@ -366,69 +364,52 @@ void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 
 void deck::record()
 {
-	player.recording_started = !player.recording_started;
+	player.recording_state.requested = !player.recording_state.requested;
 }
 
 bool deck::recall_loop(struct sc_settings* settings)
 {
-	if (!loop_track || loop_track->length == 0)
+	if (!loop_state.track || loop_state.track->length == 0)
 	{
 		return false;
 	}
 
-	track_acquire(loop_track);
-	player.set_track(loop_track);
+	track_acquire(loop_state.track);
+	player.set_track(loop_state.track);
 
-	player.position = 0;
-	player.target_position = 0;
-	player.offset = 0;
-	player.stopped = false;  // Reset stopped state so scratching works immediately
+	player.input.seek_to = 0.0;
+	player.input.position_offset = 0.0;
+	player.input.stopped = false;  // Reset stopped state so scratching works immediately
 
 	// Reset cap_touch to force re-detection and proper angle_offset recalculation
 	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
-	player.cap_touch = false;
-	player.cap_touch_old = false;
+	player.input.touched = false;
 
-	if (settings->platter_enabled)
-	{
-		angle_offset = 0 - encoder_angle;
-	}
-	else
-	{
-		angle_offset = static_cast<int32_t>(player.position * settings->platter_speed) - encoder_angle;
-	}
+	// Reset encoder offset (we're seeking to position 0)
+	encoder_state.offset = 0 - encoder_state.angle;
 
 	return true;
 }
 
 bool deck::has_loop() const
 {
-	return loop_track != nullptr && loop_track->length > 0;
+	return loop_state.track != nullptr && loop_state.track->length > 0;
 }
 
 void deck::goto_loop(struct sc1000* engine, struct sc_settings* settings)
 {
-	current_file_idx = -1;
-	player.use_loop = true;
-	player.position = 0;
-	player.target_position = 0;
-	player.offset = 0;
-	player.stopped = false;  // Reset stopped state so scratching works immediately
+	nav_state.file_idx = -1;
+	player.input.source = sc::PlaybackSource::Loop;
+	player.input.seek_to = 0.0;
+	player.input.position_offset = 0.0;
+	player.input.stopped = false;  // Reset stopped state so scratching works immediately
 
 	// Reset cap_touch to force re-detection and proper angle_offset recalculation
 	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
-	player.cap_touch = false;
-	player.cap_touch_old = false;
+	player.input.touched = false;
 
-	// Reset platter angle offset
-	if (settings->platter_enabled)
-	{
-		angle_offset = 0 - encoder_angle;
-	}
-	else
-	{
-		angle_offset = static_cast<int32_t>(player.position * settings->platter_speed) - encoder_angle;
-	}
+	// Reset encoder offset (we're seeking to position 0)
+	encoder_state.offset = 0 - encoder_state.angle;
 
 	LOG_DEBUG("Deck %d: goto_loop", deck_no);
 }

@@ -201,7 +201,7 @@ void dispatch_event(const mapping* map, const unsigned char midi_buffer[3],
 
     if (map->action_type == RECORD) {
         // Toggle loop recording for the target deck
-        target->record();
+        target->record(engine);
     }
     else if (map->action_type == LOOPERASE) {
         // Long-hold RECORD erases the loop and navigates to first file

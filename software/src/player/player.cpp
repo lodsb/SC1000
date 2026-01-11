@@ -68,20 +68,10 @@ void player::init(unsigned int sample_rate, struct track* tr, struct sc_settings
 	volume_state.fader_current = 0.0;
 	volume_state.playback = 0.0;      // Audio engine smoothing state
 
-	// Platter state
-	platter_state.touched = false;
-	platter_state.touched_prev = false;
-
-	// Recording state
-	recording_state.active = false;
-	recording_state.requested = false;
-	recording_state.use_loop = false;
-
-	// Feedback state
-	feedback_state.beep_position = 0;
-	feedback_state.beep_type = FeedbackState::NONE;
-
-	// Other state
+	// Legacy state (kept for sync-back compatibility, migrating to DeckInput)
+	platter_state.reset();
+	recording_state.reset_all();
+	feedback_state.stop();
 	stopped = false;
 }
 

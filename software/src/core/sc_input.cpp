@@ -601,7 +601,7 @@ void process_pic(struct sc1000* sc1000_engine)
             {
                 LOG_DEBUG("All buttons held!");
                 if (sc1000_engine->scratch_deck.nav_state.files_present)
-                    sc1000_engine->beat_deck.record();
+                    sc1000_engine->beat_deck.record(sc1000_engine);
             }
             else
                 LOG_WARN("Unknown action");

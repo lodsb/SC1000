@@ -362,9 +362,15 @@ void deck::random_file(struct sc1000* engine, struct sc_settings* settings)
 	}
 }
 
-void deck::record()
+void deck::record(struct sc1000* engine)
 {
-	player.recording_state.requested = !player.recording_state.requested;
+	// Query current recording state and set appropriate request
+	bool currently_recording = engine->audio && engine->audio->is_recording(deck_no);
+	if (currently_recording) {
+		player.input.record_stop = true;
+	} else {
+		player.input.record_start = true;
+	}
 }
 
 bool deck::recall_loop(struct sc_settings* settings)

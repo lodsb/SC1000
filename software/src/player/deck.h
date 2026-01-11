@@ -90,7 +90,7 @@ struct deck
    void next_folder(struct sc1000* engine, struct sc_settings* settings);
    void prev_folder(struct sc1000* engine, struct sc_settings* settings);
    void random_file(struct sc1000* engine, struct sc_settings* settings);
-   void record();
+   void record(struct sc1000* engine);
    bool recall_loop(struct sc_settings* settings);
    bool has_loop() const;
 

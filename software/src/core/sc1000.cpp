@@ -173,45 +173,49 @@ static void handle_single_deck_recording(sc1000* engine, deck* dk, int deck_no)
 
     if (!engine->audio) return;
 
-    // Get current position from audio engine
-    double current_pos = engine->audio->get_position(deck_no);
+    // Handle start recording request
+    if (pl->input.record_start) {
+        pl->input.record_start = false;  // Clear one-shot request
 
-    // Start recording if requested
-    if (pl->recording_state.requested && !pl->recording_state.active) {
-        if (engine->audio->start_recording(deck_no, current_pos)) {
-            pl->recording_state.active = true;
-            pl->input.beep_request = sc::BeepType::RecordingStart;
-        } else {
-            // Failed to start recording
-            pl->recording_state.requested = false;
-            pl->input.beep_request = sc::BeepType::RecordingError;
+        if (!engine->audio->is_recording(deck_no)) {
+            double current_pos = engine->audio->get_position(deck_no);
+            if (engine->audio->start_recording(deck_no, current_pos)) {
+                pl->input.beep_request = sc::BeepType::RecordingStart;
+                LOG_DEBUG("Recording started on deck %d at position %.2f", deck_no, current_pos);
+            } else {
+                pl->input.beep_request = sc::BeepType::RecordingError;
+                LOG_DEBUG("Failed to start recording on deck %d", deck_no);
+            }
         }
     }
 
-    // Stop recording if requested
-    if (!pl->recording_state.requested && pl->recording_state.active) {
-        // Check if this was a first recording (will define loop) or punch-in
-        bool was_first_recording = !engine->audio->has_loop(deck_no);
+    // Handle stop recording request
+    if (pl->input.record_stop) {
+        pl->input.record_stop = false;  // Clear one-shot request
 
-        // Stop recording
-        engine->audio->stop_recording(deck_no);
+        if (engine->audio->is_recording(deck_no)) {
+            // Check if this was a first recording (will define loop) or punch-in
+            bool was_first_recording = !engine->audio->has_loop(deck_no);
 
-        // Navigate to loop position (position 0 in track list)
-        dk->nav_state.file_idx = -1;
+            // Stop recording
+            engine->audio->stop_recording(deck_no);
 
-        // Switch player to use loop track (RT-safe)
-        // Audio engine will read from loop buffer instead of player->track
-        pl->input.source = sc::PlaybackSource::Loop;  // Always switch to loop after recording
-        LOG_DEBUG("Recording stopped on deck %d, set source=Loop, current_file_idx=-1", deck_no);
-        if (was_first_recording) {
-            pl->input.seek_to = 0.0;
-            pl->input.target_position = 0.0;
-            pl->input.position_offset = 0.0;
+            // Navigate to loop position (position 0 in track list)
+            dk->nav_state.file_idx = -1;
+
+            // Switch player to use loop track (RT-safe)
+            pl->input.source = sc::PlaybackSource::Loop;
+            LOG_DEBUG("Recording stopped on deck %d, set source=Loop, current_file_idx=-1", deck_no);
+
+            if (was_first_recording) {
+                pl->input.seek_to = 0.0;
+                pl->input.target_position = 0.0;
+                pl->input.position_offset = 0.0;
+            }
+
+            pl->input.beep_request = sc::BeepType::RecordingStop;
+            LOG_DEBUG("Recording stopped on deck %d, navigated to loop (position 0)", deck_no);
         }
-
-        pl->recording_state.active = false;
-        pl->input.beep_request = sc::BeepType::RecordingStop;
-        LOG_DEBUG("Recording stopped on deck %d, navigated to loop (position 0)", deck_no);
     }
 }
 

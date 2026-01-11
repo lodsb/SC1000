@@ -39,12 +39,14 @@ set(PLATFORM_SOURCES
         src/platform/i2c.cpp
         src/platform/encoder.cpp
         src/platform/pic.cpp
+        src/platform/sc_hardware.cpp
 )
 
 set(INPUT_SOURCES
         src/input/controller.cpp
         src/input/midi_controller.cpp
         src/input/midi_event.cpp
+        src/input/midi_input.cpp
 )
 
 set(PLAYER_SOURCES

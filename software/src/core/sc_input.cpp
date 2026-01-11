@@ -18,921 +18,118 @@
  *
  */
 
+// SC1000 Input Thread Coordinator
+// Manages the input thread and coordinates hardware and MIDI input layers
+// This file should be hardware-agnostic - all SC1000-specific code is in sc_hardware.cpp
 
-// SC1000 input handler
-// Thread that grabs data from the rotary sensor and PIC input processor and processes it
-
-#include <cassert>
-#include <clocale>
-#include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <unistd.h>
-#include <cstdint>
 #include <sys/time.h>
-#include <cmath>
 #include <ctime>
 #include <pthread.h>
-#include <vector>
-#include <memory>
 
-#include "../platform/platform.h"
-#include "../platform/alsa.h"
-
-#include "../player/playlist.h"
-#include "../input/midi_controller.h"
-#include "../thread/rig.h"
-
-#include "../input/controller.h"
-#include "../platform/midi.h"
-#include "../input/midi_event.h"
+#include "../platform/sc_hardware.h"
+#include "../input/midi_input.h"
 
 #include "global.h"
 #include "sc_input.h"
-#include "sc_control_mapping.h"
-#include "../control/actions.h"
-#include "../control/mapping_registry.h"
-#include "../input/midi_command.h"
 #include "../util/log.h"
-#include "../engine/audio_engine.h"
-
-using namespace sc::platform;
-using sc::control::dispatch_event;
-using sc::control::ButtonState;
 
 namespace sc {
 namespace input {
 
-// Button state machine states (for PIC button processing)
-enum class ButtonMachineState : uint8_t {
-    None = 0,           // No buttons pressed
-    Pressing = 1,       // At least one button pressed
-    ActingInstant = 2,  // Act on instantaneous press
-    ActingHeld = 3,     // Act on held buttons
-    Waiting = 4         // Cooldown after action
-};
+using namespace sc::platform;
 
 /*
  * InputContext holds all mutable state for the input thread.
- * This consolidates what were previously scattered globals.
- * Future refactoring can pass this through functions or make it a proper class.
+ * Combines hardware and MIDI contexts into a single coordinator.
  */
 struct InputContext {
-    // Platform hardware (GPIO, encoder, PIC)
-    HardwareState hw;
+    // Hardware layer (polymorphic - SC1000, motorized platter, etc.)
+    std::unique_ptr<HardwareInput> hardware;
 
-    // Button runtime state (separate from mapping config)
-    // Key is index into MappingRegistry::all()
-    std::unordered_map<size_t, ButtonState> button_states;
-
-    // Shift key state
-    bool shift_latched = false;
-
-    // MIDI controllers (owned via unique_ptr)
-    std::vector<std::unique_ptr<MidiController>> midi_controllers;
-
-    // First-time initialization flag
-    bool first_time = true;
-
-    // Pitch mode transition tracking (pitch_mode is in sc1000.input_state)
-    int old_pitch_mode = 0;
-
-    // PIC readings cache
-    PicReadings pic_readings = {};
-    unsigned char total_buttons[4] = {0, 0, 0, 0};
-    ButtonMachineState button_machine_state = ButtonMachineState::None;
-    unsigned int button_counter = 0;
-
-    // Fader state
-    bool fader_open1 = false;
-    bool fader_open2 = false;
-
-    // Rotary sensor filtering
-    double average_speed = 0.0;
-    unsigned int num_blips = 0;
+    // MIDI input layer (controllers, events)
+    MidiContext midi;
 };
 
-// Singleton input context - later can be moved into sc1000 struct or passed explicitly
+// Singleton input context
 static InputContext g_input_ctx;
 
 // Thread control
 static volatile bool g_input_running = true;
 static pthread_t g_input_thread_handle;
 
-void add_new_midi_devices(struct sc1000* sc1000_engine, char mididevices[64][64], int midi_device_num)
+void* run_sc_input_thread(sc1000* engine)
 {
-    auto& controllers = g_input_ctx.midi_controllers;
+    sc_settings* settings = engine->settings.get();
+    MidiContext* midi_ctx = &g_input_ctx.midi;
 
-    // Search to see which devices we've already added
-    for (int devc = 0; devc < midi_device_num; devc++)
-    {
-        bool already_added = false;
+    // Create and initialize hardware layer
+    g_input_ctx.hardware = create_hardware();
+    g_input_ctx.hardware->init(engine);
 
-        for (const auto& controller : controllers)
-        {
-            if (strcmp(mididevices[devc], controller->port_name()) == 0) {
-                already_added = true;
-                break;
-            }
-        }
+    // Initialize MIDI layer
+    init_midi(midi_ctx);
 
-        if (!already_added)
-        {
-            auto controller = create_midi_controller(&g_rt, mididevices[devc]);
-            if (controller)
-            {
-                LOG_INFO("Adding MIDI device %zu - %s", controllers.size(), mididevices[devc]);
-                controller_add_deck(controller.get(), &sc1000_engine->beat_deck);
-                controller_add_deck(controller.get(), &sc1000_engine->scratch_deck);
-                controllers.push_back(std::move(controller));
-            }
-        }
-    }
-}
-
-// Old globals now in InputContext struct (via macros for compatibility)
-
-void init_io(struct sc1000* sc1000_engine)
-{
-    struct mapping* map;
-    GpioState* gpio = &g_input_ctx.hw.gpio;
-
-    // Initialize MCP23017 GPIO expander
-    gpio_init_mcp23017(gpio);
-
-    // Configure MCP23017 pins based on mappings
-    if (gpio->mcp23017_present)
-    {
-        for (int i = 0; i < 16; i++)
-        {
-            map = sc1000_engine->mappings.find_gpio(0, static_cast<uint8_t>(i), EventType::BUTTON_PRESSED);
-
-            // If pin is marked as ground, set as output
-            if (map != nullptr && map->action_type == GND)
-            {
-                gpio_mcp23017_set_direction(gpio, i, false);  // output
-            }
-            else
-            {
-                gpio_mcp23017_set_direction(gpio, i, true);   // input
-            }
-
-            // Configure pullup
-            bool pullup = (map == nullptr || map->pullup);
-            gpio_mcp23017_set_pullup(gpio, i, pullup);
-            if (pullup) LOG_DEBUG("Pulling up pin %d", i);
-        }
-    }
-
-    // Initialize A13 memory-mapped GPIO
-    gpio_init_a13_mmap(gpio);
-
-    // Configure A13 GPIO pins based on mappings
-    if (gpio->mmap_present)
-    {
-        for (int j = 1; j <= 6; j++)
-        {
-            for (int i = 0; i < 28; i++)
-            {
-                map = sc1000_engine->mappings.find_gpio(static_cast<uint8_t>(j), static_cast<uint8_t>(i), EventType::BUTTON_PRESSED);
-
-                if (map != nullptr)
-                {
-                    // dirty hack, don't map J7 SCL/SDA pins if MCP is present
-                    if (gpio->mcp23017_present && j == 1 && (i == 15 || i == 16))
-                    {
-                        map->action_type = NOTHING;
-                    }
-                    else
-                    {
-                        gpio_a13_configure_input(gpio, j, i, map->pullup);
-                    }
-                }
-            }
-        }
-    }
-}
-
-void process_io(struct sc1000* sc1000_engine)
-{
-    struct sc_settings* settings = sc1000_engine->settings.get();
-    GpioState* gpio = &g_input_ctx.hw.gpio;
-
-    // Read all MCP23017 pins at once (already inverted by platform layer)
-    uint16_t mcp_pins = 0;
-    if (gpio->mcp23017_present)
-    {
-        mcp_pins = gpio_mcp23017_read_all(gpio);
-    }
-
-    // Capture shifted state ONCE before processing any mappings
-    // This ensures all mappings for the same button see the same pre-press shifted state
-    bool shifted_at_start = sc1000_engine->input_state.is_shifted();
-
-    // Use index-based iteration to associate ButtonState with each mapping
-    auto& mappings = sc1000_engine->mappings.all();
-    for (size_t idx = 0; idx < mappings.size(); ++idx)
-    {
-        const mapping& m = mappings[idx];
-        ButtonState& bs = g_input_ctx.button_states[idx];  // Creates if not exists
-
-        // Only digital pins
-        if (m.type == IO && (!(m.gpio_port == 0 && !gpio->mcp23017_present)))
-        {
-            bool pin_value = false;
-            if (m.gpio_port == 0 && gpio->mcp23017_present) // port 0, I2C GPIO expander
-            {
-                pin_value = (mcp_pins >> m.pin) & 0x01;
-            }
-            else if (gpio->mmap_present) // Ports 1-6, A13 GPIO
-            {
-                pin_value = gpio_a13_read_pin(gpio, m.gpio_port, m.pin);
-            }
-            else
-            {
-                pin_value = false;
-            }
-
-            // iodebounce = 0 when button not pressed,
-            // > 0 and < scsettings.debounce_time when debouncing positive edge
-            // > scsettings.debounce_time and < scsettings.hold_time when holding
-            // = scsettings.hold_time when continuing to hold
-            // > scsettings.hold_time when waiting for release
-            // > -scsettings.debounce_time and < 0 when debouncing negative edge
-
-            // Button not pressed, check for button
-            if (bs.debounce == 0)
-            {
-                if (pin_value)
-                {
-                    // Debug: log all button presses with their mapping details
-                    if (m.action_type == RECORD || m.action_type == LOOPERASE)
-                    {
-                        LOG_DEBUG("Button port=%d pin=%d pressed, shifted=%d, edge_type=%d, action=%d",
-                                  m.gpio_port, m.pin, shifted_at_start, m.edge_type, m.action_type);
-                    }
-                    LOG_DEBUG("Button %d pressed", m.pin);
-                    if (g_input_ctx.first_time && m.deck_no == 1 && (m.action_type == VOLUP || m.action_type == VOLDOWN))
-                    {
-                        sc1000_engine->beat_deck.player.set_track(
-                                         track_acquire_by_import(sc1000_engine->beat_deck.importer.c_str(),
-                                                                 "/var/os-version.mp3"));
-                        sc1000_engine->beat_deck.cues.load_from_file(
-                                            sc1000_engine->beat_deck.player.track->path);
-                        sc1000_engine->scratch_deck.player.input.volume_knob = 0.0;
-                    }
-                    else
-                    {
-                        // IMPORTANT: Use the shifted state captured at start of process_io()
-                        // This ensures ALL mappings for the same button see the same pre-press state
-                        // (prevents SHIFTON from affecting SHIFTOFF's latch value)
-                        bs.shifted_at_press = shifted_at_start;
-
-                        // Debug: show when mapping check happens for nav buttons
-                        if (m.action_type == NEXTFILE || m.action_type == PREVFILE ||
-                            m.action_type == RANDOMFILE || m.action_type == JOGPIT)
-                        {
-                            LOG_DEBUG("Checking mapping port=%d pin=%d action=%d edge=%d shifted=%d will_fire=%d",
-                                      m.gpio_port, m.pin, m.action_type,
-                                      m.edge_type, shifted_at_start,
-                                      ((!shifted_at_start && m.edge_type == BUTTON_PRESSED) ||
-                                       (shifted_at_start && m.edge_type == BUTTON_PRESSED_SHIFTED)) ? 1 : 0);
-                        }
-
-                        if ((!shifted_at_start && m.edge_type == BUTTON_PRESSED) || (shifted_at_start && m.edge_type ==
-                            BUTTON_PRESSED_SHIFTED))
-                        {
-                            // Show which action fires
-                            if (m.action_type == NEXTFILE || m.action_type == PREVFILE ||
-                                m.action_type == RANDOMFILE || m.action_type == JOGPIT)
-                            {
-                                LOG_DEBUG("FIRING action=%d for port=%d pin=%d deck=%d",
-                                          m.action_type, m.gpio_port, m.pin, m.deck_no);
-                            }
-                            dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
-                        }
-
-                        // start the counter
-                        bs.debounce++;
-                    }
-                }
-            }
-
-            // Debouncing positive edge, increment value
-            else if (bs.debounce > 0 && bs.debounce < settings->debounce_time)
-            {
-                bs.debounce++;
-            }
-
-            // debounce finished, keep incrementing until hold reached
-            else if (bs.debounce >= settings->debounce_time && bs.debounce < settings->hold_time)
-            {
-                // check to see if unpressed
-                if (!pin_value)
-                {
-                    LOG_DEBUG("Button %d released", m.pin);
-                    // Use latched shifted state for release detection
-                    if ((!bs.shifted_at_press && m.edge_type == BUTTON_RELEASED) ||
-                        (bs.shifted_at_press && m.edge_type == BUTTON_RELEASED_SHIFTED))
-                        dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
-                    // start the counter
-                    bs.debounce = -settings->debounce_time;
-                }
-
-                else
-                    bs.debounce++;
-            }
-            // Button has been held for a while
-            else if (bs.debounce == settings->hold_time)
-            {
-                // Debug: log all hold events
-                LOG_DEBUG("Button port=%d pin=%d HELD, shifted_at_press=%d, edge_type=%d, action=%d",
-                          m.gpio_port, m.pin, bs.shifted_at_press,
-                          m.edge_type, m.action_type);
-                // Use latched shifted state from when button was first pressed
-                if ((!bs.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
-                    (bs.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
-                {
-                    LOG_DEBUG("Triggering held action for port=%d pin=%d action=%d",
-                              m.gpio_port, m.pin, m.action_type);
-                    dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
-                }
-                bs.debounce++;
-            }
-
-            // Button still holding, check for release
-            else if (bs.debounce > settings->hold_time)
-            {
-                if (pin_value)
-                {
-                    if (m.action_type == VOLUHOLD || m.action_type == VOLDHOLD)
-                    {
-                        // keep running the vol up/down actions if they're held
-                        // Use latched shifted state from when button was first pressed
-                        if ((!bs.shifted_at_press && m.edge_type == BUTTON_HOLDING) ||
-                            (bs.shifted_at_press && m.edge_type == BUTTON_HOLDING_SHIFTED))
-                            dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
-                    }
-                }
-                // check to see if unpressed
-                else
-                {
-                    LOG_DEBUG("Button %d released", m.pin);
-                    // Note: After hold time, release events don't fire (button was held too long)
-                    // Only unshifted BUTTON_RELEASED fires here (for legacy compatibility)
-                    if (m.edge_type == BUTTON_RELEASED && !bs.shifted_at_press)
-                        dispatch_event(&m, nullptr, sc1000_engine, settings, sc1000_engine->input_state);
-                    // start the counter
-                    bs.debounce = -settings->debounce_time;
-                }
-            }
-
-            // Debouncing negative edge, increment value - will reset when zero is reached
-            else if (bs.debounce < 0)
-            {
-                bs.debounce++;
-            }
-        }
-    }
-
-    // Process MIDI events from the lock-free queue
-    unsigned char midi_bytes[3];
-    int midi_shifted;
-    while (midi_event_queue_pop(midi_bytes, &midi_shifted)) {
-        EventType edge = midi_shifted ? BUTTON_PRESSED_SHIFTED : BUTTON_PRESSED;
-
-        // Create MidiCommand from bytes and use registry lookup
-        MidiCommand cmd = MidiCommand::from_bytes(midi_bytes);
-        cmd.normalize();  // Note-on with velocity 0 becomes note-off
-
-        mapping* midi_map = sc1000_engine->mappings.find_midi(cmd, edge);
-        if (midi_map != nullptr) {
-            LOG_DEBUG("MIDI mapping found: action=%d deck=%d param=%d",
-                     midi_map->action_type, midi_map->deck_no, midi_map->parameter);
-            dispatch_event(midi_map, midi_bytes, sc1000_engine, settings, sc1000_engine->input_state);
-        } else {
-            LOG_DEBUG("MIDI no mapping for [%02X %02X %02X] shifted=%d",
-                     midi_bytes[0], midi_bytes[1], midi_bytes[2], midi_shifted);
-        }
-    }
-}
-
-// Old globals (file_i2c_rot, buttons, etc.) now in InputContext struct
-// pitch_mode and shifted are now in sc1000.input_state
-
-void process_pic(struct sc1000* sc1000_engine)
-{
-    static size_t debug_cnt_process_pic = 0;
-
-    auto& ctx = g_input_ctx;
-    auto& pic = ctx.pic_readings;
-    struct sc_settings* settings = sc1000_engine->settings.get();
-
-    unsigned int i;
-
-    unsigned int fader_cut_point1, fader_cut_point2;
-
-    double fadertarget0, fadertarget1;
-
-    // Read all PIC inputs using platform module
-    ctx.pic_readings = pic_read_all(&ctx.hw.pic);
-
-    process_io(sc1000_engine);
-
-    // Apply volume and fader from ADC values
-
-    if (!settings->disable_volume_adc)
-    {
-        fadertarget0 = static_cast<double>(pic.adc[2]) / 1024.0;
-        fadertarget1 = static_cast<double>(pic.adc[3]) / 1024.0;
-
-        if (debug_cnt_process_pic % 1000 == 0)
-        {
-            LOG_DEBUG("VOL ADC: ADC2=%d ADC3=%d -> ft0=%.2f ft1=%.2f", pic.adc[2], pic.adc[3], fadertarget0, fadertarget1);
-        }
-    }
-    else
-    {
-        // SC500 or MIDI-only mode: use knob value (from buttons/MIDI or initial_volume)
-        fadertarget0 = sc1000_engine->beat_deck.player.input.volume_knob;
-        fadertarget1 = sc1000_engine->scratch_deck.player.input.volume_knob;
-
-        if (debug_cnt_process_pic % 1000 == 0)
-        {
-            LOG_DEBUG("VOL SC500: knob0=%.2f knob1=%.2f", fadertarget0, fadertarget1);
-        }
-    }
-
-    // Fader Hysteresis
-    fader_cut_point1 = static_cast<unsigned int>(ctx.fader_open1 ? settings->fader_close_point : settings->fader_open_point);
-    fader_cut_point2 = static_cast<unsigned int>(ctx.fader_open2 ? settings->fader_close_point : settings->fader_open_point);
-
-    ctx.fader_open1 = true;
-    ctx.fader_open2 = true;
-
-    if (pic.adc[0] < fader_cut_point1)
-    {
-        if (settings->cut_beats == 1) fadertarget0 = 0.0;
-        else fadertarget1 = 0.0;
-        ctx.fader_open1 = false;
-        LOG_DEBUG("CUT1: ADC0=%d < cut_pt=%d, cut_beats=%d", pic.adc[0], fader_cut_point1, settings->cut_beats);
-    }
-    if (pic.adc[1] < fader_cut_point2)
-    {
-        if (settings->cut_beats == 2) fadertarget0 = 0.0;
-        else fadertarget1 = 0.0;
-        ctx.fader_open2 = false;
-        LOG_DEBUG("CUT2: ADC1=%d < cut_pt=%d, cut_beats=%d", pic.adc[1], fader_cut_point2, settings->cut_beats);
-    }
-
-    sc1000_engine->beat_deck.player.input.crossfader = fadertarget0;
-    sc1000_engine->scratch_deck.player.input.crossfader = fadertarget1;
-
-    // Update crossfader from ADC (handles calibration and normalization)
-    sc1000_engine->crossfader.update(pic.adc[0]);
-
-    if (!settings->disable_pic_buttons)
-    {
-        // Button scanning state machine:
-        // 1. Wait for ANY button to be pressed
-        // 2. Note which buttons are pressed
-        // 3. If holding buttons past timeout, act on held buttons -> go to 5
-        // 4. If ALL buttons released, act on instant press -> go to 5
-        // 5. Wait for cooldown, then -> go to 1
-
-        auto& buttons = pic.buttons;
-        auto& total_buttons = ctx.total_buttons;
-
-        switch (ctx.button_machine_state)
-        {
-        case ButtonMachineState::None:
-            if (buttons[0] || buttons[1] || buttons[2] || buttons[3])
-            {
-                ctx.button_machine_state = ButtonMachineState::Pressing;
-
-                if (ctx.first_time)
-                {
-                    sc1000_engine->beat_deck.player.set_track(
-                        track_acquire_by_import(sc1000_engine->beat_deck.importer.c_str(), "/var/os-version.mp3"));
-                    sc1000_engine->beat_deck.cues.load_from_file(sc1000_engine->beat_deck.player.track->path);
-                    ctx.button_machine_state = ButtonMachineState::Waiting;
-                }
-            }
-            break;
-
-        case ButtonMachineState::Pressing:
-            for (i = 0; i < 4; i++)
-                total_buttons[i] |= buttons[i];
-
-            if (!(buttons[0] || buttons[1] || buttons[2] || buttons[3]))
-                ctx.button_machine_state = ButtonMachineState::ActingInstant;
-
-            ctx.button_counter++;
-            if (ctx.button_counter > static_cast<unsigned int>(settings->hold_time))
-            {
-                ctx.button_counter = 0;
-                ctx.button_machine_state = ButtonMachineState::ActingHeld;
-            }
-            break;
-
-        case ButtonMachineState::ActingInstant:
-            // Any button to stop pitch mode
-            if (sc1000_engine->input_state.pitch_mode())
-            {
-                sc1000_engine->input_state.set_pitch_mode(0);
-                ctx.old_pitch_mode = 0;
-                LOG_DEBUG("Pitch mode Disabled");
-            }
-            else if (total_buttons[0] && !total_buttons[1] && !total_buttons[2] && !total_buttons[3] &&
-                     sc1000_engine->scratch_deck.nav_state.files_present)
-                sc1000_engine->scratch_deck.prev_file(sc1000_engine, settings);
-            else if (!total_buttons[0] && total_buttons[1] && !total_buttons[2] && !total_buttons[3] &&
-                     sc1000_engine->scratch_deck.nav_state.files_present)
-                sc1000_engine->scratch_deck.next_file(sc1000_engine, settings);
-            else if (total_buttons[0] && total_buttons[1] && !total_buttons[2] && !total_buttons[3] &&
-                     sc1000_engine->scratch_deck.nav_state.files_present)
-                sc1000_engine->input_state.set_pitch_mode(2);
-            else if (!total_buttons[0] && !total_buttons[1] && total_buttons[2] && !total_buttons[3] &&
-                     sc1000_engine->beat_deck.nav_state.files_present)
-                sc1000_engine->beat_deck.prev_file(sc1000_engine, settings);
-            else if (!total_buttons[0] && !total_buttons[1] && !total_buttons[2] && total_buttons[3] &&
-                     sc1000_engine->beat_deck.nav_state.files_present)
-                sc1000_engine->beat_deck.next_file(sc1000_engine, settings);
-            else if (!total_buttons[0] && !total_buttons[1] && total_buttons[2] && total_buttons[3] &&
-                     sc1000_engine->beat_deck.nav_state.files_present)
-                sc1000_engine->input_state.set_pitch_mode(1);
-            else if (total_buttons[0] && total_buttons[1] && total_buttons[2] && total_buttons[3])
-                ctx.shift_latched = true;
-            else
-                LOG_WARN("Unknown action");
-
-            ctx.button_machine_state = ButtonMachineState::Waiting;
-            break;
-
-        case ButtonMachineState::ActingHeld:
-            if (buttons[0] && !buttons[1] && !buttons[2] && !buttons[3] &&
-                sc1000_engine->scratch_deck.nav_state.files_present)
-                sc1000_engine->scratch_deck.prev_folder(sc1000_engine, settings);
-            else if (!buttons[0] && buttons[1] && !buttons[2] && !buttons[3] &&
-                     sc1000_engine->scratch_deck.nav_state.files_present)
-                sc1000_engine->scratch_deck.next_folder(sc1000_engine, settings);
-            else if (buttons[0] && buttons[1] && !buttons[2] && !buttons[3] &&
-                     sc1000_engine->scratch_deck.nav_state.files_present)
-                sc1000_engine->scratch_deck.random_file(sc1000_engine, settings);
-            else if (!buttons[0] && !buttons[1] && buttons[2] && !buttons[3] &&
-                     sc1000_engine->beat_deck.nav_state.files_present)
-                sc1000_engine->beat_deck.prev_folder(sc1000_engine, settings);
-            else if (!buttons[0] && !buttons[1] && !buttons[2] && buttons[3] &&
-                     sc1000_engine->beat_deck.nav_state.files_present)
-                sc1000_engine->beat_deck.next_folder(sc1000_engine, settings);
-            else if (!buttons[0] && !buttons[1] && buttons[2] && buttons[3] &&
-                     sc1000_engine->beat_deck.nav_state.files_present)
-                sc1000_engine->beat_deck.random_file(sc1000_engine, settings);
-            else if (buttons[0] && buttons[1] && buttons[2] && buttons[3])
-            {
-                LOG_DEBUG("All buttons held!");
-                if (sc1000_engine->scratch_deck.nav_state.files_present)
-                    sc1000_engine->beat_deck.record(sc1000_engine);
-            }
-            else
-                LOG_WARN("Unknown action");
-
-            ctx.button_machine_state = ButtonMachineState::Waiting;
-            break;
-
-        case ButtonMachineState::Waiting:
-            ctx.button_counter++;
-
-            // Wait till buttons are released before allowing the countdown
-            if (buttons[0] || buttons[1] || buttons[2] || buttons[3])
-                ctx.button_counter = 0;
-
-            if (ctx.button_counter > 20)
-            {
-                ctx.button_counter = 0;
-                ctx.button_machine_state = ButtonMachineState::None;
-
-                for (i = 0; i < 4; i++)
-                    total_buttons[i] = 0;
-            }
-            break;
-        }
-    }
-
-    debug_cnt_process_pic++;
-}
-
-void process_rot(struct sc1000* sc1000_engine)
-{
-    auto& ctx = g_input_ctx;
-    struct sc_settings* settings = sc1000_engine->settings.get();
-
-    int8_t crossed_zero;
-    // 0 when we haven't crossed zero, -1 when crossed anti-clockwise, 1 when crossed clockwise
-    int wrapped_angle = 0x0000;
-
-    // Read encoder angle using platform module
-    sc1000_engine->scratch_deck.encoder_state.angle_raw = encoder_read_angle(&ctx.hw.encoder);
-
-    if (settings->jog_reverse)
-    {
-        sc1000_engine->scratch_deck.encoder_state.angle_raw = 4095 - sc1000_engine->scratch_deck.encoder_state.angle_raw;
-    }
-
-    // First time, make sure there's no difference
-    if (sc1000_engine->scratch_deck.encoder_state.angle == 0xffff)
-        sc1000_engine->scratch_deck.encoder_state.angle = sc1000_engine->scratch_deck.encoder_state.angle_raw;
-
-    // Handle wrapping at zero
-    if (sc1000_engine->scratch_deck.encoder_state.angle_raw < 1024 &&
-        sc1000_engine->scratch_deck.encoder_state.angle >= 3072)
-    {
-        // We crossed zero in the positive direction
-        crossed_zero = 1;
-        wrapped_angle = sc1000_engine->scratch_deck.encoder_state.angle - 4096;
-    }
-    else if (sc1000_engine->scratch_deck.encoder_state.angle_raw >= 3072 &&
-             sc1000_engine->scratch_deck.encoder_state.angle < 1024)
-    {
-        // We crossed zero in the negative direction
-        crossed_zero = -1;
-        wrapped_angle = sc1000_engine->scratch_deck.encoder_state.angle + 4096;
-    }
-    else
-    {
-        crossed_zero = 0;
-        wrapped_angle = sc1000_engine->scratch_deck.encoder_state.angle;
-    }
-
-    // Blip filter: rotary sensor sometimes returns incorrect values
-    // Ignore jumps > 100 ticks, accept after 3 consecutive blips
-    // (Part of encoder glitch protection chain - see audio_engine.cpp:173)
-    if (abs(sc1000_engine->scratch_deck.encoder_state.angle_raw - wrapped_angle) > 100 && ctx.num_blips < 2)
-    {
-        ctx.num_blips++;
-    }
-    else
-    {
-        ctx.num_blips = 0;
-        sc1000_engine->scratch_deck.encoder_state.angle = sc1000_engine->scratch_deck.encoder_state.angle_raw;
-
-        int current_pitch_mode = sc1000_engine->input_state.pitch_mode();
-        if (current_pitch_mode)
-        {
-            if (!ctx.old_pitch_mode)
-            {
-                // We just entered pitchmode, set offset etc
-                if (current_pitch_mode == 0)
-                {
-                    sc1000_engine->beat_deck.player.input.pitch_note = 1.0;
-                }
-                else
-                {
-                    sc1000_engine->scratch_deck.player.input.pitch_note = 1.0;
-                }
-
-                sc1000_engine->scratch_deck.encoder_state.offset = -sc1000_engine->scratch_deck.encoder_state.angle;
-                ctx.old_pitch_mode = 1;
-                sc1000_engine->scratch_deck.player.input.touched = false;
-            }
-
-            // Handle wrapping at zero
-            if (crossed_zero > 0)
-            {
-                sc1000_engine->scratch_deck.encoder_state.offset += 4096;
-            }
-            else if (crossed_zero < 0)
-            {
-                sc1000_engine->scratch_deck.encoder_state.offset -= 4096;
-            }
-
-            // Use the angle of the platter to control sample pitch
-            double pitch_offset = static_cast<double>(sc1000_engine->scratch_deck.encoder_state.angle +
-                sc1000_engine->scratch_deck.encoder_state.offset) / 16384.0 + 1.0;
-
-            if (current_pitch_mode == 0)
-            {
-                sc1000_engine->scratch_deck.player.input.pitch_note = pitch_offset;
-            }
-            else
-            {
-                sc1000_engine->scratch_deck.player.input.pitch_note = pitch_offset;
-            }
-        }
-        else
-        {
-            if (settings->platter_enabled)
-            {
-                // Handle touch sensor
-                // Use query API to get output state from audio engine
-                double scratch_pos = sc1000_engine->audio ? sc1000_engine->audio->get_position(1) : 0.0;
-                double scratch_motor = sc1000_engine->audio ? sc1000_engine->audio->get_deck_state(1).motor_speed : 1.0;
-
-                if (ctx.pic_readings.cap_touched || scratch_motor == 0.0)
-                {
-                    // Positive touching edge
-                    if (!sc1000_engine->scratch_deck.player.input.touched ||
-                        (ctx.old_pitch_mode && !sc1000_engine->scratch_deck.player.input.stopped))
-                    {
-                        sc1000_engine->scratch_deck.encoder_state.offset = static_cast<int32_t>(
-                            (scratch_pos * settings->platter_speed) -
-                            sc1000_engine->scratch_deck.encoder_state.angle);
-
-                        LOG_DEBUG("touch!");
-                        sc1000_engine->scratch_deck.player.input.target_position = scratch_pos;
-                        sc1000_engine->scratch_deck.player.input.touched = true;
-                    }
-                }
-                else
-                {
-                    sc1000_engine->scratch_deck.player.input.touched = false;
-                }
-            }
-            else
-            {
-                sc1000_engine->scratch_deck.player.input.touched = true;
-            }
-
-            // Handle wrapping at zero
-            if (crossed_zero > 0)
-            {
-                sc1000_engine->scratch_deck.encoder_state.offset += 4096;
-            }
-            else if (crossed_zero < 0)
-            {
-                sc1000_engine->scratch_deck.encoder_state.offset -= 4096;
-            }
-
-            // Convert the raw value to track position and set player to that pos
-            sc1000_engine->scratch_deck.player.input.target_position =
-                static_cast<double>(sc1000_engine->scratch_deck.encoder_state.angle +
-                    sc1000_engine->scratch_deck.encoder_state.offset) / settings->platter_speed;
-        }
-        ctx.old_pitch_mode = sc1000_engine->input_state.pitch_mode();
-    }
-}
-
-void* run_sc_input_thread(struct sc1000* sc1000_engine)
-{
-    struct sc_settings* settings = sc1000_engine->settings.get();
-    HardwareState* hw = &g_input_ctx.hw;
-
-    unsigned char picskip = 0;
-
-    char mididevices[64][64];
-    int midi_device_num = 0, old_midi_device_num = 0;
-
-    // Initialize encoder (rotary sensor on I2C0)
-    if (!encoder_init(&hw->encoder))
-    {
-        LOG_WARN("Couldn't init rotary sensor");
-    }
-    else
-    {
-        LOG_INFO("Encoder initialized OK, present=%d", hw->encoder.present);
-    }
-
-    // Initialize PIC input processor on I2C2
-    if (!pic_init(&hw->pic))
-    {
-        LOG_WARN("Couldn't init input processor");
-    }
-    else
-    {
-        LOG_INFO("PIC initialized OK, present=%d", hw->pic.present);
-    }
-
-    init_io(sc1000_engine);
-
-    // Print settings for debugging
-    LOG_INFO("Settings: platter_enabled=%d, platter_speed=%d, jog_reverse=%d",
-           settings->platter_enabled, settings->platter_speed, settings->jog_reverse);
-
-    // Initialize crossfader calibration
-    sc1000_engine->crossfader.set_calibration(
-        settings->crossfader_adc_min,
-        settings->crossfader_adc_max);
-
-    // Detect SC500 by seeing if G11 is pulled low
-    if (hw->gpio.mmap_present)
-    {
-        if (gpio_a13_read_pin(&hw->gpio, 6, 11))
-        {
-            LOG_INFO("SC500 detected");
-            settings->disable_volume_adc = 1;
-            settings->disable_pic_buttons = 1;
-        }
-    }
-
-    srand(time(NULL)); // TODO - need better entropy source, SoC is starting up annoyingly deterministically
+    // Seed random number generator (used for random file selection)
+    srand(static_cast<unsigned int>(time(nullptr)));
 
     struct timeval tv;
     time_t last_time = 0;
     unsigned int frame_count = 0;
-    struct timespec ts;
-    double input_time = 0, last_input_time = 0;
-
-    sleep(2);
-
     unsigned int second_count = 0;
 
-    while (g_input_running) // Main input loop
+    // Give hardware time to stabilize
+    sleep(2);
+
+    while (g_input_running)
     {
         frame_count++;
 
-        // Update display every second
+        // Once per second: log stats, poll for new MIDI devices
         gettimeofday(&tv, nullptr);
         if (tv.tv_sec != last_time)
         {
             last_time = tv.tv_sec;
-
-            //printf("\033[H\033[J"); // Clear Screen
-
-            // Get DSP stats
-            struct dsp_stats dsp;
-            audio_engine_get_stats(&dsp);
-
-            auto& pic = g_input_ctx.pic_readings;
-            LOG_STATS(
-                "FPS: %06u - ADCS: %04u, %04u, %04u, %04u | XF: %.2f | "
-                "DSP: %.1f%% (peak: %.1f%%, %.0fus/%.0fus, xruns: %lu) | "
-                "Enc: %04d Cap: %d Buttons: %01u,%01u,%01u,%01u\n",
-                frame_count, pic.adc[0], pic.adc[1], pic.adc[2], pic.adc[3],
-                sc1000_engine->crossfader.position(),
-                dsp.load_percent, dsp.load_peak, dsp.process_time_us, dsp.budget_time_us, dsp.xruns,
-                sc1000_engine->scratch_deck.encoder_state.angle,
-                sc1000_engine->scratch_deck.player.input.touched,
-                pic.buttons[0], pic.buttons[1], pic.buttons[2], pic.buttons[3]);
-
+            // Log hardware and DSP stats
+            LOG_STATS("FPS: %06u - ", frame_count);
+            g_input_ctx.hardware->log_stats(engine);
             frame_count = 0;
 
-            // list midi devices
-            for (const auto& controller : g_input_ctx.midi_controllers)
+            // Debug: list connected MIDI controllers
+            for (const auto& controller : midi_ctx->controllers)
             {
                 LOG_DEBUG("MIDI : %s", controller->port_name());
             }
 
-            // Wait 10 seconds to enumerate MIDI devices
-            // Give them a little time to come up properly
+            // Poll for new MIDI devices after init delay
             if (second_count < settings->midi_init_delay)
+            {
                 second_count++;
+            }
             else if (second_count == settings->midi_init_delay)
             {
-                // Check for new midi devices
-                midi_device_num = listdev("rawmidi", mididevices);
-
-                // If there are more MIDI devices than last time, add them
-                if (midi_device_num > old_midi_device_num)
-                {
-                    add_new_midi_devices(sc1000_engine, mididevices, midi_device_num);
-                    old_midi_device_num = midi_device_num;
-                }
-                second_count = 999;
+                poll_midi_devices(midi_ctx, engine);
+                second_count = 999;  // Don't poll again
             }
         }
 
-        // Get info from input processor registers
-        // First the ADC values
-        // 5 = XFADER1, 6 = XFADER2, 7 = POT1, 8 = POT2
+        // Poll hardware inputs (PIC, GPIO, encoder)
+        g_input_ctx.hardware->poll(engine);
 
-        if (hw->pic.present)
-        {
-            picskip++;
-            if (picskip > 4)
-            {
-                picskip = 0;
-                process_pic(sc1000_engine);
-                g_input_ctx.first_time = false;
-            }
+        // Process MIDI events from the lock-free queue
+        process_midi_events(engine);
 
-            process_rot(sc1000_engine);
-        }
-        else // couldn't find input processor, just play the tracks
-        {
-            sc1000_engine->scratch_deck.player.input.touched = true;
-            sc1000_engine->beat_deck.player.input.crossfader = 0.0;
-            sc1000_engine->scratch_deck.player.input.crossfader = 0.5;
-            sc1000_engine->beat_deck.player.input.just_play = true;
-            // Set input pitch values to 1.0 (audio engine computes actual pitch from these)
-            sc1000_engine->beat_deck.player.input.reset_pitch();
-
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            input_time = (double)ts.tv_sec + ((double)ts.tv_nsec / 1000000000.0);
-
-            if (last_input_time != 0)
-            {
-                sc1000_engine->scratch_deck.player.input.target_position += (input_time - last_input_time);
-            }
-
-            last_input_time = input_time;
-        }
-
-        usleep(settings->update_rate);  // Rate limit input loop to reduce CPU contention
+        // Rate limit input loop
+        usleep(settings->update_rate);
     }
+
+    return nullptr;
 }
 
 void* sc_input_thread(void* ptr)
 {
+    (void)ptr;  // Unused
     return run_sc_input_thread(&g_sc1000_engine);
 }
 
@@ -941,29 +138,25 @@ void* sc_input_thread(void* ptr)
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Start the input thread
+// C interface for thread management
+
 void start_sc_input_thread()
 {
-    int iret1;
-
-    LOG_INFO("Starting GPIO input thread");
+    LOG_INFO("Starting input thread");
     sc::input::g_input_running = true;
 
-    iret1 = pthread_create(&sc::input::g_input_thread_handle, nullptr, sc::input::sc_input_thread, nullptr);
-
-    if (iret1)
+    int result = pthread_create(&sc::input::g_input_thread_handle, nullptr, sc::input::sc_input_thread, nullptr);
+    if (result)
     {
-        LOG_ERROR("Error - pthread_create() return code: %d", iret1);
+        LOG_ERROR("pthread_create failed: %d", result);
         exit(EXIT_FAILURE);
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Stop the input thread
 void stop_sc_input_thread()
 {
-    LOG_INFO("Stopping GPIO input thread");
+    LOG_INFO("Stopping input thread");
     sc::input::g_input_running = false;
     pthread_join(sc::input::g_input_thread_handle, nullptr);
-    LOG_INFO("GPIO input thread stopped");
+    LOG_INFO("Input thread stopped");
 }

@@ -48,8 +48,9 @@ void Player::init(unsigned int sample_rate, Track* tr, struct ScSettings* settin
 	track = tr;
 
 	// Initialize input state
-	input = sc::DeckInput{};  // Reset to defaults
-	input.volume_knob = settings->initial_volume;
+	input = sc::DeckInput{};  // Reset to defaults (volume_knob=0, crossfader=0 for safety)
+	input.volume_knob = settings->initial_volume;  // Set initial volume from config
+	input.crossfader = 1.0;  // Crossfader open (will be updated by input thread)
 
 	stopped = false;
 }

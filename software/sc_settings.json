@@ -262,7 +262,17 @@
       "event": "button_pressed",
       "pin": 4,
       "port": 2,
-      "pull_up": true
+      "pull_up": true,
+      "parameter": 1
+    },
+    {
+      "action": "cue",
+      "deck": "scratch",
+      "event": "button_released",
+      "pin": 4,
+      "port": 2,
+      "pull_up": true,
+      "parameter": 1
     },
     {
       "action": "delete_cue",
@@ -278,7 +288,17 @@
       "event": "button_pressed",
       "pin": 7,
       "port": 2,
-      "pull_up": true
+      "pull_up": true,
+      "parameter": 2
+    },
+    {
+      "action": "cue",
+      "deck": "scratch",
+      "event": "button_released",
+      "pin": 7,
+      "port": 2,
+      "pull_up": true,
+      "parameter": 2
     },
     {
       "action": "delete_cue",
@@ -294,7 +314,17 @@
       "event": "button_pressed",
       "pin": 11,
       "port": 2,
-      "pull_up": true
+      "pull_up": true,
+      "parameter": 3
+    },
+    {
+      "action": "cue",
+      "deck": "scratch",
+      "event": "button_released",
+      "pin": 11,
+      "port": 2,
+      "pull_up": true,
+      "parameter": 3
     },
     {
       "action": "delete_cue",
@@ -310,7 +340,17 @@
       "event": "button_pressed",
       "pin": 12,
       "port": 2,
-      "pull_up": true
+      "pull_up": true,
+      "parameter": 4
+    },
+    {
+      "action": "cue",
+      "deck": "scratch",
+      "event": "button_released",
+      "pin": 12,
+      "port": 2,
+      "pull_up": true,
+      "parameter": 4
     },
     {
       "action": "delete_cue",
@@ -874,19 +914,19 @@
     "buffer_period_factor": 4,
     "cut_beats": 0,
     "debounce_time": 5,
-    "disable_pic_buttons": 0,
-    "disable_volume_adc": 0,
+    "disable_pic_buttons": false,
+    "disable_volume_adc": false,
     "double_cut": 0,
     "fader_close_point": 3,
     "fader_open_point": 5,
     "hamster": 0,
     "hold_time": 150,
     "initial_volume": 0.125,
-    "jog_reverse": 0,
+    "jog_reverse": false,
     "midi_init_delay": 5,
     "period_size": 256,
     "pitch_range": 50,
-    "platter_enabled": 1,
+    "platter_enabled": true,
     "platter_speed": 2275,
     "sample_rate": 48000,
     "single_vca": 0,

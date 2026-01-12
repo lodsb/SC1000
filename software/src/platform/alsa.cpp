@@ -90,7 +90,7 @@ public:
     int handle() override;
     unsigned int sample_rate() const override { return playback_.rate; }
     void start() override {}  // PCM started on first write
-    void stop() override {}
+    void stop() override;     // Stop PCM devices for clean shutdown
 
     // Recording control (delegated to audio engine)
     bool start_recording(int deck, double playback_position) override;
@@ -220,7 +220,7 @@ static void* buffer_generic(const snd_pcm_channel_area_t* area,
 //
 static void fill_audio_interface_info(ScSettings* settings) {
     int err;
-    int card_id, last_card_id = -1;
+    int card_id = -1, last_card_id = -1;
     char str[64];
     char pcm_name[32];
 
@@ -436,10 +436,27 @@ AlsaAudio::~AlsaAudio() {
     audio_engine_.reset();
     if (capture_enabled_) pcm_close(&capture_);
     pcm_close(&playback_);
+
+    // Free global ALSA config to ensure clean state for next run
+    snd_config_update_free_global();
+}
+
+void AlsaAudio::stop() {
+    // Drop pending audio to stop PCM immediately
+    // This ensures poll() in RT thread returns and thread can exit
+    if (capture_.pcm) {
+        snd_pcm_drop(capture_.pcm);
+    }
+    if (playback_.pcm) {
+        snd_pcm_drop(playback_.pcm);
+    }
+    started_ = false;
 }
 
 void AlsaAudio::pcm_close(AlsaPcm* pcm) {
     if (pcm->pcm) {
+        // Drop any pending frames and stop the PCM before closing
+        snd_pcm_drop(pcm->pcm);
         snd_pcm_close(pcm->pcm);
         pcm->pcm = nullptr;
     }

@@ -45,7 +45,7 @@ struct DeckProcessingState {
     double last_external_speed = 1.0;   // For instant MIDI response detection
 
     // === Volume Processing ===
-    double fader_current = 1.0;         // Smoothed crossfader position
+    double fader_current = 0.0;         // Smoothed crossfader position, default muted until input sets it
     double volume = 0.0;                // Current output volume (after all processing)
 
     // === Platter State ===

@@ -48,7 +48,35 @@ void perform_action_for_deck(Deck* deck, const Mapping* map,
         unsigned int cuenum = (map->type == MIDI)
             ? map->midi_command_bytes[1]
             : (map->gpio_port * 32) + map->pin + 128;
-        deck->cue(cuenum, engine);
+
+        // Track cue button state for auto-cue combo detection
+        // Button index derived from cuenum % 4 (for MIDI notes 0-3, 4-7, etc.)
+        // Or use parameter field if explicitly set (1-4 maps to index 0-3)
+        int button_idx = (map->parameter >= 1 && map->parameter <= 4)
+            ? (map->parameter - 1)
+            : static_cast<int>(cuenum % 4);
+
+        // Handle button press/release for combo detection
+        if (map->edge_type == BUTTON_PRESSED || map->edge_type == BUTTON_PRESSED_SHIFTED) {
+            input_state.cue_button_pressed(button_idx);
+            deck->cue(cuenum, engine);
+        } else if (map->edge_type == BUTTON_RELEASED || map->edge_type == BUTTON_RELEASED_SHIFTED) {
+            // Check for combo - returns 0=none, 1=scratch, 2=beat
+            int combo_deck = input_state.cue_button_released(button_idx);
+            if (combo_deck == 1) {
+                engine->scratch_deck.cycle_auto_cue_mode();
+                // Skip normal cue action when combo detected
+            } else if (combo_deck == 2) {
+                engine->beat_deck.cycle_auto_cue_mode();
+                // Skip normal cue action when combo detected
+            } else {
+                // No combo - normal cue action on release (optional)
+                // deck->cue(cuenum, engine);  // Uncomment if cue should also fire on release
+            }
+        } else {
+            // Other edge types - just fire the cue
+            deck->cue(cuenum, engine);
+        }
         break;
     }
     case DELETECUE: {

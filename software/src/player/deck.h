@@ -29,6 +29,15 @@
 #include "deck_state.h"
 #include "player.h"
 
+// Auto-cue mode for automatic track division
+enum class AutoCueMode {
+   Off,     // Normal manual cue behavior
+   Div4,    // 4 equal divisions
+   Div8,    // 8 equal divisions
+   Div16,   // 16 equal divisions
+   Div32    // 32 equal divisions
+};
+
 #ifdef __cplusplus
 #include "playlist.h"
 #else
@@ -57,6 +66,9 @@ struct Deck
    NavigationState nav_state;
    EncoderState encoder_state;
    LoopState loop_state;
+
+   // Auto-cue mode (divides track into equal parts)
+   AutoCueMode auto_cue_mode = AutoCueMode::Off;
 
    // Playlist (owned)
    std::unique_ptr<Playlist> playlist;
@@ -87,6 +99,11 @@ struct Deck
    // Loop navigation helpers
    bool is_at_loop() const { return nav_state.is_at_loop(); }
    void goto_loop(struct Sc1000* engine, struct ScSettings* settings);
+
+   // Auto-cue mode
+   void cycle_auto_cue_mode();
+   void reset_auto_cue_mode() { auto_cue_mode = AutoCueMode::Off; }
+   int auto_cue_divisions() const;
 #endif
 };
 

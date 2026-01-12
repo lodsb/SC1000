@@ -61,7 +61,7 @@ static void print_usage(const char* program) {
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  --root PATH            Root directory for samples/settings (default: /media/sda)\n");
     fprintf(stderr, "  --log-console          Log to console (default)\n");
-    fprintf(stderr, "  --log-file             Log to {root}/Sc1000.log\n");
+    fprintf(stderr, "  --log-file             Log to {root}/sc1000.log\n");
     fprintf(stderr, "  --log-file-path PATH   Log to specified file path\n");
     fprintf(stderr, "  --log-level LEVEL      Set log level (debug, info, warn, error)\n");
     fprintf(stderr, "  --show-stats           Enable FPS/DSP stats output\n");

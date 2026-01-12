@@ -68,8 +68,8 @@ struct DeckInput {
     double pitch_bend = 1.0;        // MIDI pitch bend
 
     // === Volume ===
-    double volume_knob = 1.0;       // Volume pot or MIDI CC (0-1)
-    double crossfader = 1.0;        // Crossfader position after cut logic (0-1)
+    double volume_knob = 0.0;       // Volume pot or MIDI CC (0-1), default muted for safety
+    double crossfader = 0.0;        // Crossfader position after cut logic (0-1), default muted until input sets it
 
     // === Source Selection ===
     PlaybackSource source = PlaybackSource::File;

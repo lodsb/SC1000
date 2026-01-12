@@ -72,6 +72,9 @@ static void load_track_internal(struct Deck* d, Track* track, struct ScSettings*
 	// (Part of encoder glitch protection chain - see audio_engine.cpp:173)
 	pl->input.touched = false;
 
+	// Reset auto-cue mode on track change (no persistence)
+	d->reset_auto_cue_mode();
+
 	if (!pl->input.just_play)
 	{
 		// Reset encoder offset (we're seeking to position 0)
@@ -161,17 +164,57 @@ void Deck::unset_cue(unsigned int label)
 
 void Deck::cue(unsigned int label, struct Sc1000* engine)
 {
+	// Auto-cue mode: calculate position from track divisions
+	if (auto_cue_mode != AutoCueMode::Off && player.track != nullptr) {
+		int divisions = auto_cue_divisions();
+		if (divisions > 0) {
+			// Map label to division index (wrap around)
+			int slot = static_cast<int>(label) % divisions;
+
+			// Calculate position in samples, then convert to seconds
+			double track_length_samples = static_cast<double>(player.track->length);
+			double slot_position_samples = (track_length_samples / divisions) * slot;
+			double slot_position_seconds = slot_position_samples / player.track->rate;
+
+			// Seek to calculated position
+			player.input.seek_to = slot_position_seconds;
+			player.input.position_offset = 0.0;  // Reset offset since we're seeking absolutely
+
+			// For scratch deck: sync encoder and target_position for artifact-free jumps
+			if (!player.input.just_play) {
+				player.input.target_position = slot_position_seconds;
+				// Sync encoder offset: new_pos = (angle + offset) / platter_speed
+				// So offset = new_pos * platter_speed - angle
+				int platter_speed = engine->settings->platter_speed;
+				encoder_state.offset = static_cast<int32_t>(slot_position_seconds * platter_speed) - encoder_state.angle;
+			}
+
+			LOG_DEBUG("Auto-cue: slot=%d/%d pos=%.2fs", slot, divisions, slot_position_seconds);
+			return;
+		}
+	}
+
+	// Normal cue behavior
 	auto p = cues.get(label);
 	if (!p.has_value()) {
 		// Set cue at current elapsed time
 		double elapsed = engine && engine->audio ? engine->audio->get_deck_state(deck_no).elapsed() : 0.0;
 		cues.set(label, elapsed);
-		cues.save_to_file(player.track->path);
+		if (player.track != nullptr) {
+			cues.save_to_file(player.track->path);
+		}
 	}
 	else {
 		// Seek to cue point: set offset so elapsed = p
 		double current_pos = engine && engine->audio ? engine->audio->get_position(deck_no) : 0.0;
 		player.input.position_offset = current_pos - p.value();
+
+		// For scratch deck: sync encoder and target_position for artifact-free jumps
+		if (!player.input.just_play) {
+			player.input.target_position = p.value();
+			int platter_speed = engine->settings->platter_speed;
+			encoder_state.offset = static_cast<int32_t>(p.value() * platter_speed) - encoder_state.angle;
+		}
 	}
 }
 
@@ -434,4 +477,33 @@ void Deck::goto_loop(struct Sc1000* engine, struct ScSettings* settings)
 
 	LOG_DEBUG("Deck %d: goto_loop", deck_no);
 }
+
+//
+// Auto-cue mode implementation
+//
+
+int Deck::auto_cue_divisions() const
+{
+	switch (auto_cue_mode) {
+		case AutoCueMode::Div4:  return 4;
+		case AutoCueMode::Div8:  return 8;
+		case AutoCueMode::Div16: return 16;
+		case AutoCueMode::Div32: return 32;
+		default:                 return 0;
+	}
+}
+
+void Deck::cycle_auto_cue_mode()
+{
+	switch (auto_cue_mode) {
+		case AutoCueMode::Off:   auto_cue_mode = AutoCueMode::Div4;  break;
+		case AutoCueMode::Div4:  auto_cue_mode = AutoCueMode::Div8;  break;
+		case AutoCueMode::Div8:  auto_cue_mode = AutoCueMode::Div16; break;
+		case AutoCueMode::Div16: auto_cue_mode = AutoCueMode::Div32; break;
+		case AutoCueMode::Div32: auto_cue_mode = AutoCueMode::Off;   break;
+	}
+
+	LOG_INFO("Deck %d: auto-cue mode = %d divisions", deck_no, auto_cue_divisions());
+}
+
 

@@ -109,7 +109,7 @@ namespace sc {
 namespace config {
 
 // Default importer path
-constexpr const char* DEFAULT_IMPORTER_PATH = "/root/Sc1000-import";
+constexpr const char* DEFAULT_IMPORTER_PATH = "/root/sc1000-import";
 
 void add_mapping(sc::control::MappingRegistry& registry, IOType type, unsigned char deck_no, unsigned char *buf, unsigned char port, unsigned char pin, bool pullup, EventType edge_type, ActionType action, unsigned char parameter)
 {
@@ -182,7 +182,17 @@ void settings_from_json(ScSettings* settings, const nlohmann::json& json)
 void add_midi_mapping_from_json(sc::control::MappingRegistry& mappings, const nlohmann::json& json)
 {
    const MIDIStatusType midi_status = json["type"].template get<MIDIStatusType>();
-   const EventType event = json["shifted"].template get<bool>() ? EventType::BUTTON_PRESSED_SHIFTED : EventType::BUTTON_PRESSED;
+   const bool shifted = json["shifted"].template get<bool>();
+
+   // Derive event type from MIDI status AND shifted flag
+   // note_off -> BUTTON_RELEASED, note_on/cc/pb -> BUTTON_PRESSED
+   EventType event;
+   if (midi_status == MIDI_NOTE_OFF) {
+      event = shifted ? EventType::BUTTON_RELEASED_SHIFTED : EventType::BUTTON_RELEASED;
+   } else {
+      event = shifted ? EventType::BUTTON_PRESSED_SHIFTED : EventType::BUTTON_PRESSED;
+   }
+
    const unsigned char channel = json["channel"].template get<unsigned char>();
    const unsigned char parameter1 = json["parameter1"].template get<unsigned char>();
    const unsigned char parameter2 = json["parameter2"].template get<unsigned char>();
@@ -194,7 +204,8 @@ void add_midi_mapping_from_json(sc::control::MappingRegistry& mappings, const nl
 
    const auto control_type_byte = static_cast<unsigned char>(midi_status);
 
-   if (midi_status == MIDI_NOTE_ON && parameter1 == 255) // all note ons
+   // Wildcard expansion for note_on and note_off (parameter1 == 255)
+   if ((midi_status == MIDI_NOTE_ON || midi_status == MIDI_NOTE_OFF) && parameter1 == 255)
    {
       for (unsigned char note_number = 0; note_number < 128; note_number++)
       {
@@ -232,7 +243,10 @@ void add_gpio_mapping_from_json(sc::control::MappingRegistry& mappings, const nl
    const unsigned char deck_no = deck_string == "beats" ? 0 : 1;
    ActionType action = json["action"].template get<ActionType>();
 
-   add_mapping(mappings, IOType::IO, deck_no, nullptr, port, pin, pull_up, event, action, 0);
+   // Optional parameter field (used for cue button index in auto-cue combo detection)
+   const unsigned char parameter = json.value("parameter", static_cast<unsigned char>(0));
+
+   add_mapping(mappings, IOType::IO, deck_no, nullptr, port, pin, pull_up, event, action, parameter);
 }
 
 // Note: Legacy sc_settings_old_format() function removed - now using JSON config only
@@ -246,10 +260,10 @@ void load_json_config(ScSettings* settings, sc::control::MappingRegistry& mappin
    // 2. Root path from settings (if already set)
    // 3. Default hardware paths
    const char* paths[] = {
-      "./ScSettings.json",
-      "../ScSettings.json",
-      "/media/sda/ScSettings.json",
-      "/var/ScSettings.json",
+      "./sc_settings.json",
+      "../sc_settings.json",
+      "/media/sda/sc_settings.json",
+      "/var/sc_settings.json",
       nullptr
    };
 
@@ -267,7 +281,7 @@ void load_json_config(ScSettings* settings, sc::control::MappingRegistry& mappin
    if (f.fail())
    {
       std::cerr << "Could not open any settings file, exiting" << std::endl;
-      std::cerr << "Searched: ./ScSettings.json, ../ScSettings.json, /media/sda/ScSettings.json, /var/ScSettings.json" << std::endl;
+      std::cerr << "Searched: ./sc_settings.json, ../sc_settings.json, /media/sda/sc_settings.json, /var/sc_settings.json" << std::endl;
       exit(-1);
    }
 
@@ -276,7 +290,7 @@ void load_json_config(ScSettings* settings, sc::control::MappingRegistry& mappin
       auto json_main = nlohmann::json::parse(f);
 
       // Get settings section, use empty object if missing
-      auto json_settings = json_main.value("Sc1000", nlohmann::json::object());
+      auto json_settings = json_main.value("sc1000", nlohmann::json::object());
       settings_from_json(settings, json_settings);
 
       // Load GPIO mappings if present

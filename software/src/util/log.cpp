@@ -79,7 +79,7 @@ void init(const Config& config) {
     if (config.use_file) {
         const char* path = config.file_path;
         if (path == nullptr) {
-            path = "/media/sda/Sc1000.log";
+            path = "/media/sda/sc1000.log";
         }
         g_output = fopen(path, "a");
         if (g_output == nullptr) {

@@ -18,6 +18,7 @@ The software in the `software/` folder has been completely rewritten and moderni
 ### What's New
 
 - **Loop recording** with punch-in overdub and per-deck control (via external audio interface)
+- **Auto-cue mode** for beat slicing (divide track into 4/8/16/32 equal parts)
 - **High-quality sinc interpolation** (16-tap, anti-aliased)
 - **Float-based audio engine** with native device bit-depth support for I/O
 - **CV outputs** for modular synthesis integration (via external audio interface)
@@ -205,6 +206,34 @@ High-quality 16-tap windowed sinc resampling with anti-aliasing for pitch-shifte
 - At pitch ≤ 1.0: full bandwidth (no filtering needed)
 - At pitch 1.0-2.0: 0.5 cutoff
 - At pitch > 2.0: aggressive 0.25 cutoff for fast scratching
+
+---
+
+### Auto-Cue Mode (Beat Slicer)
+
+Automatic cue point generation that divides the track into equal parts. Useful for beat slicing and sample chopping via MIDI.
+
+**Controls:**
+| Combo | Action |
+|-------|--------|
+| Cue buttons 1+2 (release both) | Cycle scratch deck auto-cue mode |
+| Cue buttons 3+4 (release both) | Cycle beat deck auto-cue mode |
+
+**Mode cycle:** Off → 4 divisions → 8 divisions → 16 divisions → 32 divisions → Off
+
+**Behavior:**
+- Pressing any cue button jumps to `position = (track_length / divisions) × (cue_number % divisions)`
+- MIDI notes on channel 2 (scratch) or channel 3 (beat) trigger cue positions
+- Mode resets to Off when loading a new track
+- Jumps are artifact-free even while scratching (encoder syncs automatically)
+
+**Example with Div8 mode:**
+- Cue 0 → 0% of track
+- Cue 1 → 12.5% of track
+- Cue 2 → 25% of track
+- ...
+- Cue 7 → 87.5% of track
+- Cue 8 → wraps to 0% (same as cue 0)
 
 ---
 

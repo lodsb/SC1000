@@ -18,7 +18,7 @@ The software in the `software/` folder has been completely rewritten and moderni
 ### What's New
 
 - **Loop recording** with punch-in overdub and per-deck control (via external audio interface)
-- **Auto-cue mode** for beat slicing (divide track into 4/8/16/32 equal parts)
+- Simple **Auto-cue mode** for beat slicing (divide track into 4/8/16/32 equal parts)
 - **High-quality sinc interpolation** (16-tap, anti-aliased)
 - **Float-based audio engine** with native device bit-depth support for I/O
 - **CV outputs** for modular synthesis integration (via external audio interface)

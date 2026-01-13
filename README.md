@@ -435,16 +435,92 @@ For permanent installation or when updating kernel/device tree:
 
 The update extracts:
 - `sc1000` → `/usr/bin/`
-- `S50sc1000` → `/etc/init.d/` (init script, replaces legacy S50xwax)
+- `S50sc1000` → `/etc/init.d/` (init script)
 - `sc1000-import` → `/root/` (audio importer)
 - `sc_settings.json` → `/media/sda/`
 - `zImage`, `*.dtb` → boot partition (if present in tarball)
+
+**Legacy migration:** The updater automatically removes old xwax files:
+- `/usr/bin/xwax` → removed
+- `/etc/init.d/S50xwax` → removed (replaced by S50sc1000)
+- `/root/xwax-import` → removed (replaced by sc1000-import)
 
 #### Binary Priority Order
 
 The init script checks for executables in this order:
 1. `/media/sda/sc1000` (USB stick)
 2. `/usr/bin/sc1000` (system)
+
+---
+
+### Running the Software
+
+The SC1000 doesn't automatically run the binary just by placing it on the USB stick - it needs to be started by the init system or manually via serial console.
+
+#### Automatic Startup (via Init Scripts)
+
+The init script `/etc/init.d/S50sc1000` runs at boot and:
+1. Waits for USB stick to mount at `/media/sda`
+2. Checks for `sc1000` binary (USB stick first, then system)
+3. Launches it with appropriate arguments
+
+**To get the init scripts on your device:**
+
+- **New devices**: Flash the SD card image from `os/sdcard.img.gz`
+- **Existing devices**: Use the updater (`sc.tar`) which installs `S50sc1000`
+
+Without the init script, the binary won't start automatically - you'll need to run it manually.
+
+#### Manual Startup (via Serial Console)
+
+For development, debugging, or devices without updated init scripts, connect via serial console:
+
+**Hardware connection:**
+- Serial pins on the A13-SOM: TX, RX, GND (active 3.3V UART)
+- Use a USB-to-serial adapter (FTDI, CP2102, etc.)
+- Settings: **115200 baud, 8N1**
+
+**Connect and run:**
+```bash
+# On your development machine
+screen /dev/ttyUSB0 115200
+# or
+minicom -D /dev/ttyUSB0 -b 115200
+
+# Once connected to the SC1000, log in as root (no password)
+# Then run manually:
+/media/sda/sc1000 --root /media/sda --log-console
+```
+
+**Stopping the auto-started instance:**
+```bash
+# If init script is running sc1000, kill it first
+killall sc1000
+
+# Then run your version
+/media/sda/sc1000 --log-console --log-level debug
+```
+
+**Useful for:**
+- Testing new builds without rebooting
+- Debugging with verbose logging
+- Running with different command-line options
+- Devices that don't have updated init scripts yet
+
+#### Quick Reference: What's Needed for Auto-Start
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `sc1000` binary | `/media/sda/` or `/usr/bin/` | The main application |
+| `S50sc1000` | `/etc/init.d/` | Init script that starts the binary |
+| `sc_settings.json` | `/media/sda/` | Configuration file |
+| `sc1000-import` | `/root/` | Audio file importer (called by sc1000) |
+
+**If auto-start doesn't work:**
+1. Check that `S50sc1000` exists in `/etc/init.d/`
+2. If missing, either use the updater (`sc.tar`) or run manually via serial
+
+---
 
 ### Building Complete OS Image
 

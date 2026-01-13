@@ -445,13 +445,17 @@ void SC1000Hardware::process_pic_inputs(Sc1000* engine)
     // Apply volume and fader from ADC values
     if (!settings->disable_volume_adc)
     {
+        // SC1000: Volume pots control crossfader level directly
         fadertarget0 = static_cast<double>(pic_readings_.adc[2]) / 1024.0;
         fadertarget1 = static_cast<double>(pic_readings_.adc[3]) / 1024.0;
     }
     else
     {
-        fadertarget0 = engine->beat_deck.player.input.volume_knob;
-        fadertarget1 = engine->scratch_deck.player.input.volume_knob;
+        // SC500: No volume pots, volume_knob is controlled via buttons.
+        // Crossfader should be 1.0 (fully open) unless cut by crossfader position.
+        // Don't use volume_knob here - it's already applied in audio engine!
+        fadertarget0 = 1.0;
+        fadertarget1 = 1.0;
     }
 
     // Fader Hysteresis

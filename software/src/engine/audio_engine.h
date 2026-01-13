@@ -275,7 +275,8 @@ private:
 
     // Setup player parameters for the block
     void setup_player(Player* pl, DeckProcessingState* state, unsigned long samples,
-                      const ScSettings* settings, double* target_volume, double* filtered_pitch);
+                      const ScSettings* settings, double track_length_seconds,
+                      double* target_volume, double* filtered_pitch);
 
     // Process and mix both players
     void process_players(

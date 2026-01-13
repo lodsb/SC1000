@@ -203,6 +203,7 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
     DeckProcessingState* state,
     unsigned long samples,
     const struct ScSettings* settings,
+    double track_length_seconds,
     double* target_volume,
     double* filtered_pitch)
 {
@@ -253,15 +254,29 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
         // Platter touched: position-based control (user scratching)
         double diff = state->position - in.target_position;
 
-        // Sanity check: if diff is unreasonably large (>0.5 sec), assume encoder glitch
-        // and snap to current position instead of trying to catch up at high speed
-        constexpr double MAX_REASONABLE_DIFF = 0.5;
-        if (std::fabs(diff) > MAX_REASONABLE_DIFF) {
-            // Note: can't modify input here, just snap our position
-            diff = 0.0;
+        // Handle track wrap: find shortest path between position and target
+        // This prevents infinite looping when position wraps but target doesn't
+        if (track_length_seconds > 0.0) {
+            double half_length = track_length_seconds / 2.0;
+            if (diff > half_length) {
+                diff -= track_length_seconds;
+            } else if (diff < -half_length) {
+                diff += track_length_seconds;
+            }
         }
 
-        target_pitch = (-diff) * 40;
+        // Calculate raw target pitch from position error
+        double raw_pitch = (-diff) * 40;
+
+        // Clamp to reasonable range (±5x speed) to prevent wild oscillation
+        constexpr double MAX_SCRATCH_PITCH = 5.0;
+        if (raw_pitch > MAX_SCRATCH_PITCH) {
+            target_pitch = MAX_SCRATCH_PITCH;
+        } else if (raw_pitch < -MAX_SCRATCH_PITCH) {
+            target_pitch = -MAX_SCRATCH_PITCH;
+        } else {
+            target_pitch = raw_pitch;
+        }
     }
     state->touched_prev = in.touched;
 
@@ -292,7 +307,23 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
     if (*target_volume > max_vol) *target_volume = max_vol;
 
 
+    // Diagnostic: detect prolonged low-volume conditions
     static int dbg_count = 0;
+    static int low_vol_count = 0;
+
+    // Track consecutive frames with near-zero pitch/volume
+    if (std::fabs(state->pitch) < 0.05 || *target_volume < 0.01) {
+        low_vol_count++;
+        // Log after ~0.5 seconds of silence (at 48kHz/256 samples = 187 buffers/sec)
+        if (low_vol_count == 100) {
+            LOG_INFO("DIAG: prolonged low volume - pitch=%.3f motor=%.3f stopped=%d touched=%d ext_speed=%.3f vol_knob=%.2f fader=%.2f",
+                     state->pitch, state->motor_speed, in.stopped, in.touched, external_speed,
+                     in.volume_knob, state->fader_current);
+        }
+    } else {
+        low_vol_count = 0;
+    }
+
     if (++dbg_count % 1000 == 0) {
         LOG_DEBUG("vol: pitch=%.2f knob=%.2f fader_cur=%.2f fader_tgt=%.2f target=%.2f",
                   state->pitch, in.volume_knob,
@@ -332,17 +363,7 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
         in2.seek_to = -1.0;  // Clear request
     }
 
-    double target_volume_1, filtered_pitch_1;
-    double target_volume_2, filtered_pitch_2;
-
-    setup_player(pl1, state1, frames, engine->settings.get(), &target_volume_1, &filtered_pitch_1);
-    setup_player(pl2, state2, frames, engine->settings.get(), &target_volume_2, &filtered_pitch_2);
-
-    // During fresh recording (recording active but no loop yet), mute track playback
-    if (state1->is_recording && !state1->has_loop) target_volume_1 = 0.0;
-    if (state2->is_recording && !state2->has_loop) target_volume_2 = 0.0;
-
-    // Select track for each player based on source
+    // Select track for each player based on source (needed for setup_player)
     bool use_loop_1 = (in1.source == sc::PlaybackSource::Loop) && has_loop(0);
     bool use_loop_2 = (in2.source == sc::PlaybackSource::Loop) && has_loop(1);
     Track* tr1 = use_loop_1 ? peek_loop_track(0) : pl1->track;
@@ -350,9 +371,22 @@ void AudioEngine<InterpPolicy, FormatPolicy>::process_players(
 
     const int tr_1_len = static_cast<int>(tr1->length);
     const int tr_2_len = static_cast<int>(tr2->length);
-
     const double tr_1_rate = tr1->rate;
     const double tr_2_rate = tr2->rate;
+
+    // Calculate track length in seconds for position wrap handling
+    double track_1_seconds = (tr_1_len > 0 && tr_1_rate > 0) ? tr_1_len / tr_1_rate : 0.0;
+    double track_2_seconds = (tr_2_len > 0 && tr_2_rate > 0) ? tr_2_len / tr_2_rate : 0.0;
+
+    double target_volume_1, filtered_pitch_1;
+    double target_volume_2, filtered_pitch_2;
+
+    setup_player(pl1, state1, frames, engine->settings.get(), track_1_seconds, &target_volume_1, &filtered_pitch_1);
+    setup_player(pl2, state2, frames, engine->settings.get(), track_2_seconds, &target_volume_2, &filtered_pitch_2);
+
+    // During fresh recording (recording active but no loop yet), mute track playback
+    if (state1->is_recording && !state1->has_loop) target_volume_1 = 0.0;
+    if (state2->is_recording && !state2->has_loop) target_volume_2 = 0.0;
 
     const double dt_rate_1 = pl1->sample_dt * tr_1_rate;
     const double dt_rate_2 = pl2->sample_dt * tr_2_rate;

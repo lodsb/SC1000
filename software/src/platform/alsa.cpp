@@ -632,7 +632,7 @@ int AlsaAudio::process_audio() {
                 .encoder_angle = engine_->scratch_deck.encoder_state.angle,
                 .sample_position = deck_state.position,
                 .sample_length = engine_->scratch_deck.player.track ? engine_->scratch_deck.player.track->length : 0,
-                .fader_volume = deck_state.volume,
+                .fader_volume = deck_state.fader_current,  // Smoothed crossfader position (NOT audio volume!)
                 .fader_target = engine_->scratch_deck.player.input.crossfader,  // Input (target)
                 .crossfader_position = engine_->crossfader.position()
             };

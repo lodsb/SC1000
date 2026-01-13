@@ -82,7 +82,7 @@ struct DeckProcessingState {
         pitch = 0.0;
         motor_speed = 1.0;
         last_external_speed = 1.0;
-        fader_current = 1.0;
+        fader_current = 0.0;  // Match default member initializer (muted until input sets it)
         volume = 0.0;
         touched_prev = false;
         // Note: recording state is NOT reset here (managed separately)

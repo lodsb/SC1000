@@ -120,6 +120,11 @@ struct ScSettings
    // How long the the platter takes to stop after you hit a stop button, higher values are longer
    int brake_speed;
 
+   // Maximum scratch pitch (speed multiplier) when platter is touched
+   // Higher values = faster response to quick movements, but can cause overshoot
+   // Default 10.0, range ~5-20
+   double max_scratch_pitch;
+
    // Pitch range of MIDI commands
    int pitch_range;
 

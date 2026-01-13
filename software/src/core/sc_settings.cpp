@@ -156,6 +156,7 @@ void settings_from_json(ScSettings* settings, const nlohmann::json& json)
    settings->hold_time = json.value("hold_time", 100);
    settings->slippiness = json.value("slippiness", 200);
    settings->brake_speed = json.value("brake_speed", 3000);
+   settings->max_scratch_pitch = json.value("max_scratch_pitch", 10.0);
    settings->pitch_range = json.value("pitch_range", 50);
    settings->midi_init_delay = json.value("midi_init_delay", 5u);
    settings->audio_init_delay = json.value("audio_init_delay", 2u);

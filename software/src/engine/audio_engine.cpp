@@ -268,12 +268,12 @@ void AudioEngine<InterpPolicy, FormatPolicy>::setup_player(
         // Calculate raw target pitch from position error
         double raw_pitch = (-diff) * 40;
 
-        // Clamp to reasonable range (±5x speed) to prevent wild oscillation
-        constexpr double MAX_SCRATCH_PITCH = 5.0;
-        if (raw_pitch > MAX_SCRATCH_PITCH) {
-            target_pitch = MAX_SCRATCH_PITCH;
-        } else if (raw_pitch < -MAX_SCRATCH_PITCH) {
-            target_pitch = -MAX_SCRATCH_PITCH;
+        // Clamp to configurable range to prevent wild oscillation
+        double max_pitch = settings->max_scratch_pitch;
+        if (raw_pitch > max_pitch) {
+            target_pitch = max_pitch;
+        } else if (raw_pitch < -max_pitch) {
+            target_pitch = -max_pitch;
         } else {
             target_pitch = raw_pitch;
         }
